@@ -1,0 +1,379 @@
+{
+    "schema_version": "1.0",
+    "description": "Arabic online news websites and newspapers organized by country, category, and popularity rank.",
+    "countries": [
+        {
+            "country": "Morocco",
+            "country_code": "MA",
+            "sources": [
+                {
+                    "name": "Hespress",
+                    "url": "https://www.hespress.com",
+                    "category": "general_news",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 1
+                },
+                {
+                    "name": "Le360",
+                    "url": "https://www.le360.ma",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar",
+                        "fr"
+                    ],
+                    "rank": 2
+                },
+                {
+                    "name": "Alyaoum24",
+                    "url": "https://www.alyaoum24.com",
+                    "category": "general_news",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 3
+                },
+                {
+                    "name": "Rue20",
+                    "url": "https://www.rue20.com",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 4
+                },
+                {
+                    "name": "ChoufTV",
+                    "url": "https://www.chouftv.ma",
+                    "category": "tv_news",
+                    "type": "digital_media",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 5
+                },
+                {
+                    "name": "Hiba Press",
+                    "url": "https://www.hibapress.com",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 6
+                },
+                {
+                    "name": "Febrayer",
+                    "url": "https://febrayer.com",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 7
+                },
+                {
+                    "name": "Barlamane",
+                    "url": "https://barlamane.com",
+                    "category": "politics",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 8
+                },
+                {
+                    "name": "Al3omk",
+                    "url": "https://al3omk.com/",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 9
+                }
+            ]
+        },
+        {
+            "country": "Algeria",
+            "country_code": "DZ",
+            "sources": [
+                {
+                    "name": "Echorouk",
+                    "url": "https://www.echoroukonline.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 1
+                },
+                {
+                    "name": "Ennahar",
+                    "url": "https://www.ennaharonline.com",
+                    "category": "general_news",
+                    "type": "tv_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 2
+                },
+                {
+                    "name": "El Bilad",
+                    "url": "https://www.elbilad.net",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 3
+                },
+                {
+                    "name": "Al Khabar",
+                    "url": "https://www.elkhabar.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 4
+                }
+            ]
+        },
+        {
+            "country": "Egypt",
+            "country_code": "EG",
+            "sources": [
+                {
+                    "name": "Youm7",
+                    "url": "https://www.youm7.com",
+                    "category": "general_news",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 1
+                },
+                {
+                    "name": "Al Masry Al Youm",
+                    "url": "https://www.almasryalyoum.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 2
+                },
+                {
+                    "name": "Al Watan",
+                    "url": "https://www.elwatannews.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 3
+                },
+                {
+                    "name": "Ahram Online Arabic",
+                    "url": "https://gate.ahram.org.eg",
+                    "category": "general_news",
+                    "type": "state_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 4
+                },
+                {
+                    "name": "Masrawy",
+                    "url": "https://www.masrawy.com",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 5
+                },
+                {
+                    "name": "Sada El Balad",
+                    "url": "https://www.elbalad.news",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 6
+                }
+            ]
+        },
+        {
+            "country": "Saudi Arabia",
+            "country_code": "SA",
+            "sources": [
+                {
+                    "name": "Sabq",
+                    "url": "https://sabq.org",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 1
+                },
+                {
+                    "name": "Okaz",
+                    "url": "https://www.okaz.com.sa",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 2
+                },
+                {
+                    "name": "Al Riyadh",
+                    "url": "https://www.alriyadh.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 3
+                },
+                {
+                    "name": "Al Madina",
+                    "url": "https://www.al-madina.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 4
+                },
+                {
+                    "name": "Ajel",
+                    "url": "https://ajel.sa",
+                    "category": "breaking_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 5
+                }
+            ]
+        },
+        {
+            "country": "United Arab Emirates",
+            "country_code": "AE",
+            "sources": [
+                {
+                    "name": "Al Bayan",
+                    "url": "https://www.albayan.ae",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 1
+                },
+                {
+                    "name": "Emarat Al Youm",
+                    "url": "https://www.emaratalyoum.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 2
+                },
+                {
+                    "name": "Al Khaleej",
+                    "url": "https://www.alkhaleej.ae",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 3
+                }
+            ]
+        },
+        {
+            "country": "Qatar",
+            "country_code": "QA",
+            "sources": [
+                {
+                    "name": "Al Raya",
+                    "url": "https://www.raya.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 1
+                },
+                {
+                    "name": "Al Sharq",
+                    "url": "https://www.al-sharq.com",
+                    "category": "general_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 2
+                }
+            ]
+        },
+        {
+            "country": "Pan Arab",
+            "country_code": "ARAB",
+            "sources": [
+                {
+                    "name": "Al Jazeera Arabic",
+                    "url": "https://www.aljazeera.net",
+                    "category": "international_news",
+                    "type": "tv_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 1
+                },
+                {
+                    "name": "Al Arabiya",
+                    "url": "https://www.alarabiya.net",
+                    "category": "international_news",
+                    "type": "tv_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 2
+                },
+                {
+                    "name": "Asharq Al Awsat",
+                    "url": "https://aawsat.com",
+                    "category": "international_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 3
+                },
+                {
+                    "name": "Al Quds Al Arabi",
+                    "url": "https://www.alquds.co.uk",
+                    "category": "international_news",
+                    "type": "newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 4
+                }
+            ]
+        }
+    ]
+}

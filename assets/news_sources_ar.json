@@ -1,0 +1,123 @@
+{
+    "schema_version": "1.0",
+    "description": "Moroccan Arabic news websites and newspapers.",
+    "countries": [
+        {
+            "country": "Morocco",
+            "country_code": "MA",
+            "sources": [
+                {
+                    "name": "Ifada",
+                    "url": "https://www.ifada.ma",
+                    "category": "general_news",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 1
+                },
+                {
+                    "name": "Almountakhab",
+                    "url": "https://www.almountakhab.com",
+                    "category": "sports",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 2
+                },
+                {
+                    "name": "Hespress",
+                    "url": "https://www.hespress.com",
+                    "category": "general_news",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 3
+                },
+                {
+                    "name": "Le360",
+                    "url": "https://www.le360.ma",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar",
+                        "fr"
+                    ],
+                    "rank": 4
+                },
+                {
+                    "name": "Alyaoum24",
+                    "url": "https://www.alyaoum24.com",
+                    "category": "general_news",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 5
+                },
+                {
+                    "name": "Rue20",
+                    "url": "https://www.rue20.com",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 6
+                },
+                {
+                    "name": "ChoufTV",
+                    "url": "https://www.chouftv.ma",
+                    "category": "tv_news",
+                    "type": "digital_media",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 7
+                },
+                {
+                    "name": "Hiba Press",
+                    "url": "https://www.hibapress.com",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 8
+                },
+                {
+                    "name": "Febrayer",
+                    "url": "https://febrayer.com",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 9
+                },
+                {
+                    "name": "Barlamane",
+                    "url": "https://barlamane.com",
+                    "category": "politics",
+                    "type": "online_newspaper",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 10
+                },
+                {
+                    "name": "Al 3omk",
+                    "url": "https://al3omk.com/",
+                    "category": "general_news",
+                    "type": "digital_news",
+                    "language": [
+                        "ar"
+                    ],
+                    "rank": 11
+                }
+            ]
+        }
+    ]
+}

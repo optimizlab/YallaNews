@@ -1,0 +1,266 @@
+{
+  "news": {
+    "article_001": {
+      "title": "مصادر مطلعة: Meetings تبدأ الأسبوع المقبل بين الفرق الاقتصادية",
+      "summary": "من المقرر أن تبدأ الأسبوع المقبل سلسلة من الاجتماعات بين الفرق الاقتصادية المعنية لاستعراض آخر التطورات.",
+      "content": "من المقرر أن يبدأ الأسبوع المقبل سلسلة من الاجتماعات بين الفرق الاقتصادية المعنية لاستعراض آخر التطورات.\n\nكما أشارت المصادر إلى أن هذه الاجتماعات تأتي في إطار متابعة تنفيذ التوصيات الصادرة عن الاجتماعات السابقة.\n\nومن المتوقع أن تخرج هذه الاجتماعات بتوصيات محددة قابلة للتنفيذ خلال الفترة القادمة.",
+      "language": "ar",
+      "category": "politics",
+      "source": {
+        "name": "hespress.com",
+        "url": "https://hespress.com",
+        "score": 0.85
+      },
+      "sourceUrl": "https://hespress.com/article-001",
+      "imageUrl": "https://example.com/image.jpg",
+      "publishedAt": 1790000000000,
+      "status": "published"
+    },
+    "article_002": {
+      "title": "المنتخب الوطني يفوز في المباراة الودية",
+      "summary": "حقق المنتخب الوطني فوزاً مستحقاً في المباراة الودية التي أقيمت مساء أمس.",
+      "content": "حقق المنتخب الوطني فوزاً مستحقاً في المباراة الودية التي أقيمت مساء أمس.\n\nوقد أظهر الفريق أداءً مميزاً طوال شوطي المباراة.\n\nوسيلتقي المنتخب في المباراة القادمة مع نظيره الإقليمي.",
+      "language": "ar",
+      "category": "sports",
+      "source": {
+        "name": "febrayer.com",
+        "url": "https://febrayer.com",
+        "score": 0.9
+      },
+      "sourceUrl": "https://febrayer.com/1161776.html",
+      "imageUrl": "https://example.com/sports.jpg",
+      "publishedAt": 1790000100000,
+      "status": "published"
+    }
+  },
+  "comments": {
+    "article_001": {
+      "comment_001": {
+        "articleId": "https://hespress.com/article-001",
+        "userId": "USER_UID_123",
+        "userName": "أحمد محمد",
+        "text": "مقال ممتاز، شكراً على التغطية الشاملة",
+        "createdAt": "2026-09-18T10:00:00Z",
+        "parentId": null
+      },
+      "comment_002": {
+        "articleId": "https://hespress.com/article-001",
+        "userId": "USER_UID_456",
+        "userName": "فاطمة الزهراء",
+        "text": "أوافقك الرأي، معلومات قيمة",
+        "createdAt": "2026-09-18T10:30:00Z",
+        "parentId": null
+      }
+    },
+    "article_002": {
+      "comment_003": {
+        "articleId": "https://febrayer.com/1161776.html",
+        "userId": "USER_UID_789",
+        "userName": "يوسف بلحاج",
+        "text": "فوز مستحق! المنتخب قدم أداء رائع",
+        "createdAt": "2026-09-18T11:00:00Z",
+        "parentId": null
+      }
+    }
+  },
+  "users": {
+    "USER_UID_123": {
+      "profile": {
+        "email": "ahmed@example.com",
+        "displayName": "أحمد محمد",
+        "photoUrl": "https://example.com/avatar1.jpg",
+        "phoneNumber": "+212612345678",
+        "createdAt": "2026-09-01T08:00:00Z"
+      },
+      "following": {
+        "USER_UID_456": true
+      },
+      "followers": {
+        "USER_UID_789": true
+      },
+      "likedArticles": {
+        "article_001": true,
+        "article_002": true
+      },
+      "savedArticles": {
+        "article_001": true
+      },
+      "readingHistory": {
+        "article_001": {
+          "readAt": 1790000005000
+        },
+        "article_002": {
+          "readAt": 1790000110000
+        }
+      }
+    },
+    "USER_UID_456": {
+      "profile": {
+        "email": "fatima@example.com",
+        "displayName": "فاطمة الزهراء",
+        "photoUrl": "https://example.com/avatar2.jpg",
+        "phoneNumber": "+212612345679",
+        "createdAt": "2026-09-05T09:00:00Z"
+      },
+      "following": {
+        "USER_UID_123": true
+      },
+      "followers": {},
+      "likedArticles": {
+        "article_001": true
+      },
+      "savedArticles": {},
+      "readingHistory": {
+        "article_001": {
+          "readAt": 1790000010000
+        }
+      }
+    },
+    "USER_UID_789": {
+      "profile": {
+        "email": "youssef@example.com",
+        "displayName": "يوسف بلحاج",
+        "photoUrl": "https://example.com/avatar3.jpg",
+        "phoneNumber": "+212612345680",
+        "createdAt": "2026-09-10T10:00:00Z"
+      },
+      "following": {},
+      "followers": {
+        "USER_UID_123": true
+      },
+      "likedArticles": {
+        "article_002": true
+      },
+      "savedArticles": {
+        "article_002": true
+      },
+      "readingHistory": {
+        "article_002": {
+          "readAt": 1790000120000
+        }
+      }
+    }
+  },
+  "categories": {
+    "all": {
+      "name": "الكل",
+      "nameEn": "All",
+      "order": 0,
+      "active": true
+    },
+    "breakingNews": {
+      "name": "أخبار عاجلة",
+      "nameEn": "Breaking News",
+      "order": 1,
+      "active": true
+    },
+    "sports": {
+      "name": "رياضة",
+      "nameEn": "Sports",
+      "order": 2,
+      "active": true
+    },
+    "technology": {
+      "name": "تكنولوجيا",
+      "nameEn": "Technology",
+      "order": 3,
+      "active": true
+    },
+    "culture": {
+      "name": "ثقافة",
+      "nameEn": "Culture",
+      "order": 4,
+      "active": true
+    },
+    "politics": {
+      "name": "سياسة",
+      "nameEn": "Politics",
+      "order": 5,
+      "active": true
+    },
+    "business": {
+      "name": "اقتصاد",
+      "nameEn": "Business",
+      "order": 6,
+      "active": true
+    },
+    "health": {
+      "name": "صحة",
+      "nameEn": "Health",
+      "order": 7,
+      "active": true
+    },
+    "science": {
+      "name": "علوم",
+      "nameEn": "Science",
+      "order": 8,
+      "active": true
+    },
+    "entertainment": {
+      "name": "ترفيه",
+      "nameEn": "Entertainment",
+      "order": 9,
+      "active": true
+    },
+    "world": {
+      "name": "دولي",
+      "nameEn": "World",
+      "order": 10,
+      "active": true
+    }
+  },
+  "trending_searches": {
+    "trending_001": {
+      "query": "المنتخب الوطني",
+      "count": 1500,
+      "language": "ar",
+      "createdAt": 1790000000000
+    },
+    "trending_002": {
+      "query": "الاقتصاد المغربي",
+      "count": 1200,
+      "language": "ar",
+      "createdAt": 1790000001000
+    },
+    "trending_003": {
+      "query": "الذكاء الاصطناعي",
+      "count": 980,
+      "language": "ar",
+      "createdAt": 1790000002000
+    },
+    "trending_004": {
+      "query": "المونديال 2026",
+      "count": 850,
+      "language": "ar",
+      "createdAt": 1790000003000
+    },
+    "trending_005": {
+      "query": "الطاقة المتجددة",
+      "count": 700,
+      "language": "ar",
+      "createdAt": 1790000004000
+    }
+  },
+  "sources": {
+    "src_001": {
+      "name": "هسبريس",
+      "url": "https://hespress.com",
+      "category": "general",
+      "country": "ma",
+      "language": "ar",
+      "status": "published",
+      "score": 0.9,
+      "lastCrawled": 1790000000000
+    },
+    "src_002": {
+      "name": "فبراير",
+      "url": "https://febrayer.com",
+      "category": "general",
+      "country": "ma",
+      "language": "ar",
+      "status": "published",
+      "score": 0.85,
+      "lastCrawled": 1790000005000
+    }
+  }
+}

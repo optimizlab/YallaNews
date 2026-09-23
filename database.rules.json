@@ -1,0 +1,146 @@
+{
+  "rules": {
+    "news": {
+      ".read": true,
+      ".write": true,
+      ".indexOn": [
+        "publishedAt",
+        "language",
+        "category",
+        "status"
+      ],
+      "$articleId": {
+        ".validate": "newData.hasChildren(['title', 'summary', 'content', 'language', 'category', 'source', 'sourceUrl', 'publishedAt', 'status'])",
+        "title": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500"
+        },
+        "summary": {
+          ".validate": "newData.isString() && newData.val().length <= 5000"
+        },
+        "content": {
+          ".validate": "newData.isString() && newData.val().length <= 1000000"
+        },
+        "language": {
+          ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 10"
+        },
+        "category": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100"
+        },
+        "source": {
+          ".validate": "newData.hasChildren(['name', 'url', 'score'])",
+          "name": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 300"
+          },
+          "url": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2048"
+          },
+          "score": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "sourceUrl": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2048"
+        },
+        "imageUrl": {
+          ".validate": "newData.isString() && newData.val().length <= 2048"
+        },
+        "publishedAt": {
+          ".validate": "newData.isNumber() && newData.val() > 0"
+        },
+        "status": {
+          ".validate": "newData.isString() && (newData.val() === 'published' || newData.val() === 'draft')"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "comments": {
+      "$articleId": {
+        ".read": true,
+        ".write": true,
+        "$commentId": {
+          ".validate": "newData.hasChildren(['articleId', 'userId', 'userName', 'text', 'createdAt'])",
+          "articleId": {
+            ".validate": "newData.isString() && newData.val().length > 0"
+          },
+          "userId": {
+            ".validate": "newData.isString() && newData.val().length > 0"
+          },
+          "userName": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100"
+          },
+          "text": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 5000"
+          },
+          "createdAt": {
+            ".validate": "newData.isString() && newData.val().length > 0"
+          },
+          "parentId": {
+            ".validate": "newData.isString() || newData.val() === null"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "profile": {
+          ".validate": "newData.hasChildren(['email', 'displayName', 'createdAt'])",
+          "email": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 320"
+          },
+          "displayName": {
+            ".validate": "newData.isString() && newData.val().length <= 100"
+          },
+          "photoUrl": {
+            ".validate": "newData.isString() || newData.val() === null"
+          },
+          "phoneNumber": {
+            ".validate": "newData.isString() || newData.val() === null"
+          },
+          "createdAt": {
+            ".validate": "newData.isString() && newData.val().length > 0"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "following": {
+          "$targetUid": {
+            ".validate": "newData.isBoolean() && newData.val() === true"
+          }
+        },
+        "followers": {
+          "$followerUid": {
+            ".validate": "newData.isBoolean() && newData.val() === true"
+          }
+        },
+        "likedArticles": {
+          "$articleId": {
+            ".validate": "newData.isBoolean() && newData.val() === true"
+          }
+        },
+        "savedArticles": {
+          "$articleId": {
+            ".validate": "newData.isBoolean() && newData.val() === true"
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
