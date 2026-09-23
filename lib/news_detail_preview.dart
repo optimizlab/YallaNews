@@ -2,6 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/news_model.dart';
 
+String _stripHtmlTags(String text) {
+  if (text.isEmpty) return text;
+  return text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+}
+
+String _getSentimentLabel(double sentiment) {
+  if (sentiment >= 0.3) return 'إيجابي';
+  if (sentiment <= -0.3) return 'سلبي';
+  return 'محايد';
+}
+
 /// Enhanced NewsDetailPreview showing how all requested information would be displayed
 class NewsDetailPreview extends StatelessWidget {
   final NewsModel article;
@@ -93,25 +104,25 @@ class NewsDetailPreview extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           
-          // Summary
-          Text(
-            "ملخص تنفيذي من C++ TINY-LLM",
-            style: GoogleFonts.outfit(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFF555555),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            article.summary,
-            style: GoogleFonts.outfit(
-              fontSize: 14,
-              fontStyle: FontStyle.italic,
-              color: const Color(0xFF555555),
-              height: 1.6,
-            ),
-          ),
+           // Summary
+           Text(
+             "ملخص تنفيذي لـ: ${article.title.split(' ').take(8).join(' ')}${article.title.split(' ').length > 8 ? '...' : ''}",
+             style: GoogleFonts.outfit(
+               fontSize: 12,
+               fontWeight: FontWeight.bold,
+               color: const Color(0xFF555555),
+             ),
+           ),
+           const SizedBox(height: 8),
+           Text(
+             _stripHtmlTags(article.summary),
+             style: GoogleFonts.outfit(
+               fontSize: 14,
+               fontStyle: FontStyle.italic,
+               color: const Color(0xFF555555),
+               height: 1.6,
+             ),
+           ),
           const SizedBox(height: 20),
           
           // NLP Results: Sentiment
@@ -136,7 +147,7 @@ class NewsDetailPreview extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                article.sentiment.toStringAsFixed(2),
+                "${_getSentimentLabel(article.sentiment)} (${article.sentiment.toStringAsFixed(2)})",
                 style: GoogleFonts.outfit(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,

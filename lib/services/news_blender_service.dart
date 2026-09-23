@@ -1,8 +1,18 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import '../models/news_model.dart';
 import 'arabic_normalizer.dart';
 import 'news_grouping_service.dart';
 import 'ollama_service.dart';
+
+class _BlendArticlesInput {
+  final List<NewsModel> rawArticles;
+  _BlendArticlesInput(this.rawArticles);
+}
+
+List<NewsModel> _blendArticlesIsolate(_BlendArticlesInput input) {
+  return NewsBlenderService.instance.blendArticles(input.rawArticles);
+}
 
 /// NewsBlenderService — Intelligent multi-source article synthesis engine.
 ///
@@ -38,12 +48,39 @@ class NewsBlenderService {
     'للمزيد من الأخبار',
     'تطبيق هسبريس',
     'تابعنا عبر فيسبوك',
+    'تابعنا على',
+    'انشر على',
+    'أخبار ذات صلة',
+    'مقالات مرتبطة',
+    'شاهد أيضاً',
+    'التعليقات',
+    'أضف تعليق',
+    'إرسال تعليق',
+    'جميع الحقوق',
+    '©',
+    'كل الحقوق',
   ];
+
+  static final RegExp _hashtagPattern = RegExp(r'\s*#\w+(?:\s*#\w+)*\s*');
+
+  static const Set<String> _stopWords = {
+    'في', 'من', 'إلى', 'على', 'هذا', 'هذه', 'أن', 'كان', 'كانت', 'ليس',
+    'لكن', 'أو', 'ثم', 'أي', 'كل', 'مع', 'عند', 'بعد', 'قبل', 'حتى',
+    'أيضا', 'حيث', 'التي', 'الذي', 'الذين', 'اللتين', 'اللاتي', 'ذلك',
+    'هو', 'هي', 'هم', 'هن', 'نحن', 'أنت', 'أنا', 'قد', 'ما', 'لا',
+    'إن', 'عبر', 'بين', 'حول', 'ضمن', 'فوق', 'تحت', 'خلال',
+  };
 
   /// Async primary entry point: groups using Ollama embeddings, blends using Ollama text generation.
   Future<List<NewsModel>> blendArticlesAsync(List<NewsModel> rawArticles) async {
     if (rawArticles.isEmpty) return const [];
     if (rawArticles.length == 1) return [_optimizeSingleArticle(rawArticles.first)];
+    
+    final ollamaAvailable = await OllamaService.instance.isOllamaAvailable();
+    if (!ollamaAvailable) {
+      return compute(_blendArticlesIsolate, _BlendArticlesInput(rawArticles));
+    }
+    
     final clusters = await NewsGroupingService.instance.groupBySubjectAsync(rawArticles);
     final blended = <NewsModel>[];
     for (final cluster in clusters) {
@@ -111,7 +148,7 @@ class NewsBlenderService {
 
     // 4. Generate rich content paragraphs via Ollama
     final richParagraphs = await ollamaGenerateParagraphs(articles, masterTitle);
-    final blendedBody = richParagraphs.isNotEmpty ? richParagraphs : blendContent(articles, executiveLead: executiveLead);
+    final blendedBody = richParagraphs.isNotEmpty ? richParagraphs : blendContent(articles, executiveLead: executiveLead, title: masterTitle);
 
     final attributions = buildSourceAttributions(articles);
     final bestImageUrl = _selectBestImage(articles);
@@ -197,7 +234,7 @@ class NewsBlenderService {
     final highlights = extractHighlights(articles, maxHighlights: 4);
 
     // 4. Thematic body fusion with sentence deduplication
-    final blendedBody = blendContent(articles, executiveLead: executiveLead);
+    final blendedBody = blendContent(articles, executiveLead: executiveLead, title: masterTitle);
 
     // 5. Gather source URLs and distinct source count
     final allSources = <String>[];
@@ -410,49 +447,75 @@ class NewsBlenderService {
   }
 
   /// Blends the multi-source content into structured thematic sections
-  String blendContent(List<NewsModel> articles, {required String executiveLead}) {
+  String blendContent(List<NewsModel> articles, {required String executiveLead, required String title}) {
     if (articles.isEmpty) return '';
+
+    final titleTokens = _tokenize(title).toSet();
+    if (titleTokens.isEmpty && articles.isNotEmpty) {
+      titleTokens.addAll(_tokenize(articles.first.title).toSet());
+    }
 
     final quoteSentences = <String>[];
     final detailSentences = <String>[];
     final contextSentences = <String>[];
 
     final seenStems = <String>{};
+    final seenExactSentences = <String>{};
 
     for (final article in articles) {
       final sourceName = _extractSourceName(article);
-      final sentences = _splitSentences(article.content);
+      final paragraphs = _splitParagraphs(article.content);
+      final uniqueParagraphs = <String>[];
+      final seenParagraphs = <String>{};
 
-      for (final rawSentence in sentences) {
-        final sentence = _cleanSentence(rawSentence);
-        if (!_isQualitySentence(sentence)) continue;
+      for (final para in paragraphs) {
+        final normalizedPara = _normalizeParagraph(para);
+        if (normalizedPara.isEmpty || seenParagraphs.contains(normalizedPara)) continue;
+        seenParagraphs.add(normalizedPara);
+        uniqueParagraphs.add(para.trim());
+      }
 
-        // Deduplication check
-        final tokens = _tokenize(sentence);
-        final tokenKey = tokens.take(8).join(' ');
-        if (seenStems.contains(tokenKey)) continue;
+      for (final para in uniqueParagraphs) {
+        final sentences = _splitSentences(para);
+        for (final rawSentence in sentences) {
+          final sentence = _cleanSentence(rawSentence);
+          if (!_isQualitySentence(sentence)) continue;
 
-        bool duplicate = false;
-        for (final seen in seenStems) {
-          if (_jaccard(tokens.toSet(), seen.split(' ').toSet()) > 0.45) {
-            duplicate = true;
-            break;
+          final normalizedSentence = _normalizeParagraph(sentence);
+          if (seenExactSentences.contains(normalizedSentence)) continue;
+          seenExactSentences.add(normalizedSentence);
+
+          final tokens = _tokenize(sentence);
+          if (tokens.isEmpty) continue;
+
+          final tokenKey = tokens.take(8).join(' ');
+          if (seenStems.contains(tokenKey)) continue;
+
+          bool duplicate = false;
+          for (final seen in seenStems) {
+            if (_jaccard(tokens.toSet(), seen.split(' ').toSet()) > 0.45) {
+              duplicate = true;
+              break;
+            }
           }
-        }
-        if (duplicate) continue;
-        seenStems.add(tokenKey);
+          if (duplicate) continue;
+          seenStems.add(tokenKey);
 
-        // Classify thematic type
-        if (_isQuoteOrStatement(sentence)) {
-          if (!sentence.contains(sourceName)) {
-            quoteSentences.add('$sentence (أوردته $sourceName)');
+          final sentenceTokens = tokens.toSet();
+          final relevance = titleTokens.isEmpty ? 1.0 : (sentenceTokens.intersection(titleTokens).length / sentenceTokens.length);
+          if (relevance < 0.15 && !_isQuoteOrStatement(sentence)) continue;
+
+          if (_isQuoteOrStatement(sentence)) {
+            if (!sentence.contains(sourceName)) {
+              quoteSentences.add('$sentence (أوردته $sourceName)');
+            } else {
+              quoteSentences.add(sentence);
+            }
+          } else if (_isContextOrBackground(sentence)) {
+            contextSentences.add(sentence);
           } else {
-            quoteSentences.add(sentence);
+            detailSentences.add(sentence);
           }
-        } else if (_isContextOrBackground(sentence)) {
-          contextSentences.add(sentence);
-        } else {
-          detailSentences.add(sentence);
         }
       }
     }
@@ -506,7 +569,40 @@ class NewsBlenderService {
       }
     }
 
-    return buffer.toString().trim();
+    final result = buffer.toString().trim();
+
+    // Post-processing: remove duplicate sentences
+    return _removeDuplicateSentences(result);
+  }
+
+  String _normalizeParagraph(String text) {
+    return text
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .toLowerCase();
+  }
+
+  List<String> _splitParagraphs(String text) {
+    if (text.isEmpty) return const [];
+    return text
+        .split(RegExp(r'\n{2,}'))
+        .map((p) => p.trim())
+        .where((p) => p.length >= 20)
+        .toList();
+  }
+
+  String _removeDuplicateSentences(String text) {
+    if (text.isEmpty) return text;
+    final sentences = _splitSentences(text);
+    final seen = <String>{};
+    final unique = <String>[];
+    for (final s in sentences) {
+      final normalized = _normalizeParagraph(s);
+      if (seen.contains(normalized)) continue;
+      seen.add(normalized);
+      unique.add(s);
+    }
+    return unique.join(' ');
   }
 
   /// Builds rich source attributions list with outlet names and links
@@ -557,6 +653,7 @@ class NewsBlenderService {
     for (final bp in _boilerplatePatterns) {
       s = s.replaceAll(bp, '');
     }
+    s = s.replaceAll(_hashtagPattern, ' ');
     return s.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
@@ -571,7 +668,7 @@ class NewsBlenderService {
 
   bool _isQualityHighlightSentence(String s) {
     final words = s.split(RegExp(r'\s+'));
-    if (words.length < 8 || words.length > 35) return false;
+    if (words.length < 10 || words.length > 30) return false;
     for (final bp in _boilerplatePatterns) {
       if (s.contains(bp)) return false;
     }
@@ -580,7 +677,7 @@ class NewsBlenderService {
 
   bool _isQualitySentence(String s) {
     final words = s.split(RegExp(r'\s+'));
-    if (words.length < 6 || words.length > 60) return false;
+    if (words.length < 8 || words.length > 50) return false;
     for (final bp in _boilerplatePatterns) {
       if (s.contains(bp)) return false;
     }
@@ -618,11 +715,12 @@ class NewsBlenderService {
 
   List<String> _tokenize(String s) {
     final norm = ArabicTextNormalizer.normalize(s).toLowerCase();
-    return norm
+    final words = norm
         .replaceAll(RegExp(r'[^\w\s\u0600-\u06FF]'), ' ')
         .split(RegExp(r'\s+'))
-        .where((w) => w.length >= 3)
+        .where((w) => w.length >= 3 && !_stopWords.contains(w))
         .toList();
+    return words;
   }
 
   String _selectBestImage(List<NewsModel> articles) {

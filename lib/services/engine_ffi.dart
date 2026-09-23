@@ -80,6 +80,19 @@ typedef _IsValidImageUrlDart = int Function(Pointer<Utf8> url);
 typedef _SplitParagraphsByDotsC = Pointer<Utf8> Function(Pointer<Utf8> content);
 typedef _SplitParagraphsByDotsDart = Pointer<Utf8> Function(Pointer<Utf8> content);
 
+typedef _ValidateImageRelevanceC = Pointer<Utf8> Function(
+  Pointer<Utf8> title,
+  Pointer<Utf8> description,
+  Pointer<Utf8> content,
+  Pointer<Utf8> image_url,
+);
+typedef _ValidateImageRelevanceDart = Pointer<Utf8> Function(
+  Pointer<Utf8> title,
+  Pointer<Utf8> description,
+  Pointer<Utf8> content,
+  Pointer<Utf8> image_url,
+);
+
 // Lazy-initialized function lookups
 _InitEngineDart? _initEngineFn;
 _ProcessUrlDart? _processUrlFn;
@@ -93,8 +106,9 @@ _ExtractStoryElementsDart? _extractStoryElementsFn;
 _OptimizeSentimentDart? _optimizeSentimentFn;
 _GetEngineLogsDart? _getEngineLogsFn;
 _ClearEngineLogsDart? _clearEngineLogsFn;
-_IsValidImageUrlDart? _isValidImageUrlFn;
-_SplitParagraphsByDotsDart? _splitParagraphsByDotsFn;
+  _IsValidImageUrlDart? _isValidImageUrlFn;
+  _SplitParagraphsByDotsDart? _splitParagraphsByDotsFn;
+  _ValidateImageRelevanceDart? _validateImageRelevanceFn;
 
 bool get _isNativeReady {
   if (_nativeLib == null) return false;
@@ -113,6 +127,7 @@ bool get _isNativeReady {
     _clearEngineLogsFn ??= _nativeLib!.lookup<NativeFunction<_ClearEngineLogsC>>('clear_engine_logs').asFunction();
     _isValidImageUrlFn ??= _nativeLib!.lookup<NativeFunction<_IsValidImageUrlC>>('is_valid_image_url').asFunction();
     _splitParagraphsByDotsFn ??= _nativeLib!.lookup<NativeFunction<_SplitParagraphsByDotsC>>('split_paragraphs_by_dots').asFunction();
+    _validateImageRelevanceFn ??= _nativeLib!.lookup<NativeFunction<_ValidateImageRelevanceC>>('validate_image_relevance').asFunction();
     return true;
   } catch (_) {
     return false;
@@ -244,4 +259,25 @@ List<String> splitParagraphsByDots(String content) {
   } catch (_) {
     return [];
   }
+}
+
+Map<String, dynamic> validateImageRelevance({
+  required String title,
+  required String content,
+  String? description,
+  required String imageUrl,
+}) {
+  if (!_isNativeReady) return {'relevant': 0, 'score': 0.0, 'reasons': ['no_native_engine']};
+  final titlePtr = title.toNativeUtf8();
+  final descPtr = (description ?? '').toNativeUtf8();
+  final contentPtr = content.toNativeUtf8();
+  final urlPtr = imageUrl.toNativeUtf8();
+  final resultPtr = _validateImageRelevanceFn!(titlePtr, descPtr, contentPtr, urlPtr);
+  final jsonString = resultPtr.toDartString();
+  _freeStringFn!(resultPtr);
+  calloc.free(titlePtr);
+  calloc.free(descPtr);
+  calloc.free(contentPtr);
+  calloc.free(urlPtr);
+  return jsonString.isNotEmpty ? jsonDecode(jsonString) as Map<String, dynamic> : {'relevant': 0, 'score': 0.0, 'reasons': ['parse_failed']};
 }

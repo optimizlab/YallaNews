@@ -12,8 +12,6 @@ import '../services/user_service.dart';
 import '../widgets/cached_news_image.dart';
 import '../services/server_api_service.dart';
 import '../services/knowledge_extraction_service.dart';
-import '../services/connectivity_service.dart';
-import '../services/news_intelligence.dart';
 
 class NewsDetailPage extends StatefulWidget {
   final NewsModel article;
@@ -103,18 +101,26 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
 
       if (mounted) {
         setState(() {
-          _knowledgeEntities = entities;
-          _knowledgeEvents = events;
-          _knowledgeTopics = topics;
-          _knowledgeClaims = claims;
+          _knowledgeEntities = _deduplicate(entities, (e) => e.value);
+          _knowledgeEvents = _deduplicate(events, (e) => e.label);
+          _knowledgeTopics = _deduplicate(topics, (t) => t.primaryTopic);
+          _knowledgeClaims = _deduplicate(claims, (c) => c.claimText);
           _isLoadingKnowledge = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoadingKnowledge = false);
-      }
+      if (mounted) setState(() => _isLoadingKnowledge = false);
     }
+  }
+
+  static List<T> _deduplicate<T>(List<T> items, String Function(T) key) {
+    final seen = <String>{};
+    return items.where((item) {
+      final normalized = key(item).replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (normalized.isEmpty || seen.contains(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    }).toList();
   }
 
   void _toggleTts() async {
@@ -177,7 +183,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
 
   Future<void> _enrichArticleIfNeeded() async {
     if (_isEnriching) return;
-    if (article.content.length >= 120 && article.imageUrl.isNotEmpty) return;
+    if (article.content.length >= 500) return;
 
     setState(() => _isEnriching = true);
     try {
@@ -193,15 +199,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         fetchedImage = ogImageMatch.group(1);
       }
 
-      String cleaned = html;
-      cleaned = cleaned.replaceAll(RegExp(r'<script\b[^>]*>.*?</script>', dotAll: true, caseSensitive: false), '');
-      cleaned = cleaned.replaceAll(RegExp(r'<style\b[^>]*>.*?</style>', dotAll: true, caseSensitive: false), '');
-      cleaned = cleaned.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
-      cleaned = cleaned.replaceAll(RegExp(r'</?(p|div|li|tr|td|h[1-6]|blockquote|pre|ul|ol)[^>]*>', caseSensitive: false), '\n');
-      cleaned = cleaned.replaceAll(RegExp(r'<[^>]+>'), ' ');
-      cleaned = cleaned.replaceAll(RegExp(r'[ \t]+\n'), '\n');
-      cleaned = cleaned.replaceAll(RegExp(r'\n{3,}'), '\n\n');
-      cleaned = cleaned.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+      String cleaned = _extractArticleContent(html);
       cleaned = _decodeHtml(cleaned);
       cleaned = cleaned.trim();
 
@@ -213,6 +211,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         if (pTags.isNotEmpty) {
           cleaned = pTags.join('\n\n');
           cleaned = cleaned.replaceAll(RegExp(r'<[^>]+>'), ' ').trim();
+          cleaned = _decodeHtml(cleaned);
         }
       }
 
@@ -229,6 +228,161 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     } catch (_) {
     } finally {
       if (mounted) setState(() => _isEnriching = false);
+    }
+  }
+
+  String _extractArticleContent(String html) {
+    String cleaned = html;
+    cleaned = cleaned.replaceAll(RegExp(r'<script\b[^>]*>.*?</script>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<style\b[^>]*>.*?</style>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<nav\b[^>]*>.*?</nav>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<header\b[^>]*>.*?</header>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<footer\b[^>]*>.*?</footer>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<aside\b[^>]*>.*?</aside>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<iframe\b[^>]*>.*?</iframe>', dotAll: true, caseSensitive: false), '');
+
+    final articlePatterns = [
+      RegExp(r'<article[^>]*>(.*?)</article>', dotAll: true, caseSensitive: false),
+      RegExp('<div[^>]+class=["\'][^"\']*(?:article|content|post|entry|body)[^"\']*["\'][^>]*>(.*?)</div>', dotAll: true, caseSensitive: false),
+      RegExp('<div[^>]+id=["\'][^"\']*(?:article|content|post|entry|body)[^"\']*["\'][^>]*>(.*?)</div>', dotAll: true, caseSensitive: false),
+      RegExp(r'<main[^>]*>(.*?)</main>', dotAll: true, caseSensitive: false),
+    ];
+
+    String extracted = '';
+    int bestLength = 0;
+    for (final pattern in articlePatterns) {
+      for (final match in pattern.allMatches(cleaned)) {
+        final candidate = match.group(1) ?? '';
+        if (candidate.length > bestLength) {
+          bestLength = candidate.length;
+          extracted = candidate;
+        }
+      }
+    }
+
+    String working = extracted;
+    if (working.isEmpty) {
+      final bodyMatch = RegExp(r'<body[^>]*>(.*?)</body>', dotAll: true, caseSensitive: false).firstMatch(cleaned);
+      working = bodyMatch != null ? bodyMatch.group(1)! : cleaned;
+    }
+
+    final pTags = RegExp(r'<p[^>]*>(.*?)</p>', dotAll: true, caseSensitive: false)
+        .allMatches(working)
+        .map((m) => (m.group(1) ?? '').trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+
+    if (pTags.isEmpty) {
+      working = working.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+      working = working.replaceAll(RegExp(r'</?(p|div|li|tr|td|h[1-6]|blockquote|pre|ul|ol|section|article)[^>]*>', caseSensitive: false), '\n');
+      working = working.replaceAll(RegExp(r'<[^>]+>'), ' ');
+      working = working.replaceAll(RegExp(r'[ \t]+\n'), '\n');
+      working = working.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+      working = working.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+      return working;
+    }
+
+    final buffer = StringBuffer();
+    for (final p in pTags) {
+      final text = p.replaceAll(RegExp(r'<[^>]+>'), ' ').trim();
+      if (text.isEmpty) continue;
+      if (buffer.length > 0) buffer.writeln();
+      buffer.writeln(text);
+    }
+
+    var result = buffer.toString().trim();
+    if (result.isEmpty) {
+      result = working.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+      result = result.replaceAll(RegExp(r'</?(p|div|li|tr|td|h[1-6]|blockquote|pre|ul|ol|section|article)[^>]*>', caseSensitive: false), '\n');
+      result = result.replaceAll(RegExp(r'<[^>]+>'), ' ');
+      result = result.replaceAll(RegExp(r'[ \t]+\n'), '\n');
+      result = result.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+      result = result.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+    }
+
+    result = result.replaceAll(RegExp(r'تابعنا على.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'اشترك في.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'حقوق النشر.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'جميع الحقوق.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'اضغط هنا.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'شارك المقال.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'للمزيد من الأخبار.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'تطبيق.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'www\..*?\.(com|ma|net|org)', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'https?://[^\s]+', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'[^\w\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\p{P}\p{N}]', caseSensitive: false), ' ');
+    result = result.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+    result = result.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+
+    return result;
+  }
+
+  String _stripHtmlTags(String text) {
+    if (text.isEmpty) return text;
+    final withoutTags = text.replaceAll(RegExp(r'<[^>]*>'), '');
+    return _decodeHtml(withoutTags);
+  }
+
+  String _decodeHtml(String text) {
+    if (text.isEmpty) return text;
+    try {
+      final buffer = StringBuffer();
+      for (int i = 0; i < text.length; i++) {
+        if (text[i] == '&') {
+          final semi = text.indexOf(';', i);
+          if (semi > i && semi - i < 10) {
+            final entity = text.substring(i, semi + 1);
+            if (entity.startsWith('&#x') || entity.startsWith('&#X')) {
+              final hex = entity.substring(3, entity.length - 1);
+              final code = int.tryParse(hex, radix: 16);
+              if (code != null) { buffer.writeCharCode(code); i = semi; continue; }
+            } else if (entity.startsWith('&#')) {
+              final num = entity.substring(2, entity.length - 1);
+              final code = int.tryParse(num);
+              if (code != null) { buffer.writeCharCode(code); i = semi; continue; }
+            } else {
+              final decoded = _namedEntity(entity);
+              if (decoded != null) { buffer.write(decoded); i = semi; continue; }
+            }
+          }
+        }
+        buffer.write(text[i]);
+      }
+      return buffer.toString();
+    } on Exception {
+      return text;
+    }
+  }
+
+  String? _namedEntity(String entity) {
+    switch (entity) {
+      case '&quot;': return '"';
+      case '&apos;': return "'";
+      case '&#34;': return '"';
+      case '&#39;': return "'";
+      case '&lt;': return '<';
+      case '&gt;': return '>';
+      case '&amp;': return '&';
+      case '&nbsp;': return ' ';
+      case '&thinsp;': return ' ';
+      case '&ensp;': return ' ';
+      case '&emsp;': return ' ';
+      case '&mdash;': return '—';
+      case '&ndash;': return '–';
+      case '&hellip;': return '…';
+      case '&bull;': return '•';
+      case '&lsquo;': return '\u2018';
+      case '&rsquo;': return '\u2019';
+      case '&ldquo;': return '\u201C';
+      case '&rdquo;': return '\u201D';
+      case '&copy;': return '©';
+      case '&reg;': return '®';
+      case '&trade;': return '™';
+      case '&euro;': return '€';
+      case '&pound;': return '£';
+      case '&yen;': return '¥';
+      case '&deg;': return '°';
+      default: return null;
     }
   }
 
@@ -377,7 +531,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  "Short Title: ${article.shortTitle}",
+                  "الموجز: ${article.shortTitle}",
                   style: GoogleFonts.outfit(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -386,58 +540,101 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 ),
               ),
             ],
+            if (article.summary.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.auto_awesome, size: 16, color: Theme.of(context).colorScheme.primary),
+                        const SizedBox(width: 8),
+                        Text(
+                          "ملخص تنفيذي من C++ TINY-LLM",
+                          style: GoogleFonts.outfit(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      article.summary,
+                      style: GoogleFonts.outfit(
+                        fontSize: 14,
+                        height: 1.7,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             // ── Main Article Hero Image ──────────────────────────────────
             if (article.imageUrl.isNotEmpty) ...[
-              Hero(
-                tag: 'article_image_${article.url}',
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Stack(
-                    children: [
-                      CachedNewsImage(
-                        imageUrl: article.imageUrl,
-                        width: double.infinity,
-                        height: 240,
-                        fit: BoxFit.cover,
-                        errorWidget: Container(
-                          height: 240,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
-                                const Color(0xFF1A1A2E),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
+              Center(
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Hero(
+                    tag: 'article_image_${article.url}',
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Stack(
+                        children: [
+                          CachedNewsImage(
+                            imageUrl: article.imageUrl,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorWidget: Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
+                                    const Color(0xFF1A1A2E),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                              ),
+                              child: Center(
+                                child: Icon(Icons.image_not_supported_rounded,
+                                    size: 48, color: Colors.white38),
+                              ),
                             ),
                           ),
-                          child: Center(
-                            child: Icon(Icons.image_not_supported_rounded,
-                                size: 48, color: Colors.white38),
-                          ),
-                        ),
-                      ),
-                      // Subtle gradient at bottom for readability
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          height: 80,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.bottomCenter,
-                              end: Alignment.topCenter,
-                              colors: [
-                                Colors.black.withOpacity(0.4),
-                                Colors.transparent,
-                              ],
+                          // Subtle gradient at bottom for readability
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              height: 80,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                  colors: [
+                                    Colors.black.withOpacity(0.4),
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -1016,75 +1213,6 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     final isLoggedIn = await ServerApiService.isLoggedIn();
     if (!isLoggedIn) return;
     await UserService.saveArticle(article.url);
-  }
-
-  String _stripHtmlTags(String text) {
-    if (text.isEmpty) return text;
-    final withoutTags = text.replaceAll(RegExp(r'<[^>]*>'), '');
-    return _decodeHtml(withoutTags);
-  }
-
-  String _decodeHtml(String text) {
-    if (text.isEmpty) return text;
-    try {
-      final buffer = StringBuffer();
-      for (int i = 0; i < text.length; i++) {
-        if (text[i] == '&') {
-          final semi = text.indexOf(';', i);
-          if (semi > i && semi - i < 10) {
-            final entity = text.substring(i, semi + 1);
-            if (entity.startsWith('&#x') || entity.startsWith('&#X')) {
-              final hex = entity.substring(3, entity.length - 1);
-              final code = int.tryParse(hex, radix: 16);
-              if (code != null) { buffer.writeCharCode(code); i = semi; continue; }
-            } else if (entity.startsWith('&#')) {
-              final num = entity.substring(2, entity.length - 1);
-              final code = int.tryParse(num);
-              if (code != null) { buffer.writeCharCode(code); i = semi; continue; }
-            } else {
-              final decoded = _namedEntity(entity);
-              if (decoded != null) { buffer.write(decoded); i = semi; continue; }
-            }
-          }
-        }
-        buffer.write(text[i]);
-      }
-      return buffer.toString();
-    } on Exception {
-      return text;
-    }
-  }
-
-  String? _namedEntity(String entity) {
-    switch (entity) {
-      case '&quot;': return '"';
-      case '&apos;': return "'";
-      case '&#34;': return '"';
-      case '&#39;': return "'";
-      case '&lt;': return '<';
-      case '&gt;': return '>';
-      case '&amp;': return '&';
-      case '&nbsp;': return ' ';
-      case '&thinsp;': return ' ';
-      case '&ensp;': return ' ';
-      case '&emsp;': return ' ';
-      case '&mdash;': return '—';
-      case '&ndash;': return '–';
-      case '&hellip;': return '…';
-      case '&bull;': return '•';
-      case '&lsquo;': return '\u2018';
-      case '&rsquo;': return '\u2019';
-      case '&ldquo;': return '\u201C';
-      case '&rdquo;': return '\u201D';
-      case '&copy;': return '©';
-      case '&reg;': return '®';
-      case '&trade;': return '™';
-      case '&euro;': return '€';
-      case '&pound;': return '£';
-      case '&yen;': return '¥';
-      case '&deg;': return '°';
-      default: return null;
-    }
   }
 
   List<Widget> _buildRichContent(BuildContext context, String text) {

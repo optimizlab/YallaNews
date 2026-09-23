@@ -146,8 +146,6 @@ class IntelligenceResult {
     );
   }
 
-  /// Classify by scoring title tokens with 5× weight and body tokens with 1×.
-  /// If the title alone is decisive (score ≥ 8) it wins; body noise cannot override it.
   static String determineCategory(String text,
       {String? url,
       List<String>? validCategoryIds,
@@ -222,33 +220,29 @@ class IntelligenceResult {
       ],
     };
 
-    // Pre-process texts by replacing all non-alphanumeric chars with spaces to ensure clean word boundaries
     final cleanTitle = (titleOnly ?? '').replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ').toLowerCase();
     final paddedTitle = ' $cleanTitle ';
     
     final cleanText = text.replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ').toLowerCase();
     final paddedText = ' $cleanText ';
 
-    // Helper to build a robust word-matching regex that handles common Arabic prefixes and suffixes
     RegExp buildWordRegex(String kw) {
       return RegExp(r' (?:ال|و|ف|ب|ك|ل)?' + RegExp.escape(kw.toLowerCase()) + r'(?:ات|ين|ون|ة|ه|هم|ها|ي)? ', caseSensitive: false);
     }
 
-    // ── Step 1: score title separately (5× weight) ───────────────────────────
     final titleScores = <String, int>{};
     if (cleanTitle.trim().isNotEmpty) {
       for (final entry in categoryKeywords.entries) {
         int ts = 0;
         for (final kw in entry.value) {
           if (buildWordRegex(kw).hasMatch(paddedTitle)) {
-            ts += (kw.length > 4 ? 2 : 1) * 5; // 5× weight
+            ts += (kw.length > 4 ? 2 : 1) * 5;
           }
         }
         if (ts > 0) titleScores[entry.key] = ts;
       }
     }
 
-    // ── Step 2: score full text (title already included, weight 1×) ──────────
     final scores = <String, int>{};
     for (final entry in categoryKeywords.entries) {
       final categoryName = entry.key;
@@ -266,15 +260,12 @@ class IntelligenceResult {
       }
     }
 
-    // ── Step 3: if title gives a decisive signal, trust it alone ─────────────
     if (titleScores.isNotEmpty) {
       final bestTitleEntry = titleScores.entries.reduce((a, b) => a.value >= b.value ? a : b);
-      // Decisive = top title score ≥ 8 AND at least 2× second best
       final sortedTitle = titleScores.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
       final topTitleScore = sortedTitle.first.value;
       final secondTitleScore = sortedTitle.length > 1 ? sortedTitle[1].value : 0;
       if (topTitleScore >= 8 && topTitleScore >= secondTitleScore * 2) {
-        // Title is decisive — return directly without body interference
         return _resolveToValidCategory(bestTitleEntry.key, validCategoryIds, categoryKeywords);
       }
     }
@@ -304,8 +295,6 @@ class IntelligenceResult {
       }
     }
 
-    // ── Step 4: blend title scores (4×) into body scores ────────────────────
-    // Even when title is not decisively clear, amplify it in the blend.
     for (final entry in titleScores.entries) {
       scores[entry.key] = (scores[entry.key] ?? 0) + entry.value * 4;
     }
@@ -315,7 +304,6 @@ class IntelligenceResult {
       bestMatch = scores.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
     }
 
-    // Mapping table between English category names and Arabic/multi-lingual category IDs
     final categoryAliases = <String, List<String>>{
       'sports': ['sports', 'رياضة', 'كرة القدم', 'كرة السلة', 'تنس', 'sport', 'football'],
       'politics': ['politics', 'سياسة', 'أخبار محلية', 'أخبار دولية', 'politic', 'political'],
@@ -332,14 +320,12 @@ class IntelligenceResult {
         (CategoryService.instance.initialized ? CategoryService.instance.categoryIds : null);
 
     if (validCategories != null && validCategories.isNotEmpty) {
-      // 1. Direct match with bestMatch
       for (final validCat in validCategories) {
         if (validCat.toLowerCase() == bestMatch.toLowerCase()) {
           return validCat;
         }
       }
 
-      // 2. Alias match with validCategories
       final aliases = categoryAliases[bestMatch] ?? [];
       for (final validCat in validCategories) {
         final validLower = validCat.toLowerCase().trim();
@@ -350,7 +336,6 @@ class IntelligenceResult {
         }
       }
 
-      // 3. Score all validCategories directly against aliases
       for (final entry in categoryAliases.entries) {
         if (scores.containsKey(entry.key)) {
           for (final validCat in validCategories) {
@@ -368,7 +353,6 @@ class IntelligenceResult {
     return _resolveToValidCategory(bestMatch, validCategoryIds, categoryAliases);
   }
 
-  /// Maps an internal category name to a valid category ID from the available list.
   static String _resolveToValidCategory(
       String bestMatch,
       List<String>? validCategoryIds,
@@ -378,11 +362,9 @@ class IntelligenceResult {
 
     if (validCategories == null || validCategories.isEmpty) return bestMatch;
 
-    // 1. Direct match
     for (final validCat in validCategories) {
       if (validCat.toLowerCase() == bestMatch.toLowerCase()) return validCat;
     }
-    // 2. Alias match
     final aliases = categoryAliases[bestMatch] ?? [];
     for (final validCat in validCategories) {
       final vl = validCat.toLowerCase().trim();
@@ -495,7 +477,6 @@ class IntelligenceResult {
     final entities = <Entity>[];
     final seen = <String>{};
 
-    // Named Persons with Arabic Title Prefixes
     final personPrefixRegex = RegExp(
       r'(?:الملك|الرئيس|الوزير|اللاعب|المدرب|الدكتور|السيد|المسؤول|المستشار|النائب|الأمين العام|الأستاذ|البطل)\s+([ء-ي]{2,15}(?:\s+[ء-ي]{2,15}){1,3})',
     );
@@ -507,7 +488,6 @@ class IntelligenceResult {
       }
     }
 
-    // Well known Arabic persons/figures
     final knownFigures = [
       'محمد السادس', 'عزيز أخنوش', 'فوزي لقجع', 'وليد الركراكي', 'أشرف حكيمي',
       'سمير المرابط', 'حكيم زياش', 'محمد صلاح', 'سفيان أمرابط', 'ياسين بونو',
@@ -522,7 +502,6 @@ class IntelligenceResult {
       }
     }
 
-    // Organizations
     final orgPrefixRegex = RegExp(
       r'(?:نادي|فريق|حكومة|وزارة|جامعة|برلمان|شركة|بنك|محكمة|منظمة|حزب|مجلس|اتحاد|جمعية|وكالة)\s+([ء-ي]{2,20}(?:\s+[ء-ي]{2,20}){1,3})',
     );
@@ -534,7 +513,6 @@ class IntelligenceResult {
       }
     }
 
-    // Well known Organizations
     final knownOrgs = [
       'الأمم المتحدة', 'مجلس الأمن', 'الجامعة العربية', 'الاتحاد الإفريقي',
       'الاتحاد الأوروبي', 'الفيفا', 'الكاف', 'صندوق النقد الدولي', 'البنك الدولي',
@@ -548,7 +526,6 @@ class IntelligenceResult {
       }
     }
 
-    // Locations
     final locations = [
       'الرباط', 'الدار البيضاء', 'مراكش', 'طنجة', 'فاس', 'أكادير', 'تطوان',
       'وجدة', 'مكناس', 'العيون', 'المغرب', 'الجزائر', 'تونس', 'مصر', 'السعودية',
@@ -563,7 +540,6 @@ class IntelligenceResult {
       }
     }
 
-    // Dates
     final datePattern = RegExp(r'\b\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\b|\b\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2}\b');
     for (final match in datePattern.allMatches(text)) {
       final date = match.group(0)!;

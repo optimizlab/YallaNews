@@ -422,113 +422,7 @@ class ArabicNewsProcessor {
   /// Detect duplicates and group related articles into events
   Future<List<NewsModel>> _detectDuplicatesAndEvents(List<NewsModel> articles) async {
     if (articles.isEmpty) return [];
-    
-    final List<NewsModel> deduplicated = [];
-    final Set<String> processedUrls = {};
-    
-    for (final article in articles) {
-      if (!_isRunning) break;
-      
-      if (processedUrls.contains(article.url)) continue;
-      
-      // Find similar articles (simple implementation based on title similarity)
-      final List<NewsModel> similarArticles = [article];
-      processedUrls.add(article.url);
-      
-      for (final other in articles) {
-        if (!_isRunning) break;
-        if (processedUrls.contains(other.url)) continue;
-        if (other.url == article.url) continue;
-        
-        // Simple similarity check (could be enhanced with TF-IDF, etc.)
-        final double similarity = _calculateArticleSimilarity(article, other);
-        if (similarity > 0.7) { // 70% similarity threshold
-          similarArticles.add(other);
-          processedUrls.add(other.url);
-        }
-      }
-      
-      if (similarArticles.length == 1) {
-        // No duplicates found, add as-is
-        deduplicated.add(article);
-      } else {
-        // Group similar articles into a single event/representative article
-        final NewsModel representative = _createRepresentativeArticle(similarArticles);
-        deduplicated.add(representative);
-      }
-    }
-    
-    return deduplicated;
-  }
-  
-  /// Calculate similarity between two articles (simple implementation)
-  double _calculateArticleSimilarity(NewsModel a, NewsModel b) {
-    // Title similarity
-    final Set<String> wordsA = a.title.toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), ' ')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.length > 2)
-        .toSet();
-        
-    final Set<String> wordsB = b.title.toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), ' ')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.length > 2)
-        .toSet();
-    
-    if (wordsA.isEmpty || wordsB.isEmpty) return 0.0;
-    
-    final Set<String> intersection = wordsA.intersection(wordsB);
-    final Set<String> union = wordsA.union(wordsB);
-    
-    return intersection.length / union.length;
-  }
-  
-  /// Create a representative article from a group of similar articles
-  NewsModel _createRepresentativeArticle(List<NewsModel> articles) {
-    if (articles.isEmpty) return NewsModel.empty('');
-    if (articles.length == 1) return articles.first;
-    
-    // Use the first article as base, but combine information from others
-    final NewsModel base = articles.first;
-    final List<String> sources = articles.map((a) => a.url).toList();
-    
-    // Combine keywords from all articles
-    final Set<String> allKeywords = {};
-    for (final article in articles) {
-      allKeywords.addAll(article.keywords);
-    }
-    
-    // Use the highest sentiment
-    final double maxSentiment = articles.map((a) => a.sentiment).reduce((a, b) => a > b ? a : b);
-    
-    // Use the most recent publish date
-    final String latestPublishDate = articles
-        .where((a) => a.publishDate.isNotEmpty)
-        .map((a) => a.publishDate)
-        .reduce((a, b) => a.compareTo(b) > 0 ? a : b);
-    
-    return NewsModel(
-      url: base.url,
-      title: base.title,
-      shortTitle: base.shortTitle,
-      summary: base.summary,
-      content: base.content,
-      imageUrl: base.imageUrl,
-      category: base.category,
-      sentiment: maxSentiment,
-      keywords: allKeywords.toList(),
-      logs: base.logs,
-      author: base.author,
-      publishDate: latestPublishDate.isNotEmpty ? latestPublishDate : base.publishDate,
-      eventType: base.eventType,
-      subcategory: base.subcategory,
-      entities: base.entities,
-      structuredData: base.structuredData,
-      intelligenceJson: base.intelligenceJson,
-      sourceCount: sources.length,
-      sources: sources,
-    );
+    return compute(_deduplicateIsolate, _DeduplicateInput(articles));
   }
   
   /// Store articles in local database and maintain search indexes
@@ -593,4 +487,88 @@ class ArabicNewsProcessor {
       };
     }
   }
+}
+
+class _DeduplicateInput {
+  final List<NewsModel> articles;
+  _DeduplicateInput(this.articles);
+}
+
+NewsModel _arabicCreateRepresentative(List<NewsModel> articles) {
+  if (articles.isEmpty) return NewsModel.empty('');
+  if (articles.length == 1) return articles.first;
+  final base = articles.first;
+  final sources = articles.map((a) => a.url).toList();
+  final allKeywords = <String>{};
+  for (final article in articles) {
+    allKeywords.addAll(article.keywords);
+  }
+  final maxSentiment = articles.map((a) => a.sentiment).reduce((a, b) => a > b ? a : b);
+  final latestPublishDate = articles
+      .where((a) => a.publishDate.isNotEmpty)
+      .map((a) => a.publishDate)
+      .reduce((a, b) => a.compareTo(b) > 0 ? a : b);
+  return NewsModel(
+    url: base.url,
+    title: base.title,
+    shortTitle: base.shortTitle,
+    summary: base.summary,
+    content: base.content,
+    imageUrl: base.imageUrl,
+    category: base.category,
+    sentiment: maxSentiment,
+    keywords: allKeywords.toList(),
+    logs: base.logs,
+    author: base.author,
+    publishDate: latestPublishDate.isNotEmpty ? latestPublishDate : base.publishDate,
+    eventType: base.eventType,
+    subcategory: base.subcategory,
+    entities: base.entities,
+    structuredData: base.structuredData,
+    intelligenceJson: base.intelligenceJson,
+    sourceCount: sources.length,
+    sources: sources,
+  );
+}
+
+double _arabicTitleSimilarity(NewsModel a, NewsModel b) {
+  final wordsA = a.title.toLowerCase()
+      .replaceAll(RegExp(r'[^\w\s]'), ' ')
+      .split(RegExp(r'\s+'))
+      .where((w) => w.length > 2)
+      .toSet();
+  final wordsB = b.title.toLowerCase()
+      .replaceAll(RegExp(r'[^\w\s]'), ' ')
+      .split(RegExp(r'\s+'))
+      .where((w) => w.length > 2)
+      .toSet();
+  if (wordsA.isEmpty || wordsB.isEmpty) return 0.0;
+  return wordsA.intersection(wordsB).length / wordsA.union(wordsB).length;
+}
+
+List<NewsModel> _deduplicateIsolate(_DeduplicateInput input) {
+  final articles = input.articles;
+  if (articles.isEmpty) return [];
+  final deduplicated = <NewsModel>[];
+  final processedUrls = <String>{};
+  for (final article in articles) {
+    if (processedUrls.contains(article.url)) continue;
+    final similarArticles = <NewsModel>[article];
+    processedUrls.add(article.url);
+    for (final other in articles) {
+      if (processedUrls.contains(other.url)) continue;
+      if (other.url == article.url) continue;
+      final similarity = _arabicTitleSimilarity(article, other);
+      if (similarity > 0.7) {
+        similarArticles.add(other);
+        processedUrls.add(other.url);
+      }
+    }
+    if (similarArticles.length == 1) {
+      deduplicated.add(article);
+    } else {
+      deduplicated.add(_arabicCreateRepresentative(similarArticles));
+    }
+  }
+  return deduplicated;
 }

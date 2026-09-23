@@ -32,9 +32,6 @@ class _SplashPageState extends State<SplashPage> {
   Future<void> _initApp() async {
     await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) {
-      if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-        ArabicNewsProcessor.instance.start();
-      }
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => HomePage(engineService: YallaEngineService()),

@@ -9,6 +9,7 @@
 #include <ctime>
 #include <iomanip>
 #include <cstring>
+#include <regex>
 #include "arabic_nlp.h"
 #include <nlohmann/json.hpp>
 
@@ -30,6 +31,9 @@ void log_to_engine(const std::string& sender, const std::string& message) {
     g_logs_accumulator += ss.str();
     std::cout << ss.str(); // Also write to console
 }
+
+// Forward declaration for image URL validator
+extern "C" bool is_image_url_valid_internal(const std::string& url);
 
 // Simple helper to extract value by key from a JSON string (avoiding external libraries)
 std::string get_json_value(const std::string& json, const std::string& key, size_t start_pos = 0) {
@@ -520,6 +524,135 @@ YALLA_EXPORT int is_valid_image_url(const char* url_cstr) {
     if (url_cstr == nullptr) return 0;
     std::string url(url_cstr);
     return is_image_url_valid_internal(url) ? 1 : 0;
+}
+
+// Validate image relevance for an article based on title, description, and content.
+// Returns JSON: {"relevant": 0/1, "score": 0.0-1.0, "reasons": ["...", "..."]}
+YALLA_EXPORT const char* validate_image_relevance(
+    const char* title_cstr,
+    const char* description_cstr,
+    const char* content_cstr,
+    const char* image_url_cstr
+) {
+    if (title_cstr == nullptr || image_url_cstr == nullptr) {
+        char* empty = new char[2];
+        std::strcpy(empty, "{\"relevant\":0,\"score\":0.0,\"reasons\":[\"missing_input\"]}");
+        return empty;
+    }
+
+    std::string title(title_cstr);
+    std::string description(description_cstr ? description_cstr : "");
+    std::string content(content_cstr ? content_cstr : "");
+    std::string image_url(image_url_cstr);
+
+    // Build article keywords from title + description + content
+    std::set<std::string> article_keywords;
+    auto add_keywords = [&](const std::string& text) {
+        std::string lower = text;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        std::stringstream ss(lower);
+        std::string word;
+        while (ss >> word) {
+            // Strip punctuation
+            word.erase(std::remove_if(word.begin(), word.end(), ::ispunct), word.end());
+            if (word.size() >= 3) article_keywords.insert(word);
+        }
+    };
+    add_keywords(title);
+    add_keywords(description);
+    add_keywords(content);
+
+    // Extract potential keywords from image URL/filename
+    std::string lower_url = image_url;
+    std::transform(lower_url.begin(), lower_url.end(), lower_url.begin(), ::tolower);
+
+    std::vector<std::string> url_parts;
+    std::stringstream url_ss(lower_url);
+    std::string part;
+    while (std::getline(url_ss, part, '/')) {
+        if (part.empty()) continue;
+        std::stringstream dot_ss(part);
+        std::string token;
+        while (std::getline(dot_ss, token, '.')) {
+            if (token.empty()) continue;
+            std::stringstream underscore_ss(token);
+            std::string subtoken;
+            while (std::getline(underscore_ss, subtoken, '_')) {
+                if (subtoken.size() >= 3) url_parts.push_back(subtoken);
+            }
+        }
+    }
+
+    // Score relevance
+    double score = 0.0;
+    std::vector<std::string> reasons;
+    int keyword_hits = 0;
+    for (const auto& kw : article_keywords) {
+        for (const auto& url_part : url_parts) {
+            if (url_part == kw || url_part.find(kw) != std::string::npos || kw.find(url_part) != std::string::npos) {
+                score += 0.3;
+                keyword_hits++;
+                if (keyword_hits <= 5) reasons.push_back("keyword_match:" + kw);
+                break;
+            }
+        }
+    }
+
+    // Title words are stronger signal
+    std::stringstream title_stream(title);
+    std::string title_word;
+    std::set<std::string> title_words;
+    while (title_stream >> title_word) {
+        std::string lower_title_word = title_word;
+        std::transform(lower_title_word.begin(), lower_title_word.end(), lower_title_word.begin(), ::tolower);
+        lower_title_word.erase(std::remove_if(lower_title_word.begin(), lower_title_word.end(), ::ispunct), lower_title_word.end());
+        if (lower_title_word.size() >= 3) title_words.insert(lower_title_word);
+    }
+    int title_hits = 0;
+    for (const auto& tw : title_words) {
+        for (const auto& url_part : url_parts) {
+            if (url_part == tw || url_part.find(tw) != std::string::npos || tw.find(url_part) != std::string::npos) {
+                score += 0.5;
+                title_hits++;
+                if (title_hits <= 3) reasons.push_back("title_match:" + tw);
+                break;
+            }
+        }
+    }
+
+    // Penalize generic/irrelevant patterns
+    std::vector<std::string> reject_patterns = {
+        "logo", "banner", "avatar", "placeholder", "icon", "sprite",
+        "1x1", "pixel", "transparent", "blank", "spinner", "loading",
+        "facebook", "twitter", "instagram", "youtube", "tiktok", "social",
+        "share", "rss", "feed", "radio", "podcast", "audio", "video",
+        "barlamane", "hespress", "medi1", "2m", "snrt"
+    };
+    for (const auto& pat : reject_patterns) {
+        if (lower_url.find(pat) != std::string::npos) {
+            score -= 2.0;
+            reasons.push_back("reject_pattern:" + pat);
+            break;
+        }
+    }
+
+    // Clamp score to [0, 1]
+    if (score < 0.0) score = 0.0;
+    if (score > 1.0) score = 1.0;
+
+    int relevant = (score >= 0.5 && title_hits >= 1) ? 1 : 0;
+    if (reasons.empty()) reasons.push_back("no_keyword_overlap");
+
+    nlohmann::json result;
+    result["relevant"] = relevant;
+    result["score"] = std::round(score * 100.0) / 100.0;
+    result["reasons"] = nlohmann::json::array();
+    for (const auto& r : reasons) result["reasons"].push_back(r);
+
+    std::string json_result = result.dump();
+    char* result_cstr = new char[json_result.length() + 1];
+    std::strcpy(result_cstr, json_result.c_str());
+    return result_cstr;
 }
 
 YALLA_EXPORT const char* split_paragraphs_by_dots(const char* content_cstr) {

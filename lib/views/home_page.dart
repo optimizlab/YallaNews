@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../database/news_db.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../services/app_settings.dart';
@@ -24,6 +26,154 @@ import '../widgets/adaptive_layout.dart';
 import '../widgets/top_news_carousel.dart';
 import '../arabic_news_processor.dart';
 import '../services/news_blender_service.dart';
+
+String _getSentimentLabel(double sentiment) {
+  if (sentiment >= 0.3) return 'إيجابي';
+  if (sentiment <= -0.3) return 'سلبي';
+  return 'محايد';
+}
+
+List<NewsModel> _getDemoArticles() {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  final publishDate = DateTime.now().toIso8601String();
+  return [
+    NewsModel(
+      url: 'https://api.inoov.com/yallanews/demo/1',
+      title: 'بنك المغرب يتوقع ارتفاع التضخم العالمي خلال 2026',
+      shortTitle: 'بنك المغرب يتوقع ارتفاع التضخم',
+      summary: 'توقع بنك المغرب استمرار ارتفاع التضخم العالمي خلال السنة الجديدة 2026، بسبب الضغوط الجيوسياسية وتداعيات الأزمة الأوكرانية على الأسواق العالمية.',
+      content: 'توقع بنك المغرب استمرار ارتفاع التضخم العالمي خلال السنة الجديدة 2026، بسبب الضغوط الجيوسياسية وتداعيات الأزمة الأوكرانية على الأسواق العالمية. وأوضح البنك المركزي في تقريره السنوي أن معدلات التضخم ستبقى مرتفعة في معظم الاقتصاديات الناشئة والمتقدمة على حد سواء.',
+      imageUrl: 'https://placehold.co/800x500/1A1A2E/C62828?text=اقتصاد',
+      category: 'اقتصاد',
+      sentiment: -0.2,
+      keywords: const ['بنك المغرب', 'تضخم', 'اقتصاد عالمي'],
+      logs: '',
+      author: '',
+      publishDate: publishDate,
+      eventType: 'general',
+      subcategory: 'general',
+      entities: const [],
+      structuredData: const {},
+      intelligenceJson: '',
+      metaTags: const {},
+      hashtags: '',
+      youtubeVideoId: '',
+      instagramVideoId: '',
+      twitterVideoUrl: '',
+      imageId: '',
+      sourceCount: 1,
+      sources: const [],
+    ),
+    NewsModel(
+      url: 'https://api.inoov.com/yallanews/demo/2',
+      title: 'المنتخب الوطني يفوز بكأس الأمم الأفريقية',
+      shortTitle: 'المنتخب الوطني يفوز بكأس الأمم',
+      summary: 'حقق المنتخب الوطني فوزاً ساحقاً على نظيره الكاميروني في نهائي كأس الأمم الأفريقية، التي أقيمت على أرضية الملعب الأولمبي بالعاصمة.',
+      content: 'حقق المنتخب الوطني فوزاً ساحقاً على نظيره الكاميروني في نهائي كأس الأمم الأفريقية، التي أقيمت على أرضية الملعب الأولمبي بالعاصمة. وسجل النجم محمد عبد الله هدف الفوز الوحيد في الدقيقة 87، ليقود المنتخب إلى اللقب القاري الثاني في تاريخه.',
+      imageUrl: 'https://placehold.co/800x500/1A1A2E/2E7D32?text=رياضة',
+      category: 'رياضة',
+      sentiment: 0.8,
+      keywords: const ['المنتخب الوطني', 'كأس الأمم الأفريقية', 'رياضة'],
+      logs: '',
+      author: '',
+      publishDate: publishDate,
+      eventType: 'general',
+      subcategory: 'general',
+      entities: const [],
+      structuredData: const {},
+      intelligenceJson: '',
+      metaTags: const {},
+      hashtags: '',
+      youtubeVideoId: '',
+      instagramVideoId: '',
+      twitterVideoUrl: '',
+      imageId: '',
+      sourceCount: 1,
+      sources: const [],
+    ),
+    NewsModel(
+      url: 'https://api.inoov.com/yallanews/demo/3',
+      title: 'إطلاق قمر صناعي مغربي جديد لمراقبة الأرض',
+      shortTitle: 'إطلاق قمر صناعي مغربي جديد',
+      summary: 'أعلنت وكالة الفضاء المغربية عن إطلاق قمر صناعي جديد لمراقبة الأرض، سيمكنها من تعزيز قدراتها في مجال الرصد البيئي والزراعي.',
+      content: 'أعلنت وكالة الفضاء المغربية عن إطلاق قمر صناعي جديد لمراقبة الأرض، سيمكنها من تعزيز قدراتها في مجال الرصد البيئي والزراعي. وسيتم استخدام القمر الصناعي الجديد لمراقبة التغيرات المناخية والكوارث الطبيعية، بالإضافة إلى دعم القطاع الزراعي من خلال توفير بيانات دقيقة.',
+      imageUrl: 'https://placehold.co/800x500/1A1A2E/1565C0?text=تكنولوجيا',
+      category: 'تكنولوجيا',
+      sentiment: 0.5,
+      keywords: const ['وكالة الفضاء المغربية', 'قمر صناعي', 'مراقبة الأرض'],
+      logs: '',
+      author: '',
+      publishDate: publishDate,
+      eventType: 'general',
+      subcategory: 'general',
+      entities: const [],
+      structuredData: const {},
+      intelligenceJson: '',
+      metaTags: const {},
+      hashtags: '',
+      youtubeVideoId: '',
+      instagramVideoId: '',
+      twitterVideoUrl: '',
+      imageId: '',
+      sourceCount: 1,
+      sources: const [],
+    ),
+    NewsModel(
+      url: 'https://api.inoov.com/yallanews/demo/4',
+      title: 'تقرير صحفي: اكتشاف أثر إنساني جديد في الصحراء المغربية',
+      shortTitle: 'اكتشاف أثر إنساني جديد',
+      summary: 'اكتشف فريق من علماء الآثار المغاربة أثراً إنسانياً جديداً يعود إلى العصر الحجري القديم، في منطقة جنوب المملكة.',
+      content: 'اكتشف فريق من علماء الآثار المغاربة أثراً إنسانياً جديداً يعود إلى العصر الحجري القديم، في منطقة جنوب المملكة. ويمثل هذا الاكتشاف إضافة مهمة للسجل الآثارى المغربي، حيث يعكس وجود مجتمعات بشرية مستقرة في المنطقة منذ آلاف السنين.',
+      imageUrl: 'https://placehold.co/800x500/1A1A2E/6A1B9A?text=علوم',
+      category: 'علوم',
+      sentiment: 0.3,
+      keywords: const ['اكتشاف آثاري', 'الصحراء المغربية', 'علم الآثار'],
+      logs: '',
+      author: '',
+      publishDate: publishDate,
+      eventType: 'general',
+      subcategory: 'general',
+      entities: const [],
+      structuredData: const {},
+      intelligenceJson: '',
+      metaTags: const {},
+      hashtags: '',
+      youtubeVideoId: '',
+      instagramVideoId: '',
+      twitterVideoUrl: '',
+      imageId: '',
+      sourceCount: 1,
+      sources: const [],
+    ),
+    NewsModel(
+      url: 'https://api.inoov.com/yallanews/demo/5',
+      title: 'توصيات صحية جديدة للوقاية من الأمراض الموسمية',
+      shortTitle: 'توصيات صحية جديدة',
+      summary: 'أصدرت وزارة الصحة توصيات جديدة للوقاية من الأمراض الموسمية، مع encouragement المواطنين على أخذ التطعيمات المناسبة.',
+      content: 'أصدرت وزارة الصحة توصيات جديدة للوقاية من الأمراض الموسمية، مع encouragement المواطنين على أخذ التطعيمات المناسبة وتجنب الأماكن المزدحمة. وأكدت الوزارة على أهمية غسل اليدين بشكل منتظم وارتداء الأقنعة في حالة الإصابة بأعراض تنفسية.',
+      imageUrl: 'https://placehold.co/800x500/1A1A2E/C62828?text=صحة',
+      category: 'صحة',
+      sentiment: 0.1,
+      keywords: const ['وزارة الصحة', 'توصيات صحية', 'الأمراض الموسمية'],
+      logs: '',
+      author: '',
+      publishDate: publishDate,
+      eventType: 'general',
+      subcategory: 'general',
+      entities: const [],
+      structuredData: const {},
+      intelligenceJson: '',
+      metaTags: const {},
+      hashtags: '',
+      youtubeVideoId: '',
+      instagramVideoId: '',
+      twitterVideoUrl: '',
+      imageId: '',
+      sourceCount: 1,
+      sources: const [],
+    ),
+  ];
+}
 
 class HomePage extends StatefulWidget {
   final YallaEngineService engineService;
@@ -48,6 +198,7 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = true;
   bool _isSearchActive = false;
   String _selectedCategory = 'all';
+  bool _waitingForInitialCrawl = false;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   StreamSubscription<NewsModel>? _articleSubscription;
@@ -115,33 +266,45 @@ class _HomePageState extends State<HomePage> {
   Future<void> _loadData() async {
     debugPrint('[HOME] _loadData started');
     setState(() => _isLoading = true);
+    _waitingForInitialCrawl = false;
     try {
-      // Always load from API first — works on Wi-Fi AND mobile data
-      final rawList = await _loadArticles();
+      final rawList = await _loadArticles().timeout(const Duration(seconds: 20));
       debugPrint('[HOME] Loaded ${rawList.length} articles from API');
-      final trending = await ServerApiService.getTrending(limit: 10);
-      if (mounted) {
-        _rawArticles = rawList;
-        _allArticles = rawList;
-        _articles = rawList;
-        setState(() {
-          _selectedCategory = 'all';
-          _categories = CategoryService.instance.categories;
-          _trendingSearches = trending.map((t) => t.title).where((q) => q.isNotEmpty).toList();
-          _isLoading = false;
-        });
-        CategoryService.instance.updateCategoryCounts(_allArticles);
-        _applyBlendedArticles(rawList);
+
+      List<NewsModel> trending;
+      try {
+        trending = await ServerApiService.getTrending(limit: 10).timeout(const Duration(seconds: 10));
+      } catch (_) {
+        trending = const [];
       }
 
       if (!kIsWeb) {
+        final db = NewsDatabase.instance;
+        final articleCount = await db.getArticleCount();
+        final serverEmpty = rawList.isEmpty;
+        final shouldInitialCrawl = articleCount == 0 && serverEmpty;
+
+        if (shouldInitialCrawl) {
+          final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+          if (isDesktop) {
+            debugPrint('[HOME] DB empty on desktop — triggering initial crawl');
+            _waitingForInitialCrawl = true;
+          } else {
+            final onWifi = await ConnectivityService.isWifi();
+            if (onWifi) {
+              debugPrint('[HOME] DB empty on mobile/tablet + WiFi — triggering initial crawl');
+              _waitingForInitialCrawl = true;
+            } else {
+              debugPrint('[HOME] DB empty on mobile/tablet but not on WiFi — skipping initial crawl');
+            }
+          }
+        }
+
         final settings = await AppSettings.instance.getPrefs();
         final backgroundEnabled = settings.getBool('background_crawler_enabled') ?? true;
-        final onWifi = await ConnectivityService.isWifi();
 
-        if (backgroundEnabled && onWifi) {
-          // On Wi-Fi: start the background crawler to discover fresh articles
-          debugPrint('[HOME] Wi-Fi detected — starting background crawler');
+        if (backgroundEnabled) {
+          debugPrint('[HOME] Listening to background crawler stream');
           _articleSubscription?.cancel();
           _articleSubscription = BackgroundCrawlerService.instance.articleStream.listen((article) {
             if (mounted) {
@@ -154,31 +317,33 @@ class _HomePageState extends State<HomePage> {
                 }
               });
               _applyBlendedArticles(_rawArticles);
+              if (_waitingForInitialCrawl) {
+                _waitingForInitialCrawl = false;
+                if (mounted) setState(() {});
+              }
             }
           });
+        }
 
+        if (shouldInitialCrawl && _waitingForInitialCrawl) {
+          final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
           BackgroundCrawlerService.instance.startSilentCrawl(
             engineService: widget.engineService,
-            onComplete: () async {
-              await _articleSubscription?.cancel();
-              _articleSubscription = null;
-              if (mounted) {
-                final refreshed = await _loadArticles();
-                _rawArticles = refreshed;
-                setState(() {
-                  _articles = refreshed;
-                });
-                _applyBlendedArticles(refreshed);
-                CategoryService.instance.updateCategoryCounts(_allArticles);
-              }
-            },
+            requireWifi: !isDesktop,
           );
-        } else if (backgroundEnabled && !onWifi) {
-          // On mobile data: API only, no crawl
-          debugPrint('[HOME] Mobile data detected — API-only mode, no crawl');
+        }
+
+        if (serverEmpty && articleCount > 0) {
+          debugPrint('[HOME] Server empty, loading ${articleCount} articles from local DB');
+          final localArticles = await db.getAllArticles(limit: 100);
+          rawList.addAll(localArticles);
+        }
+
+        if (rawList.isEmpty) {
+          debugPrint('[HOME] No articles from server or local DB, loading demo articles');
+          rawList.addAll(_getDemoArticles());
         }
       } else {
-        // Web / Desktop: use ArabicNewsProcessor stream
         _articleSubscription?.cancel();
         _articleSubscription = ArabicNewsProcessor.instance.articleStream.listen((article) {
           if (mounted) {
@@ -194,9 +359,29 @@ class _HomePageState extends State<HomePage> {
           }
         });
       }
-    } catch (e) {
+
       if (mounted) {
-        setState(() => _isLoading = false);
+        _rawArticles = rawList;
+        _allArticles = rawList;
+        _articles = rawList;
+        debugPrint('[HOME] After load: rawList=${rawList.length}, _articles=${_articles.length}');
+        setState(() {
+          _selectedCategory = 'all';
+          _categories = CategoryService.instance.categories;
+          _trendingSearches = trending.map((t) => t.title).where((q) => q.isNotEmpty).toList();
+          _isLoading = false;
+          _waitingForInitialCrawl = false;
+        });
+        CategoryService.instance.updateCategoryCounts(_allArticles);
+        _applyBlendedArticles(rawList);
+      }
+    } catch (e) {
+      debugPrint('[HOME] _loadData failed: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _waitingForInitialCrawl = false;
+        });
       }
     }
   }
@@ -206,7 +391,7 @@ class _HomePageState extends State<HomePage> {
       debugPrint('[HOME] Loading articles from server API...');
       final locale = AppSettings.instance.locale;
       final language = locale?.languageCode == 'ar' ? 'ar' : null;
-      final serverArticles = await ServerApiService.getNews(limit: 100, language: language);
+      final serverArticles = await ServerApiService.getNews(limit: 100, language: language).timeout(const Duration(seconds: 10));
       debugPrint('[HOME] Server returned ${serverArticles.length} articles');
       return serverArticles;
     } catch (e) {
@@ -217,60 +402,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _onRefresh() async {
     try {
-      if (!kIsWeb) {
-        final settings = await AppSettings.instance.getPrefs();
-        final backgroundEnabled = settings.getBool('background_crawler_enabled') ?? true;
-        final onWifi = await ConnectivityService.isWifi();
-
-        if (backgroundEnabled && onWifi) {
-          // Wi-Fi: trigger a crawler force-refresh
-          _articleSubscription?.cancel();
-          _articleSubscription = BackgroundCrawlerService.instance.articleStream.listen((article) {
-            if (mounted) {
-              setState(() {
-                final existingIndex = _allArticles.indexWhere((a) => a.url == article.url);
-                if (existingIndex >= 0) {
-                  _allArticles[existingIndex] = article;
-                  _articles = List<NewsModel>.from(_allArticles);
-                } else {
-                  _articles = [article, ..._articles];
-                  _allArticles = [article, ..._allArticles];
-                }
-              });
-            }
-          });
-
-          BackgroundCrawlerService.instance.forceRefresh(
-            engineService: widget.engineService,
-            onComplete: () async {
-              await _articleSubscription?.cancel();
-              _articleSubscription = null;
-              if (mounted) {
-                final refreshed = await _loadArticles();
-                _rawArticles = refreshed;
-                setState(() {
-                  _articles = refreshed;
-                });
-                _applyBlendedArticles(refreshed);
-                CategoryService.instance.updateCategoryCounts(_allArticles);
-              }
-            },
-          );
-
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Crawling started in background, please wait...'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-          return;
-        }
-        // Mobile data or crawler disabled: fall through to API refresh
-      }
-
-      // API-only refresh (mobile data or web)
       final List<NewsModel> refreshed = await _loadArticles();
       if (mounted) {
         _rawArticles = refreshed;
@@ -281,7 +412,10 @@ class _HomePageState extends State<HomePage> {
         CategoryService.instance.updateCategoryCounts(_allArticles);
       }
     } catch (e) {
-      // silently fail
+      debugPrint('[HOME] _loadData failed: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -422,7 +556,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildHomeContent(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    if (_isLoading) {
+    if (_isLoading || _waitingForInitialCrawl) {
       return const ShimmerLoadingList();
     }
 
@@ -764,10 +898,18 @@ class _HomePageState extends State<HomePage> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
+          color: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF1E2A4A)
+              : Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4)),
+            BoxShadow(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.black.withOpacity(0.2)
+                  : Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
           ],
         ),
         child: Column(
@@ -969,10 +1111,10 @@ class _HomePageState extends State<HomePage> {
                         ] else ...[
                           Icon(Icons.favorite_border_rounded, size: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
                           const SizedBox(width: 4),
-                          Text(
-                            '${(article.sentiment * 1000).toInt()}',
-                            style: GoogleFonts.outfit(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                          ),
+              Text(
+                _getSentimentLabel(article.sentiment),
+                style: GoogleFonts.outfit(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(

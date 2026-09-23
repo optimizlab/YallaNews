@@ -61,6 +61,17 @@ YALLA_EXPORT void free_cluster_string(const char* str);
 // Rejects non-http(s), data URIs, blacklisted extensions, and blacklisted keywords.
 YALLA_EXPORT int is_valid_image_url(const char* url);
 
+// Validate image relevance for an article.
+// Returns a double score between 0.0 and 1.0 indicating how relevant the image is
+// to the article title, description, and content.
+// Caller must call free_string on the returned pointer.
+YALLA_EXPORT const char* validate_image_relevance(
+    const char* title,
+    const char* description,
+    const char* content,
+    const char* image_url
+);
+
 // Split article content into dot-based segments (sentences/paragraphs).
 // Returns a JSON array of strings. Caller must call free_string on the returned pointer.
 YALLA_EXPORT const char* split_paragraphs_by_dots(const char* content);

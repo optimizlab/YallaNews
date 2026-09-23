@@ -12,6 +12,7 @@ import 'tiny_llm_service.dart';
 import 'news_uri_parser.dart';
 import 'image_validator_service.dart';
 import 'engine_ffi.dart';
+import 'arabic_normalizer.dart';
 
 enum EngineMode {
   ffi, // Native Direct C++ DLL via Dart FFI
@@ -133,6 +134,66 @@ class YallaEngineService extends ChangeNotifier {
     return text;
   }
 
+  static String _stripHtmlTags(String text) {
+    if (text.isEmpty) return text;
+    final withoutTags = text.replaceAll(RegExp(r'<[^>]*>'), '');
+    return _decodeHtml(withoutTags);
+  }
+
+  static final _positiveWords = {
+    'ممتاز', 'رائع', 'جيد', 'إيجابي', 'سعيد', 'فرح', 'حب', 'نجاح', 'ناجح',
+    'انتصار', 'فوز', 'تطور', 'تقدم', 'إنجاز', 'أمل', 'سلام', 'أمان', 'استقرار',
+    'احتفال', 'تكريم', 'جائزة', 'افتتاح', 'إطلاق', 'تعاون', 'شراكة', 'شراكات',
+    'ازدهار', 'نمو', 'خير', 'بركة', 'مساعدة', 'دعم', 'توافق', 'اتفاق', 'اتفاقية',
+    'حل', 'إصلاح', 'تحسين', 'ارتفاع', 'زيادة', 'قوي', 'قوة', 'نهضة', 'شكر',
+    'ترحيب', 'إشادة', 'تتويج', 'تميز', 'تفوق', 'أفضل', 'مكسب', 'ارتقاء', 'بناء',
+    'مذهل', 'جميل', 'مفيد', 'مثالي', 'تحدي', 'إبداعي', 'مميز', 'فريد',
+    'سليم', 'صحي', 'آمن', 'مستقر', 'مطمئن', 'مشرق', 'واعد', 'منشود', 'مرغوب',
+    'محبوب', 'مقبول', 'سهل', 'بسيط', 'ميسر', 'عظيم', 'كريم', 'مهم',
+    'good', 'great', 'excellent', 'positive', 'happy', 'joy', 'love', 'like',
+    'amazing', 'wonderful', 'best', 'better', 'fantastic', 'terrific',
+    'outstanding', 'superb', 'nice', 'fine', 'perfect', 'brilliant',
+    'awesome', 'cool', 'sweet', 'lovely', 'success', 'win', 'victory',
+    'achieve', 'progress', 'improve', 'growth', 'benefit', 'hope', 'peace',
+    'safe', 'secure', 'celebrate', 'honor', 'award', 'launch', 'new',
+  };
+
+  static final _negativeWords = {
+    'سيئ', 'فظيع', 'سلبي', 'حزين', 'كره', 'كارثة', 'فشل', 'فقر', 'مرض', 'أمراض',
+    'خطأ', 'مشكلة', 'أزمة', 'أزمات', 'خراب', 'ضرر', 'أضرار', 'حادث', 'حوادث',
+    'قتل', 'موت', 'وفاة', 'وفيات', 'مقتل', 'اغتيال', 'حرب', 'حروب', 'صراع',
+    'هجوم', 'اعتداء', 'انهيار', 'خسارة', 'خسائر', 'خطر', 'مخاطر', 'تهديد',
+    'عنف', 'جريمة', 'جرائم', 'فساد', 'فضيحة', 'فضائح', 'احتجاج', 'احتجاجات',
+    'توتر', 'خوف', 'قلق', 'أذى', 'اعتقال', 'إدانة', 'إصابة', 'إصابات',
+    'ضحية', 'ضحايا', 'إرهاب', 'إرهابي', 'تدمير', 'نزيف', 'معاناة', 'شكوى',
+    'سيء', 'مؤسف', 'مخيف', 'خطير', 'اصابة', 'مصاب', 'دمار', 'تلوث',
+    'وباء', 'كوارث', 'غش', 'تجاوز', 'انتهاك', 'قمع', 'ظلم', 'تعذيب',
+    'مخيب', 'محبط', 'مرفوض', 'صعب', 'مستحيل', 'مشاكل',
+    'bad', 'terrible', 'awful', 'negative', 'sad', 'unhappy', 'hate',
+    'horrible', 'worst', 'worse', 'disaster', 'fail', 'failure', 'poor',
+    'sick', 'ill', 'wrong', 'error', 'problem', 'issue', 'broken', 'damage',
+    'crash', 'kill', 'die', 'dead', 'war', 'conflict', 'attack', 'bomb',
+    'crisis', 'collapse', 'loss', 'danger', 'risk', 'threat', 'violence',
+    'crime', 'corruption', 'scandal', 'protest', 'tension', 'fear',
+  };
+
+  static double _calculateSentiment(String text) {
+    if (text.isEmpty) return 0.0;
+    final normalizedText = ArabicTextNormalizer.normalize(text).toLowerCase();
+    int positiveCount = 0;
+    int negativeCount = 0;
+    final words = normalizedText.split(RegExp(r'\s+'));
+    for (final word in words) {
+      final w = word.replaceAll(RegExp(r'[^\w\u0600-\u06FF]'), '');
+      if (w.isEmpty) continue;
+      if (_positiveWords.contains(w)) positiveCount++;
+      if (_negativeWords.contains(w)) negativeCount++;
+    }
+    final total = positiveCount + negativeCount;
+    if (total == 0) return 0.0;
+    return ((positiveCount - negativeCount) / total).clamp(-1.0, 1.0);
+  }
+
   // ─── Title Cleaner ────────────────────────────────────────────────────────────
   static String cleanTitle(String title, String url) {
     if (title.isEmpty) return title;
@@ -201,7 +262,7 @@ class YallaEngineService extends ChangeNotifier {
   }
 
   // ─── Keyword Extractor ────────────────────────────────────────────────────────
-  static List<String> _extractKeywords(
+  static List<String> extractKeywords(
     String title,
     String summary,
     String content,
@@ -529,17 +590,27 @@ class YallaEngineService extends ChangeNotifier {
     return images;
   }
 
-  /// Injects image HTML tags at regular intervals between content paragraphs.
+  /// Injects image HTML tags into content based on paragraph relevance.
   static String _injectImagesIntoContent(
     String content,
-    List<String> imageUrls,
-  ) {
+    List<String> imageUrls, {
+    String? title,
+    String? description,
+    List<String>? metaKeywords,
+  }) {
     if (imageUrls.isEmpty || content.isEmpty) return content;
 
     const imgStyle =
         'width:100%;max-height:380px;object-fit:cover;border-radius:12px;margin:16px 0;display:block;';
 
-    final segments = _splitContentIntoSegments(content);
+    final segments = _splitContentIntoSegments(
+      content,
+      title: title,
+      description: description,
+      metaKeywords: metaKeywords,
+    );
+
+    if (segments.isEmpty) return content;
 
     if (segments.length < 2) {
       final buf = StringBuffer(content);
@@ -549,47 +620,202 @@ class YallaEngineService extends ChangeNotifier {
       return buf.toString();
     }
 
-    final buf = StringBuffer();
+    final usedImages = <String>{};
     int imgIdx = 0;
+
+    final scoredSegments = <(int index, double bestScore, String segment, int bestImgIdx)>[];
+
+    for (int i = 0; i < segments.length; i++) {
+      final segment = segments[i];
+      var bestScore = 0.0;
+      int bestIdx = -1;
+      for (int j = 0; j < imageUrls.length; j++) {
+        final url = imageUrls[j];
+        if (usedImages.contains(url)) continue;
+        final urlLower = url.toLowerCase();
+        final score = _scoreImageForSegment(urlLower, segment);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = j;
+        }
+      }
+      if (bestIdx >= 0) {
+        scoredSegments.add((i, bestScore, segment, bestIdx));
+        usedImages.add(imageUrls[bestIdx]);
+        imgIdx = bestIdx;
+      }
+    }
+
+    scoredSegments.sort((a, b) => b.$2.compareTo(a.$2));
+
+    final insertCount = imageUrls.length <= segments.length
+        ? imageUrls.length
+        : segments.length;
+
+    final selectedInsert = <(int index, double score, String segment, int imgIdx)>[];
+    for (int i = 0; i < insertCount; i++) {
+      if (i < scoredSegments.length && scoredSegments[i].$2 >= 1.5) {
+        selectedInsert.add(scoredSegments[i]);
+      }
+    }
+
+    selectedInsert.sort((a, b) => a.$1.compareTo(b.$1));
+
+    final buf = StringBuffer();
+    int usedIdx = 0;
     for (int i = 0; i < segments.length; i++) {
       buf.write(segments[i]);
-      if ((i + 1) % 2 == 0 && imgIdx < imageUrls.length) {
-        buf.write('<img src="${imageUrls[imgIdx++]}" style="$imgStyle" />');
+      (int index, double score, String segment, int imgIdx)? matching;
+      for (final item in selectedInsert) {
+        if (item.$1 == i) {
+          matching = item;
+          break;
+        }
+      }
+      if (matching != null && usedIdx < insertCount) {
+        final image = imageUrls[usedIdx++];
+        buf.write('\n\n<img src="$image" style="$imgStyle" />');
       }
       if (i < segments.length - 1) {
         buf.write('\n\n');
       }
     }
-    while (imgIdx < imageUrls.length) {
-      buf.write('<img src="${imageUrls[imgIdx++]}" style="$imgStyle" />\n\n');
+
+    for (; usedIdx < imageUrls.length; usedIdx++) {
+      buf.write('\n\n<img src="${imageUrls[usedIdx]}" style="$imgStyle" />');
     }
+
     return buf.toString().trimRight();
   }
 
-  static List<String> _splitContentIntoSegments(String content) {
-    if (content.isEmpty) return const [];
-    
-    final segments = content
-        .split(RegExp(r'(?<=[.!?؟!])\s+'))
-        .map((s) => s.trim())
-        .where((s) => s.isNotEmpty && s.length >= 5)
-        .toList();
-    
-    if (segments.length >= 2) {
-      return segments;
+  static double _scoreImageForSegment(String imageUrl, String segment) {
+    final urlLower = imageUrl.toLowerCase();
+    double score = 0.0;
+
+    final segmentTokens = tokenizeSegment(segment);
+
+    if (segmentTokens.isEmpty) return 0.0;
+
+    for (final token in segmentTokens) {
+      final urlTokens = tokenizeSegment(urlLower);
+      for (final urlToken in urlTokens) {
+        if (token == urlToken || token.contains(urlToken) || urlToken.contains(token)) {
+          score += 1.0;
+        }
+      }
     }
-    
-    final paragraphs = content
+
+    if (urlLower.contains('https://') || urlLower.contains('http://')) {
+      score += 0.1;
+    }
+
+    final imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+    final hasValidExtension = imageExtensions.any((ext) => urlLower.contains(ext));
+    if (hasValidExtension) {
+      score += 0.2;
+    }
+
+    final invalidPatterns = ['banner', 'logo', 'icon', 'avatar', 'profile', 'placeholder', 'sprite', '1x1', 'pixel', 'transparent', 'blank'];
+    final hasInvalidPattern = invalidPatterns.any((pattern) => urlLower.contains(pattern));
+    if (hasInvalidPattern) {
+      score -= 2.0;
+    }
+
+    final contentWords = segment.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+    for (final word in contentWords) {
+      if (urlLower.contains(word)) {
+        score += 0.5;
+      }
+    }
+
+    return score;
+  }
+
+  static List<String> tokenizeSegment(String text) {
+    final cleaned = text
+        .replaceAll(RegExp(r'[^\w\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .toLowerCase();
+    final words = cleaned.split(' ').where((w) => w.length > 2).toList();
+    return words;
+  }
+
+  static List<String> _splitContentIntoSegments(
+    String content, {
+    String? title,
+    String? description,
+    List<String>? metaKeywords,
+  }) {
+    if (content.isEmpty) return const [];
+
+    final allKeywords = <String>[];
+    if (title != null && title.isNotEmpty) {
+      allKeywords.addAll(tokenizeSegment(title));
+    }
+    if (description != null && description.isNotEmpty) {
+      allKeywords.addAll(tokenizeSegment(description));
+    }
+    if (metaKeywords != null) {
+      for (final kw in metaKeywords) {
+        if (kw.isNotEmpty) allKeywords.addAll(tokenizeSegment(kw));
+      }
+    }
+
+    final keywordSet = allKeywords.toSet();
+
+    final rawSegments = content
         .split(RegExp(r'\n\s*\n|\n{2,}'))
         .map((s) => s.trim())
-        .where((s) => s.isNotEmpty && s.length >= 3)
+        .where((s) => s.isNotEmpty && s.length >= 20)
         .toList();
-    
-    if (paragraphs.length >= 2) {
-      return paragraphs;
+
+    if (rawSegments.isEmpty) {
+      final sentences = content
+          .split(RegExp(r'(?<=[.!?؟!])\s+'))
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty && s.length >= 15)
+          .toList();
+      if (sentences.length >= 2) return sentences;
+      return [content.trim()];
     }
-    
-    return [content.trim()];
+
+    if (rawSegments.length == 1) {
+      final text = rawSegments.first;
+      final sentences = text
+          .split(RegExp(r'(?<=[.!?؟!])\s+'))
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty && s.length >= 15)
+          .toList();
+      if (sentences.length >= 2) return sentences;
+      return rawSegments;
+    }
+
+    if (keywordSet.isNotEmpty) {
+      final scored = rawSegments.map((segment) {
+        final tokens = tokenizeSegment(segment);
+        if (tokens.isEmpty) return (segment, 0.0);
+        final matches = tokens.where((t) => keywordSet.contains(t)).length;
+        return (segment, matches / tokens.length);
+      }).toList();
+
+      scored.sort((a, b) => b.$2.compareTo(a.$2));
+
+      final relevantSegments = scored
+          .where((item) => item.$2 > 0.0)
+          .map((item) => item.$1)
+          .toList();
+
+      if (relevantSegments.length >= 2) {
+        return relevantSegments;
+      }
+    }
+
+    if (rawSegments.length > 6) {
+      return rawSegments.take(6).toList();
+    }
+
+    return rawSegments;
   }
 
   // ─── Image Extraction & Enrichment ──────────────────────────────────────────
@@ -714,7 +940,6 @@ class YallaEngineService extends ChangeNotifier {
 
     // If no images found, return early
     if (extractedImages.isEmpty) {
-      // Fall back to photo engine
       final photoResult = await _runPhotoEngine(
         title: title,
         imageUrl: '',
@@ -725,7 +950,7 @@ class YallaEngineService extends ChangeNotifier {
     }
 
     // Score each image
-    final keywords = _extractKeywords(title, content, '');
+    final keywords = extractKeywords(title, content, category);
     final titleWords = title
         .toLowerCase()
         .replaceAll(RegExp(r'[^\w\s]'), ' ')
@@ -741,33 +966,38 @@ class YallaEngineService extends ChangeNotifier {
       final titleText = imageTitles[i].toLowerCase();
       final type = imageTypes[i];
 
-      // Score based on type
+      // Reject obviously non-content images
+      if (_isRejectedImage(url, alt, titleText)) {
+        scores.add(-999.0);
+        continue;
+      }
+
+      // og/twitter/meta get a small base bonus, but still need content relevance
       if (type == 'og' || type == 'twitter' || type == 'meta') {
-        // Base score for social/meta images
-        score += 1.0;
+        score += 0.5;
       }
 
-      // Score based on URL containing keywords
+      // Strong signal: alt/title overlap with article title
       for (final word in titleWords) {
-        if (url.contains(word)) {
-          score += 1.0;
-        }
+        if (word.length < 3) continue;
+        if (url.contains(word)) score += 1.5;
+        if (alt.contains(word)) score += 2.5;
+        if (titleText.contains(word)) score += 1.5;
       }
 
-      // For img tags, also score alt and title
-      if (type == 'img') {
-        for (final word in titleWords) {
-          if (alt.contains(word)) {
-            score += 2.0; // alt is more important
-          }
-          if (titleText.contains(word)) {
-            score += 1.0;
-          }
-        }
-        if (alt.isNotEmpty) {
-          score += 0.5; // bonus for having alt text
-        }
+      // Keyword overlap with article body
+      for (final kw in keywords) {
+        final kwLower = kw.toLowerCase();
+        if (kwLower.length < 3) continue;
+        if (url.contains(kwLower)) score += 1.0;
+        if (alt.contains(kwLower)) score += 1.5;
+        if (titleText.contains(kwLower)) score += 1.0;
       }
+
+      // Bonus for real image file extensions
+      final imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+      final hasValidExtension = imageExtensions.any((ext) => url.contains(ext));
+      if (hasValidExtension) score += 0.3;
 
       scores.add(score);
     }
@@ -776,21 +1006,41 @@ class YallaEngineService extends ChangeNotifier {
     final indices = List.generate(extractedImages.length, (i) => i);
     indices.sort((a, b) => scores[b].compareTo(scores[a]));
 
-    // Determine if we have a good enough image (score >= 1.0)
-    final hasGoodImage = scores.isNotEmpty && scores[indices.first] >= 1.0;
+    // TinyLLM-based relevance validation: reject images that are clearly off-topic.
+    // Only validate the top candidates to avoid excessive async work.
+    final validatedIndices = <int>[];
+    for (final idx in indices) {
+      if (scores[idx] < 0.0) continue; // already rejected by regex rules
+      final isValid = await _validateImageWithTinyLlm(
+        title: title,
+        content: content,
+        description: content.length > 200 ? content.substring(0, 200) : null,
+        imageUrl: extractedImages[idx],
+      );
+      if (isValid) {
+        validatedIndices.add(idx);
+      } else {
+        addLog('[TinyLLM] Filtered out image: ${extractedImages[idx]}');
+      }
+    }
+
+    // Best image must have meaningful relevance
+    final bestIndex = validatedIndices.isNotEmpty ? validatedIndices.first : -1;
+    final bestScore = bestIndex >= 0 ? scores[bestIndex] : 0.0;
+    final hasGoodImage = bestIndex >= 0 && bestScore >= 3.0;
 
     String finalImageUrl;
     List<String> additionalImages = [];
 
     if (hasGoodImage) {
-      // Use the highest scoring image as the main image
-      finalImageUrl = extractedImages[indices.first];
-      // Take up to 3 additional images (next highest scoring)
-      for (int i = 1; i < indices.length && i <= 3; i++) {
-        additionalImages.add(extractedImages[indices[i]]);
+      finalImageUrl = extractedImages[bestIndex];
+      for (int i = 1; i < validatedIndices.length && i <= 1; i++) {
+        final idx = validatedIndices[i];
+        if (scores[idx] >= 2.0) {
+          additionalImages.add(extractedImages[idx]);
+        }
       }
     } else {
-      // No good image found, fall back to photo engine for main image
       final photoResult = await _runPhotoEngine(
         title: title,
         imageUrl: '',
@@ -798,16 +1048,52 @@ class YallaEngineService extends ChangeNotifier {
         category: category,
       );
       finalImageUrl = photoResult['imageUrl']!;
-      // The photo engine already returns content with images injected, so we return early
       return photoResult;
     }
 
     // Inject additional images into content
     if (additionalImages.isNotEmpty) {
-      content = _injectImagesIntoContent(content, additionalImages);
+      content = _injectImagesIntoContent(
+        content,
+        additionalImages,
+        title: title,
+        description: content.length > 200 ? content.substring(0, 200) : null,
+        metaKeywords: keywords,
+      );
     }
 
     return {'imageUrl': finalImageUrl, 'content': content};
+  }
+
+  static bool _isRejectedImage(String url, String alt, String titleText) {
+    final text = '$url $alt $titleText'.toLowerCase();
+
+    final rejectPatterns = [
+      'logo', 'banner', 'icon', 'avatar', 'profile', 'placeholder', 'sprite',
+      '1x1', 'pixel', 'transparent', 'blank', 'spinner', 'loading', 'hamburger',
+      'menu', 'nav', 'header', 'footer', 'sidebar', 'ad-', 'ads-', 'advert',
+      'facebook', 'twitter', 'instagram', 'youtube', 'tiktok', 'social',
+      'share', 'rss', 'feed', 'print', 'email', 'mail', 'phone', 'contact',
+      'radio', 'podcast', 'audio', 'video', 'play', 'pause', 'stop',
+      'search', 'filter', 'sort', 'arrow', 'chevron', 'caret', 'triangle',
+      'close', 'cancel', 'delete', 'remove', 'add', 'plus', 'minus',
+      'check', 'radio', 'checkbox', 'toggle', 'switch', 'slider',
+      'calendar', 'clock', 'time', 'date', 'location', 'map', 'pin',
+      'weather', 'temperature', 'thermometer', 'humidity', 'wind',
+      'personne', 'arrete', 'justice', 'prison', 'salle', 'tribunal',
+      'barlamane', 'radio', 'hespress', 'medi1', '2m', 'snrt',
+    ];
+
+    for (final pattern in rejectPatterns) {
+      if (text.contains(pattern)) return true;
+    }
+
+    // Reject images with suspiciously short filenames or generic names
+    final filename = url.split('/').last;
+    if (filename.length < 5) return true;
+    if (filename.contains('?')) return true;
+
+    return false;
   }
 
 // Helper to resolve relative image URLs to absolute URLs.
@@ -878,13 +1164,7 @@ class YallaEngineService extends ChangeNotifier {
   
   /// Helper method to try loading FFI DLL
   Future<bool> _tryLoadFFI() async {
-    try {
-      // This would typically involve calling YallaFFIService.loadLibrary()
-      // For now, return false to simulate FFI not available
-      return false;
-    } catch (_) {
-      return false;
-    }
+    return hasNativeEngine;
   }
   
   /// Fallback photo engine for when no suitable images are found
@@ -909,12 +1189,51 @@ class YallaEngineService extends ChangeNotifier {
 
     String finalContent = content;
     if (paragraphImages.isNotEmpty && finalContent.isNotEmpty) {
-      finalContent = _injectImagesIntoContent(finalContent, paragraphImages);
+      finalContent = _injectImagesIntoContent(
+        finalContent,
+        paragraphImages,
+        title: title,
+        description: content.length > 200 ? content.substring(0, 200) : null,
+        metaKeywords: extractKeywords(title, content, category),
+      );
       addLog('[PHOTO ENGINE] Injected ${paragraphImages.length} paragraph image(s).');
     }
 
     addLog('[PHOTO ENGINE] Complete.');
     return {'imageUrl': mainImage, 'content': finalContent};
+  }
+
+  Future<bool> _validateImageWithTinyLlm({
+    required String title,
+    required String content,
+    String? description,
+    required String imageUrl,
+  }) async {
+    try {
+      final result = await compute<Map<String, dynamic>, Map<String, dynamic>>(
+        (input) {
+          try {
+            return validateImageRelevance(
+              title: input['title'] as String,
+              content: input['content'] as String,
+              description: input['description'] as String? ?? '',
+              imageUrl: input['imageUrl'] as String,
+            );
+          } catch (e) {
+            return {'relevant': 0, 'score': 0.0, 'reasons': ['exception']};
+          }
+        },
+        {'title': title, 'content': content, 'description': description ?? '', 'imageUrl': imageUrl},
+      );
+      final relevant = result['relevant'] == 1;
+      final score = (result['score'] as num?)?.toDouble() ?? 0.0;
+      if (!relevant) {
+        addLog('[TinyLLM] Rejected image: $imageUrl (score=$score, reasons=${result['reasons']})');
+      }
+      return relevant;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Processes a news URL and returns a news model
@@ -1053,12 +1372,13 @@ final descMatch = RegExp(
       extractedContent = extractedContent.replaceAll(RegExp(r'<[^>]+>'), ' ');
       extractedContent = extractedContent.replaceAll(RegExp(r'[ \t]+\n'), '\n');
       extractedContent = extractedContent.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+      extractedContent = extractedContent.replaceAll(RegExp(r'\s*#\w+(?:\s*#\w+)*\s*'), ' ');
       extractedContent = extractedContent.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
       
-      // Decode HTML entities
+      // Decode HTML entities and strip HTML tags for summary
       final decodedTitle = _decodeHtml(title);
       final cleanedTitle = cleanTitle(decodedTitle, url);
-      final decodedSummary = _decodeHtml(effectiveSummary);
+      final decodedSummary = _stripHtmlTags(_decodeHtml(effectiveSummary));
       var decodedContent = _decodeHtml(extractedContent);
       
       // If still empty, use a fallback
@@ -1093,6 +1413,9 @@ final descMatch = RegExp(
         }
       }
       
+      // Local Ollama rewrite: removed to preserve real article content
+      // The app now uses extracted real content only, no LLM-generated news text
+      
       // Extract and enhance images
       final imageResult = await _extractImagesAndEnrichContent(
         html: html,
@@ -1114,7 +1437,7 @@ final descMatch = RegExp(
       // Optimized sentiment analysis
       final optimizedSentiment = hasNativeEngine
           ? optimizeSentiment('$cleanedTitle $tinyLlmCleanedContent')
-          : 0.0;
+          : _calculateSentiment('$cleanedTitle $decodedSummary');
       
       // Build structured data from story elements
       final structuredData = <String, dynamic>{
@@ -1143,17 +1466,30 @@ final descMatch = RegExp(
         eventType = 'event_detected';
       }
       
-        // Create news model
-        final newsModel = NewsModel(
-          url: url,
-          title: cleanedTitle,
-          shortTitle: '',
-          summary: decodedSummary,
+         // Create news model
+         String generatedShortTitle = cleanedTitle;
+         if (cleanedTitle.length > 60) {
+           final sentences = cleanedTitle.split(RegExp(r'[.؟!]'));
+           if (sentences.length > 1 && sentences.first.trim().length >= 20) {
+             generatedShortTitle = sentences.first.trim();
+           } else {
+             final words = cleanedTitle.split(RegExp(r'\s+'));
+             generatedShortTitle = words.take(12).join(' ');
+             if (cleanedTitle.length > generatedShortTitle.length) {
+               generatedShortTitle += '...';
+             }
+           }
+         }
+         final newsModel = NewsModel(
+           url: url,
+           title: cleanedTitle,
+           shortTitle: generatedShortTitle,
+           summary: decodedSummary,
           content: tinyLlmCleanedContent,
           imageUrl: imageUrl,
           category: 'general', // Would be determined from content analysis
           sentiment: optimizedSentiment,
-          keywords: _extractKeywords(cleanedTitle, decodedSummary, tinyLlmCleanedContent),
+          keywords: extractKeywords(cleanedTitle, decodedSummary, tinyLlmCleanedContent),
           logs: '', // Could be populated with processing logs
           author: '', // Could be extracted from meta tags
           publishDate: DateTime.now().toIso8601String(),

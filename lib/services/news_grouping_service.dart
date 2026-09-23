@@ -1,7 +1,20 @@
+import 'package:flutter/foundation.dart';
 import '../models/news_model.dart';
 import 'arabic_normalizer.dart';
 import 'semantic_cluster.dart';
 import 'embedding_service.dart';
+import 'ollama_service.dart';
+
+class _GroupBySubjectInput {
+  final List<NewsModel> articles;
+  final double titleSimilarityThreshold;
+  final double semanticSimilarityThreshold;
+  _GroupBySubjectInput(this.articles, this.titleSimilarityThreshold, this.semanticSimilarityThreshold);
+}
+
+List<SubjectCluster> _groupBySubjectIsolate(_GroupBySubjectInput input) {
+  return NewsGroupingService._groupBySubjectSync(input.articles, input.titleSimilarityThreshold, input.semanticSimilarityThreshold);
+}
 
 /// Represents a cluster of news articles covering the same subject or event
 class SubjectCluster {
@@ -47,19 +60,53 @@ class NewsGroupingService {
     return articles.where(hasValidTitle).toList();
   }
 
+  static List<SubjectCluster> _groupBySubjectSync(List<NewsModel> articles, double titleThreshold, double semanticThreshold) {
+    if (articles.isEmpty) return const [];
+    final valid = articles.where((a) => a.title.trim().split(RegExp(r'\s+')).length >= _minTitleWords).toList();
+    final clusters = <List<NewsModel>>[];
+    final assigned = <NewsModel>{};
+    for (final article in valid) {
+      if (assigned.contains(article)) continue;
+      final cluster = <NewsModel>[article];
+      assigned.add(article);
+      final normalizedTitle = _normalize(article.title);
+      for (final other in valid) {
+        if (assigned.contains(other)) continue;
+        if (!_isSameCategory(article, other)) continue;
+        final otherNormalized = _normalize(other.title);
+        final titleSim = _computeSimilarity(normalizedTitle, otherNormalized);
+        final semanticSim = SemanticCluster.calculateSimilarity(article, other);
+        if (titleSim >= titleThreshold || semanticSim >= semanticThreshold) {
+          cluster.add(other);
+          assigned.add(other);
+        }
+      }
+      clusters.add(cluster);
+    }
+    clusters.sort((a, b) => b.length.compareTo(a.length));
+    return clusters.map((cList) {
+      cList.sort((a, b) => _sourcePriority(b).compareTo(_sourcePriority(a)));
+      final subjectTitle = _extractSubjectTitle(cList);
+      final category = cList.first.category;
+      return SubjectCluster(subjectTitle: subjectTitle, category: category, articles: cList);
+    }).toList();
+  }
+
   /// Groups articles into rich SubjectClusters using Ollama dense embeddings.
   /// Falls back to TF-IDF + title overlap if Ollama is not reachable.
   Future<List<SubjectCluster>> groupBySubjectAsync(List<NewsModel> articles) async {
     if (articles.isEmpty) return const [];
     final valid = filterValidTitles(articles);
 
-    // Try to get Ollama embeddings for all articles
+    final ollamaAvailable = await OllamaService.instance.isOllamaAvailable();
+    if (!ollamaAvailable) {
+      return compute(_groupBySubjectIsolate, _GroupBySubjectInput(valid, _titleSimilarityThreshold, _semanticSimilarityThreshold));
+    }
+
     final embeddings = <String, List<double>?>{};
-    bool ollamaAvailable = false;
     for (final a in valid) {
       final vec = await EmbeddingService.instance.getDenseEmbedding(a);
       embeddings[a.url] = vec;
-      if (vec != null) ollamaAvailable = true;
     }
 
     final clusters = <List<NewsModel>>[];
@@ -79,18 +126,15 @@ class NewsGroupingService {
         bool isMatch = false;
 
         if (ollamaAvailable && vecA != null) {
-          // Primary signal: Ollama dense embedding cosine similarity (strict)
           final vecB = embeddings[other.url];
           if (vecB != null) {
             final sim = EmbeddingService.denseCosineSimilarity(vecA, vecB);
             isMatch = sim >= _ollamaEmbeddingThreshold;
           } else {
-            // One has Ollama vector, other doesn't — fall back to TF-IDF
             final semanticSim = SemanticCluster.calculateSimilarity(article, other);
             isMatch = semanticSim >= _semanticSimilarityThreshold;
           }
         } else {
-          // Ollama not available — use TF-IDF + title overlap fallback
           final otherNormalized = _normalize(other.title);
           final titleSim = _computeSimilarity(normalizedTitle, otherNormalized);
           final semanticSim = SemanticCluster.calculateSimilarity(article, other);
@@ -157,7 +201,7 @@ class NewsGroupingService {
   }
 
   /// Extracts the most representative topic/subject name for a cluster
-  String _extractSubjectTitle(List<NewsModel> cluster) {
+  static String _extractSubjectTitle(List<NewsModel> cluster) {
     if (cluster.isEmpty) return '';
     if (cluster.length == 1) return cluster.first.title;
 
@@ -227,7 +271,7 @@ class NewsGroupingService {
     return result;
   }
 
-  int _sourcePriority(NewsModel article) {
+  static int _sourcePriority(NewsModel article) {
     final url = article.url.toLowerCase();
     if (url.contains('hespress.com')) return 10;
     if (url.contains('le360.ma')) return 9;
@@ -242,7 +286,7 @@ class NewsGroupingService {
     return 0;
   }
 
-  bool _isSameCategory(NewsModel a, NewsModel b) {
+  static bool _isSameCategory(NewsModel a, NewsModel b) {
     if (a.category == b.category) return true;
 
     final aCat = a.category.toLowerCase();
@@ -266,7 +310,7 @@ class NewsGroupingService {
     return false;
   }
 
-  String _normalize(String text) {
+  static String _normalize(String text) {
     var normalized = ArabicTextNormalizer.normalize(text);
     normalized = normalized.toLowerCase();
     normalized = normalized.replaceAll(RegExp(r'[^\w\s\u0600-\u06FF]'), ' ');
@@ -274,7 +318,7 @@ class NewsGroupingService {
     return normalized;
   }
 
-  double _computeSimilarity(String a, String b) {
+  static double _computeSimilarity(String a, String b) {
     final wordsA = a.split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
     final wordsB = b.split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
 

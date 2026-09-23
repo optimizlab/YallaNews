@@ -67,6 +67,66 @@ String _decodeHtmlIsolate(String text) {
   return text;
 }
 
+String _stripHtmlTags(String text) {
+  if (text.isEmpty) return text;
+  final withoutTags = text.replaceAll(RegExp(r'<[^>]*>'), '');
+  return _decodeHtmlIsolate(withoutTags);
+}
+
+final _positiveWords = {
+  'ممتاز', 'رائع', 'جيد', 'إيجابي', 'سعيد', 'فرح', 'حب', 'نجاح', 'ناجح',
+  'انتصار', 'فوز', 'تطور', 'تقدم', 'إنجاز', 'أمل', 'سلام', 'أمان', 'استقرار',
+  'احتفال', 'تكريم', 'جائزة', 'افتتاح', 'إطلاق', 'تعاون', 'شراكة', 'شراكات',
+  'ازدهار', 'نمو', 'خير', 'بركة', 'مساعدة', 'دعم', 'توافق', 'اتفاق', 'اتفاقية',
+  'حل', 'إصلاح', 'تحسين', 'ارتفاع', 'زيادة', 'قوي', 'قوة', 'نهضة', 'شكر',
+  'ترحيب', 'إشادة', 'تتويج', 'تميز', 'تفوق', 'أفضل', 'مكسب', 'ارتقاء', 'بناء',
+  'مذهل', 'جميل', 'مفيد', 'مثالي', 'تحدي', 'إبداعي', 'مميز', 'فريد',
+  'سليم', 'صحي', 'آمن', 'مستقر', 'مطمئن', 'مشرق', 'واعد', 'منشود', 'مرغوب',
+  'محبوب', 'مقبول', 'سهل', 'بسيط', 'ميسر', 'عظيم', 'كريم', 'مهم',
+  'good', 'great', 'excellent', 'positive', 'happy', 'joy', 'love', 'like',
+  'amazing', 'wonderful', 'best', 'better', 'fantastic', 'terrific',
+  'outstanding', 'superb', 'nice', 'fine', 'perfect', 'brilliant',
+  'awesome', 'cool', 'sweet', 'lovely', 'success', 'win', 'victory',
+  'achieve', 'progress', 'improve', 'growth', 'benefit', 'hope', 'peace',
+  'safe', 'secure', 'celebrate', 'honor', 'award', 'launch', 'new',
+};
+
+final _negativeWords = {
+  'سيئ', 'فظيع', 'سلبي', 'حزين', 'كره', 'كارثة', 'فشل', 'فقر', 'مرض', 'أمراض',
+  'خطأ', 'مشكلة', 'أزمة', 'أزمات', 'خراب', 'ضرر', 'أضرار', 'حادث', 'حوادث',
+  'قتل', 'موت', 'وفاة', 'وفيات', 'مقتل', 'اغتيال', 'حرب', 'حروب', 'صراع',
+  'هجوم', 'اعتداء', 'انهيار', 'خسارة', 'خسائر', 'خطر', 'مخاطر', 'تهديد',
+  'عنف', 'جريمة', 'جرائم', 'فساد', 'فضيحة', 'فضائح', 'احتجاج', 'احتجاجات',
+  'توتر', 'خوف', 'قلق', 'أذى', 'اعتقال', 'إدانة', 'إصابة', 'إصابات',
+  'ضحية', 'ضحايا', 'إرهاب', 'إرهابي', 'تدمير', 'نزيف', 'معاناة', 'شكوى',
+  'سيء', 'مؤسف', 'مخيف', 'خطير', 'اصابة', 'مصاب', 'دمار', 'تلوث',
+  'وباء', 'كوارث', 'غش', 'تجاوز', 'انتهاك', 'قمع', 'ظلم', 'تعذيب',
+  'مخيب', 'محبط', 'مرفوض', 'صعب', 'مستحيل', 'مشاكل',
+  'bad', 'terrible', 'awful', 'negative', 'sad', 'unhappy', 'hate',
+  'horrible', 'worst', 'worse', 'disaster', 'fail', 'failure', 'poor',
+  'sick', 'ill', 'wrong', 'error', 'problem', 'issue', 'broken', 'damage',
+  'crash', 'kill', 'die', 'dead', 'war', 'conflict', 'attack', 'bomb',
+  'crisis', 'collapse', 'loss', 'danger', 'risk', 'threat', 'violence',
+  'crime', 'corruption', 'scandal', 'protest', 'tension', 'fear',
+};
+
+double _calculateSentiment(String text) {
+  if (text.isEmpty) return 0.0;
+  final normalizedText = ArabicTextNormalizer.normalize(text).toLowerCase();
+  int positiveCount = 0;
+  int negativeCount = 0;
+  final words = normalizedText.split(RegExp(r'\s+'));
+  for (final word in words) {
+    final w = word.replaceAll(RegExp(r'[^\w\u0600-\u06FF]'), '');
+    if (w.isEmpty) continue;
+    if (_positiveWords.contains(w)) positiveCount++;
+    if (_negativeWords.contains(w)) negativeCount++;
+  }
+  final total = positiveCount + negativeCount;
+  if (total == 0) return 0.0;
+  return ((positiveCount - negativeCount) / total).clamp(-1.0, 1.0);
+}
+
 String _cleanTitleIsolate(String title, String url) {
   if (title.isEmpty) return title;
   String cleaned = title;
@@ -249,7 +309,7 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
 
     final decodedTitle = _decodeHtmlIsolate(metaTitle.isNotEmpty ? metaTitle : title);
     final cleanedTitle = _cleanTitleIsolate(decodedTitle, url);
-    final decodedSummary = _decodeHtmlIsolate(effectiveSummary);
+    final decodedSummary = _stripHtmlTags(_decodeHtmlIsolate(effectiveSummary));
 
     // ── N-gram paragraph scorer (TinyLLM-style) ─────────────────────────────
     // Score every paragraph in the raw HTML against title+description n-grams.
@@ -279,6 +339,9 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
     // with the single randomly-selected MSN image injected after paragraph 2.
     var decodedContent = injectSingleImage(paragraphs, msnImage);
     if (decodedContent.isEmpty) decodedContent = decodedSummary;
+
+    // NOTE: removed LLM content rewriting to preserve real article content.
+    // The app now uses extracted real content only.
 
     // Classification: use title+summary as signal (scorer cleaned body already)
     final classificationText = '$decodedTitle $decodedSummary';
@@ -356,7 +419,13 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
 
     var enrichedContent = decodedContent;
     if (extraImageUrls.isNotEmpty && decodedContent.isNotEmpty) {
-      enrichedContent = _injectImagesIntoContent(decodedContent, extraImageUrls);
+      enrichedContent = _injectImagesIntoContent(
+        decodedContent,
+        extraImageUrls,
+        title: cleanedTitle,
+        description: decodedSummary.length > 200 ? decodedSummary.substring(0, 200) : null,
+        metaKeywords: YallaEngineService.extractKeywords(cleanedTitle, decodedContent, detectedCategory),
+      );
     }
 
     final urlHash = baseUri != null ? '${baseUri.host}${baseUri.path}' : url;
@@ -368,6 +437,7 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
       'url_hash': urlHash,
       'title': cleanedTitle,
       'summary': decodedSummary.isEmpty ? 'Latest updates from this source.' : decodedSummary,
+      'sentiment': _calculateSentiment('$cleanedTitle $decodedSummary'),
       'image_url': imageUrl,
       'category': detectedCategory,
       'author': '',
@@ -395,18 +465,29 @@ Future<List<Map<String, dynamic>>> _processArticleBatch(List<Map<String, dynamic
   return results;
 }
 
-String _injectImagesIntoContent(String content, List<String> imageUrls) {
+String _injectImagesIntoContent(
+  String content,
+  List<String> imageUrls, {
+  String? title,
+  String? description,
+  List<String>? metaKeywords,
+}) {
   if (imageUrls.isEmpty || content.isEmpty) return content;
 
   const imgStyle =
       'width:100%;max-height:380px;object-fit:cover;border-radius:12px;margin:16px 0;display:block;';
 
-  final segments = _splitContentIntoSegments(content);
+  final segments = _splitContentIntoSegments(
+    content,
+    title: title,
+    description: description,
+    metaKeywords: metaKeywords,
+  );
 
   if (segments.length < 2) {
     final buf = StringBuffer(content);
     for (final img in imageUrls) {
-      buf.write('\n\n<img src="$img" style="$imgStyle" />');
+      buf.write('\n\n<img src="$img" style="imgStyle" />');
     }
     return buf.toString();
   }
@@ -416,42 +497,93 @@ String _injectImagesIntoContent(String content, List<String> imageUrls) {
   for (int i = 0; i < segments.length; i++) {
     buf.write(segments[i]);
     if ((i + 1) % 2 == 0 && imgIdx < imageUrls.length) {
-      buf.write('<img src="${imageUrls[imgIdx++]}" style="$imgStyle" />');
+      buf.write('<img src="${imageUrls[imgIdx++]}" style="imgStyle" />');
     }
     if (i < segments.length - 1) {
       buf.write('\n\n');
     }
   }
   while (imgIdx < imageUrls.length) {
-    buf.write('<img src="${imageUrls[imgIdx++]}" style="$imgStyle" />\n\n');
+    buf.write('<img src="${imageUrls[imgIdx++]}" style="imgStyle" />\n\n');
   }
   return buf.toString().trimRight();
 }
 
-List<String> _splitContentIntoSegments(String content) {
+List<String> _splitContentIntoSegments(
+  String content, {
+  String? title,
+  String? description,
+  List<String>? metaKeywords,
+}) {
   if (content.isEmpty) return const [];
-  
-  final segments = content
-      .split(RegExp(r'(?<=[.!?؟!])\s+'))
-      .map((s) => s.trim())
-      .where((s) => s.isNotEmpty && s.length >= 5)
-      .toList();
-  
-  if (segments.length >= 2) {
-    return segments;
+
+  final allKeywords = <String>[];
+  if (title != null && title.isNotEmpty) {
+      allKeywords.addAll(YallaEngineService.tokenizeSegment(title));
+    }
+    if (description != null && description.isNotEmpty) {
+      allKeywords.addAll(YallaEngineService.tokenizeSegment(description));
+    }
+    if (metaKeywords != null) {
+      for (final kw in metaKeywords) {
+        if (kw.isNotEmpty) allKeywords.addAll(YallaEngineService.tokenizeSegment(kw));
+    }
   }
-  
-  final paragraphs = content
+
+  final keywordSet = allKeywords.toSet();
+
+  final rawSegments = content
       .split(RegExp(r'\n\s*\n|\n{2,}'))
       .map((s) => s.trim())
-      .where((s) => s.isNotEmpty && s.length >= 3)
+      .where((s) => s.isNotEmpty && s.length >= 20)
       .toList();
-  
-  if (paragraphs.length >= 2) {
-    return paragraphs;
+
+  if (rawSegments.isEmpty) {
+    final sentences = content
+        .split(RegExp(r'(?<=[.!?؟!])\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty && s.length >= 15)
+        .toList();
+    if (sentences.length >= 2) return sentences;
+    return [content.trim()];
   }
-  
-  return [content.trim()];
+
+  if (rawSegments.length == 1) {
+    final text = rawSegments.first;
+    final sentences = text
+        .split(RegExp(r'(?<=[.!?؟!])\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty && s.length >= 15)
+        .toList();
+    if (sentences.length >= 2) return sentences;
+    return rawSegments;
+  }
+
+  if (keywordSet.isNotEmpty) {
+    final scored = rawSegments.map((segment) {
+      final tokens = YallaEngineService.tokenizeSegment(segment);
+      if (tokens.isEmpty) return (segment, 0.0);
+      final matches = tokens.where((t) => keywordSet.contains(t)).length;
+      return (segment, matches / tokens.length);
+    }).toList();
+
+    scored.sort((a, b) => b.$2.compareTo(a.$2));
+
+    final relevantSegments = scored
+        .where((item) => item.$2 > 0.0)
+        .map((item) => item.$1)
+        .toList();
+
+    if (relevantSegments.length >= 2) {
+      return relevantSegments;
+    }
+  }
+
+  if (rawSegments.length > 6) {
+    return rawSegments.take(6).toList();
+  }
+
+  return rawSegments;
 }
 
 
@@ -486,20 +618,23 @@ class BackgroundCrawlerService {
     required YallaEngineService engineService,
     VoidCallback? onProgress,
     VoidCallback? onComplete,
+    bool requireWifi = true,
   }) async {
     if (_isRunning) return;
 
-    // ── Wi-Fi gate: never crawl on mobile data ──────────────────────────────
-    final onWifi = await ConnectivityService.isWifi();
-    if (!onWifi) {
-      engineService.addLog(
-          '[SILENT CRAWLER] Not on Wi-Fi — skipping crawl, API will serve content.');
-      onComplete?.call();
-      return;
+    // ── Wi-Fi gate: never crawl on mobile data unless explicitly bypassed ─────
+    if (requireWifi) {
+      final onWifi = await ConnectivityService.isWifi();
+      if (!onWifi) {
+        engineService.addLog(
+            '[SILENT CRAWLER] Not on Wi-Fi — skipping crawl, API will serve content.');
+        onComplete?.call();
+        return;
+      }
     }
 
     _isRunning = true;
-    engineService.addLog('[SILENT CRAWLER] Wi-Fi detected — background crawler started...');
+    engineService.addLog('[SILENT CRAWLER] Starting background crawler...');
 
     try {
       final db = NewsDatabase.instance;

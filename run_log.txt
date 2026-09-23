@@ -1,0 +1,37 @@
+Launching lib\main.dart on Windows in debug mode...
+Building Windows application...                                 
+CMake Warning (dev) at flutter/ephemeral/.plugin_symlinks/flutter_tts/windows/CMakeLists.txt:12 (exec_program):
+  Policy CMP0153 is not set: The exec_program command should not be called.
+  Run "cmake --help-policy CMP0153" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+
+  Use execute_process() instead.
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+Building Windows application...                                     9,6s
+√ Built build\windows\x64\runner\Debug\yalla_news.exe
+Syncing files to device Windows...                                 101ms
+
+Flutter run key commands.
+r Hot reload. 
+R Hot restart.
+h List all available interactive commands.
+d Detach (terminate "flutter run" but leave application running).
+c Clear the screen
+q Quit (terminate the application on the device).
+
+A Dart VM Service on Windows is available at: http://127.0.0.1:56108/fQ9OwsyXBhE=/
+The Flutter DevTools debugger and profiler on Windows is available at: http://127.0.0.1:9102?uri=http://127.0.0.1:56108/fQ9OwsyXBhE=/
+[SYSTEM] Starting engine detection...
+[2026-09-23T10:37:40.220906] [SYSTEM] Starting Arabic News Processor...
+[SYSTEM] Starting engine detection...
+[HOME] _loadData started
+[HOME] Loading articles from server API...
+[HOME] Server returned 44 articles
+[HOME] Loaded 44 articles from API
+[SYSTEM] Starting built-in Dart News Pipeline Emulator.
+[SYSTEM] Starting built-in Dart News Pipeline Emulator.
+[2026-09-23T10:38:33.069631] [SYSTEM] Loaded 4070 Arabic news sources
+[2026-09-23T10:38:33.073569] [PIPELINE] Starting crawl for Ifada (https://www.ifada.ma)
+[2026-09-23T10:38:33.074628] [SOURCE-MANAGER] Processing source: Ifada
+Lost connection to device.
