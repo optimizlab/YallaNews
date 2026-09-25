@@ -14,6 +14,7 @@ class NewsDatabase {
   static final NewsDatabase instance = NewsDatabase._privateConstructor();
 
   static Database? _db;
+  static bool _hasFts5 = true;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -46,7 +47,11 @@ class NewsDatabase {
         version: 14, // v14: add FTS5 search index
         onCreate: (Database db, int version) async {
           await _createSchema(db);
-          await _createFtsIndex(db);
+          try {
+            await _createFtsIndex(db);
+          } catch (_) {
+            _hasFts5 = false;
+          }
           await _seedFromJson(db);
         },
         onUpgrade: (Database db, int oldVersion, int newVersion) async {
@@ -184,7 +189,11 @@ class NewsDatabase {
               ''');
             }
             if (oldVersion < 14) {
-              await _createFtsIndex(db);
+              try {
+                await _createFtsIndex(db);
+              } catch (_) {
+                _hasFts5 = false;
+              }
             }
           },
         onOpen: (Database db) async {
@@ -540,19 +549,31 @@ class NewsDatabase {
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
-  /// Search articles using FTS5 full-text search.
+  /// Search articles using FTS5 full-text search, with LIKE fallback.
   Future<List<NewsModel>> searchArticles(String query, {int limit = 50}) async {
     final db = await database;
     final sanitized = query.trim().replaceAll('"', '""');
-    final ftsQuery = '"$sanitized"';
-    final List<Map<String, dynamic>> maps = await db.rawQuery('''
-      SELECT ca.*
-      FROM crawled_articles ca
-      JOIN crawled_articles_fts fts ON fts.rowid = ca.id
-      WHERE crawled_articles_fts MATCH ?
-      ORDER BY ca.crawled_at DESC
-      LIMIT ?
-    ''', [ftsQuery, limit]);
+    final List<Map<String, dynamic>> maps;
+    if (_hasFts5) {
+      final ftsQuery = '"$sanitized"';
+      maps = await db.rawQuery('''
+        SELECT ca.*
+        FROM crawled_articles ca
+        JOIN crawled_articles_fts fts ON fts.rowid = ca.id
+        WHERE crawled_articles_fts MATCH ?
+        ORDER BY ca.crawled_at DESC
+        LIMIT ?
+      ''', [ftsQuery, limit]);
+    } else {
+      final like = '%$sanitized%';
+      maps = await db.query(
+        'crawled_articles',
+        where: 'title LIKE ? OR summary LIKE ? OR content LIKE ? OR keywords LIKE ?',
+        whereArgs: [like, like, like, like],
+        orderBy: 'crawled_at DESC',
+        limit: limit,
+      );
+    }
     return maps.map((map) {
       return NewsModel(
         url: map['url'] as String,

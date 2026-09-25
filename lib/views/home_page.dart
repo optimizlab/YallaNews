@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,6 +27,7 @@ import '../widgets/adaptive_layout.dart';
 import '../widgets/top_news_carousel.dart';
 import '../arabic_news_processor.dart';
 import '../services/news_blender_service.dart';
+import '../services/arabic_normalizer.dart';
 
 String _getSentimentLabel(double sentiment) {
   if (sentiment >= 0.3) return 'إيجابي';
@@ -33,146 +35,52 @@ String _getSentimentLabel(double sentiment) {
   return 'محايد';
 }
 
-List<NewsModel> _getDemoArticles() {
-  final now = DateTime.now().millisecondsSinceEpoch;
-  final publishDate = DateTime.now().toIso8601String();
-  return [
-    NewsModel(
-      url: 'https://api.inoov.com/yallanews/demo/1',
-      title: 'بنك المغرب يتوقع ارتفاع التضخم العالمي خلال 2026',
-      shortTitle: 'بنك المغرب يتوقع ارتفاع التضخم',
-      summary: 'توقع بنك المغرب استمرار ارتفاع التضخم العالمي خلال السنة الجديدة 2026، بسبب الضغوط الجيوسياسية وتداعيات الأزمة الأوكرانية على الأسواق العالمية.',
-      content: 'توقع بنك المغرب استمرار ارتفاع التضخم العالمي خلال السنة الجديدة 2026، بسبب الضغوط الجيوسياسية وتداعيات الأزمة الأوكرانية على الأسواق العالمية. وأوضح البنك المركزي في تقريره السنوي أن معدلات التضخم ستبقى مرتفعة في معظم الاقتصاديات الناشئة والمتقدمة على حد سواء.',
-      imageUrl: 'https://placehold.co/800x500/1A1A2E/C62828?text=اقتصاد',
-      category: 'اقتصاد',
-      sentiment: -0.2,
-      keywords: const ['بنك المغرب', 'تضخم', 'اقتصاد عالمي'],
-      logs: '',
-      author: '',
-      publishDate: publishDate,
-      eventType: 'general',
-      subcategory: 'general',
-      entities: const [],
-      structuredData: const {},
-      intelligenceJson: '',
-      metaTags: const {},
-      hashtags: '',
-      youtubeVideoId: '',
-      instagramVideoId: '',
-      twitterVideoUrl: '',
-      imageId: '',
-      sourceCount: 1,
-      sources: const [],
-    ),
-    NewsModel(
-      url: 'https://api.inoov.com/yallanews/demo/2',
-      title: 'المنتخب الوطني يفوز بكأس الأمم الأفريقية',
-      shortTitle: 'المنتخب الوطني يفوز بكأس الأمم',
-      summary: 'حقق المنتخب الوطني فوزاً ساحقاً على نظيره الكاميروني في نهائي كأس الأمم الأفريقية، التي أقيمت على أرضية الملعب الأولمبي بالعاصمة.',
-      content: 'حقق المنتخب الوطني فوزاً ساحقاً على نظيره الكاميروني في نهائي كأس الأمم الأفريقية، التي أقيمت على أرضية الملعب الأولمبي بالعاصمة. وسجل النجم محمد عبد الله هدف الفوز الوحيد في الدقيقة 87، ليقود المنتخب إلى اللقب القاري الثاني في تاريخه.',
-      imageUrl: 'https://placehold.co/800x500/1A1A2E/2E7D32?text=رياضة',
-      category: 'رياضة',
-      sentiment: 0.8,
-      keywords: const ['المنتخب الوطني', 'كأس الأمم الأفريقية', 'رياضة'],
-      logs: '',
-      author: '',
-      publishDate: publishDate,
-      eventType: 'general',
-      subcategory: 'general',
-      entities: const [],
-      structuredData: const {},
-      intelligenceJson: '',
-      metaTags: const {},
-      hashtags: '',
-      youtubeVideoId: '',
-      instagramVideoId: '',
-      twitterVideoUrl: '',
-      imageId: '',
-      sourceCount: 1,
-      sources: const [],
-    ),
-    NewsModel(
-      url: 'https://api.inoov.com/yallanews/demo/3',
-      title: 'إطلاق قمر صناعي مغربي جديد لمراقبة الأرض',
-      shortTitle: 'إطلاق قمر صناعي مغربي جديد',
-      summary: 'أعلنت وكالة الفضاء المغربية عن إطلاق قمر صناعي جديد لمراقبة الأرض، سيمكنها من تعزيز قدراتها في مجال الرصد البيئي والزراعي.',
-      content: 'أعلنت وكالة الفضاء المغربية عن إطلاق قمر صناعي جديد لمراقبة الأرض، سيمكنها من تعزيز قدراتها في مجال الرصد البيئي والزراعي. وسيتم استخدام القمر الصناعي الجديد لمراقبة التغيرات المناخية والكوارث الطبيعية، بالإضافة إلى دعم القطاع الزراعي من خلال توفير بيانات دقيقة.',
-      imageUrl: 'https://placehold.co/800x500/1A1A2E/1565C0?text=تكنولوجيا',
-      category: 'تكنولوجيا',
-      sentiment: 0.5,
-      keywords: const ['وكالة الفضاء المغربية', 'قمر صناعي', 'مراقبة الأرض'],
-      logs: '',
-      author: '',
-      publishDate: publishDate,
-      eventType: 'general',
-      subcategory: 'general',
-      entities: const [],
-      structuredData: const {},
-      intelligenceJson: '',
-      metaTags: const {},
-      hashtags: '',
-      youtubeVideoId: '',
-      instagramVideoId: '',
-      twitterVideoUrl: '',
-      imageId: '',
-      sourceCount: 1,
-      sources: const [],
-    ),
-    NewsModel(
-      url: 'https://api.inoov.com/yallanews/demo/4',
-      title: 'تقرير صحفي: اكتشاف أثر إنساني جديد في الصحراء المغربية',
-      shortTitle: 'اكتشاف أثر إنساني جديد',
-      summary: 'اكتشف فريق من علماء الآثار المغاربة أثراً إنسانياً جديداً يعود إلى العصر الحجري القديم، في منطقة جنوب المملكة.',
-      content: 'اكتشف فريق من علماء الآثار المغاربة أثراً إنسانياً جديداً يعود إلى العصر الحجري القديم، في منطقة جنوب المملكة. ويمثل هذا الاكتشاف إضافة مهمة للسجل الآثارى المغربي، حيث يعكس وجود مجتمعات بشرية مستقرة في المنطقة منذ آلاف السنين.',
-      imageUrl: 'https://placehold.co/800x500/1A1A2E/6A1B9A?text=علوم',
-      category: 'علوم',
-      sentiment: 0.3,
-      keywords: const ['اكتشاف آثاري', 'الصحراء المغربية', 'علم الآثار'],
-      logs: '',
-      author: '',
-      publishDate: publishDate,
-      eventType: 'general',
-      subcategory: 'general',
-      entities: const [],
-      structuredData: const {},
-      intelligenceJson: '',
-      metaTags: const {},
-      hashtags: '',
-      youtubeVideoId: '',
-      instagramVideoId: '',
-      twitterVideoUrl: '',
-      imageId: '',
-      sourceCount: 1,
-      sources: const [],
-    ),
-    NewsModel(
-      url: 'https://api.inoov.com/yallanews/demo/5',
-      title: 'توصيات صحية جديدة للوقاية من الأمراض الموسمية',
-      shortTitle: 'توصيات صحية جديدة',
-      summary: 'أصدرت وزارة الصحة توصيات جديدة للوقاية من الأمراض الموسمية، مع encouragement المواطنين على أخذ التطعيمات المناسبة.',
-      content: 'أصدرت وزارة الصحة توصيات جديدة للوقاية من الأمراض الموسمية، مع encouragement المواطنين على أخذ التطعيمات المناسبة وتجنب الأماكن المزدحمة. وأكدت الوزارة على أهمية غسل اليدين بشكل منتظم وارتداء الأقنعة في حالة الإصابة بأعراض تنفسية.',
-      imageUrl: 'https://placehold.co/800x500/1A1A2E/C62828?text=صحة',
-      category: 'صحة',
-      sentiment: 0.1,
-      keywords: const ['وزارة الصحة', 'توصيات صحية', 'الأمراض الموسمية'],
-      logs: '',
-      author: '',
-      publishDate: publishDate,
-      eventType: 'general',
-      subcategory: 'general',
-      entities: const [],
-      structuredData: const {},
-      intelligenceJson: '',
-      metaTags: const {},
-      hashtags: '',
-      youtubeVideoId: '',
-      instagramVideoId: '',
-      twitterVideoUrl: '',
-      imageId: '',
-      sourceCount: 1,
-      sources: const [],
-    ),
+bool _isValidArticle(NewsModel article) {
+  final title = article.title.trim();
+  final image = article.imageUrl.trim();
+  final url = article.url.trim();
+
+  if (title.isEmpty || image.isEmpty) {
+    return false;
+  }
+  if (url.isEmpty || url.length < 10) {
+    return false;
+  }
+
+  final adPatterns = [
+    'livejournal.com', 't.co', 'bit.ly', 'ad.', 'advert', 'banner',
+    'sponsor', 'promotion', 'shop.', 'store.', 'buy now', 'اشترِ', 'تسوق',
   ];
+  final lowerUrl = url.toLowerCase();
+  if (adPatterns.any((p) => lowerUrl.contains(p))) {
+    return false;
+  }
+
+  final sectionPatterns = [
+    'التصنيف:', 'التصنيف :', 'التواصل الاجتماعي', 'الأكثر قراءة', 'مقالات ذات صلة',
+    'التعليقات', 'الاسم', 'البريد الإلكتروني', 'الموقع الإلكتروني', 'ترك تعليق',
+    'إرسال تعليق', 'أضف تعليق', 'شارك المقال', 'شارك على', 'تابعنا على',
+    'حقوق النشر', 'جميع الحقوق', 'طباعة البريد', 'الالكتروني', 'اشترك في',
+    'للمزيد من الأخبار',
+  ];
+  if (sectionPatterns.any((p) => title.contains(p))) {
+    return false;
+  }
+
+  return true;
+}
+
+double _arabicCharRatio(String text) {
+  if (text.isEmpty) return 0.0;
+  final letters = text.runes.where((r) {
+    final c = String.fromCharCode(r);
+    return RegExp(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]').hasMatch(c);
+  }).length;
+  final total = text.runes.where((r) {
+    final c = String.fromCharCode(r);
+    return RegExp(r'[\w\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]').hasMatch(c);
+  }).length;
+  return total == 0 ? 0.0 : letters / total;
 }
 
 class HomePage extends StatefulWidget {
@@ -185,6 +93,49 @@ class HomePage extends StatefulWidget {
 
   @override
   State<HomePage> createState() => _HomePageState();
+}
+
+class _ValidationInput {
+  final List<Map<String, dynamic>> articles;
+  const _ValidationInput(this.articles);
+}
+
+bool _validateArticleIsolate(Map<String, dynamic> map) {
+  final article = NewsModel(
+    url: (map['url'] as String?) ?? '',
+    title: (map['title'] as String?) ?? '',
+    summary: (map['summary'] as String?) ?? '',
+    content: (map['content'] as String?) ?? '',
+    imageUrl: (map['imageUrl'] as String?) ?? '',
+    category: (map['category'] as String?) ?? 'general',
+    sentiment: (map['sentiment'] as num?)?.toDouble() ?? 0.0,
+    keywords: (map['keywords'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+    logs: (map['logs'] as String?) ?? '',
+    author: (map['author'] as String?) ?? '',
+    publishDate: (map['publishDate'] as String?) ?? '',
+    eventType: (map['eventType'] as String?) ?? 'general',
+    subcategory: (map['subcategory'] as String?) ?? 'general',
+    entities: const [],
+    structuredData: (map['structuredData'] as Map<String, dynamic>?) ?? const {},
+    intelligenceJson: (map['intelligenceJson'] as String?) ?? '',
+    metaTags: (map['metaTags'] as Map<String, dynamic>?) ?? const {},
+    hashtags: (map['hashtags'] as String?) ?? '',
+    youtubeVideoId: (map['youtubeVideoId'] as String?) ?? '',
+    instagramVideoId: (map['instagramVideoId'] as String?) ?? '',
+    twitterVideoUrl: (map['twitterVideoUrl'] as String?) ?? '',
+    imageId: (map['imageId'] as String?) ?? '',
+    sourceCount: (map['sourceCount'] as int?) ?? 1,
+    sources: (map['sources'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+  );
+  return _isValidArticle(article);
+}
+
+List<String> _validateArticlesIsolate(_ValidationInput input) {
+  final valid = <String>[];
+  for (final map in input.articles) {
+    if (_validateArticleIsolate(map)) valid.add(map['url'] as String);
+  }
+  return valid;
 }
 
 class _HomePageState extends State<HomePage> {
@@ -202,6 +153,9 @@ class _HomePageState extends State<HomePage> {
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   StreamSubscription<NewsModel>? _articleSubscription;
+  final List<NewsModel> _pendingArticles = [];
+  Timer? _crawlerFlushTimer;
+  Timer? _crawlerBlendTimer;
 
   @override
   void initState() {
@@ -213,6 +167,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _articleSubscription?.cancel();
+    _crawlerFlushTimer?.cancel();
+    _crawlerBlendTimer?.cancel();
     CategoryService.instance.removeListener(_onCategoriesChanged);
     super.dispose();
   }
@@ -241,149 +197,237 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _applyBlendedArticles(List<NewsModel> rawList) async {
-    _rawArticles = rawList;
-    List<NewsModel> blended;
-    try {
-      blended = await NewsBlenderService.instance.blendArticlesAsync(rawList);
-    } catch (e) {
-      debugPrint('[HOME] Ollama blending failed, using sync fallback: $e');
-      blended = NewsBlenderService.instance.blendArticles(rawList);
-    }
+    if (!mounted) return;
+    
+    setState(() {
+      _rawArticles = rawList;
+      _allArticles = rawList;
+      _articles = rawList;
+    });
+    
+    unawaited(_updateCategoryCountsAsync(rawList));
+  }
+
+  void _flushPendingArticles() {
+    if (_pendingArticles.isEmpty) return;
+    final batch = List<NewsModel>.from(_pendingArticles);
+    _pendingArticles.clear();
     if (!mounted) return;
     setState(() {
-      _allArticles = blended;
-      if (_selectedCategory == 'all') {
-        _articles = List.from(_allArticles);
-      } else if (_selectedCategory == 'blended') {
-        _articles = _allArticles.where((a) => a.isBlended).toList();
-      } else {
-        _articles = _allArticles.where((a) => _matchesCategory(a.category, _selectedCategory)).toList();
+      for (final article in batch) {
+        final existingIndex = _rawArticles.indexWhere((a) => a.url == article.url);
+        if (existingIndex >= 0) {
+          _rawArticles[existingIndex] = article;
+        } else {
+          _rawArticles.insert(0, article);
+        }
       }
     });
-    CategoryService.instance.updateCategoryCounts(_allArticles);
+    _applyBlendedArticles(_rawArticles);
+    if (_waitingForInitialCrawl) {
+      _waitingForInitialCrawl = false;
+      if (mounted) setState(() {});
+    }
+  }
+  
+  Future<void> _updateCategoryCountsAsync(List<NewsModel> articles) async {
+    try {
+      final updatedCategories = await compute(_updateCategoryCountsIsolate, articles.map((a) => a.toJson()).toList());
+      if (mounted) {
+        setState(() {
+          _categoryCounts.clear();
+          for (final category in updatedCategories) {
+            final id = category['id']?.toString() ?? '';
+            _categoryCounts[id] = category['newsCount'] ?? 0;
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Map<String, int> _categoryCounts = {};
+  int _blendedCount = 0;
+  
+  static List<Map<String, dynamic>> _updateCategoryCountsIsolate(List<Map<String, dynamic>> articlesJson) {
+    final articles = articlesJson.map((json) => NewsModel.fromJson(json, json['url'] as String)).toList();
+    final categories = CategoryService.instance.categories;
+    
+    for (final category in categories) {
+      final id = category['id']?.toString() ?? '';
+      final name = category['name']?.toString() ?? id;
+      int count = 0;
+      for (final article in articles) {
+        if (CategoryService.matchesCategory(article.category, id) || CategoryService.matchesCategory(article.category, name)) {
+          count++;
+        }
+      }
+      category['newsCount'] = count;
+    }
+    
+    return categories;
+  }
+  
+  Future<void> _blendInBackground(List<NewsModel> rawList) async {
+    try {
+      final blended = await NewsBlenderService.instance.blendArticlesAsync(rawList);
+      if (!mounted) return;
+      setState(() {
+        _allArticles = blended;
+        if (_selectedCategory == 'all') {
+          _articles = List.from(blended);
+        } else if (_selectedCategory == 'blended') {
+          _articles = blended.where((a) => a.isBlended).toList();
+        } else {
+          _articles = blended.where((a) => _matchesCategory(a.category, _selectedCategory)).toList();
+        }
+      });
+      await _updateCategoryCountsAsync(blended);
+    } catch (_) {}
   }
 
   Future<void> _loadData() async {
     debugPrint('[HOME] _loadData started');
-    setState(() => _isLoading = true);
     _waitingForInitialCrawl = false;
+    
+    // Show page immediately with empty state
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _rawArticles = [];
+        _articles = [];
+        _allArticles = [];
+      });
+    }
+    
     try {
-      final rawList = await _loadArticles().timeout(const Duration(seconds: 20));
+      // Start all independent operations in parallel
+      final articlesFuture = _loadArticles().timeout(const Duration(seconds: 20));
+      final trendingFuture = ServerApiService.getTrending(limit: 10).timeout(const Duration(seconds: 10));
+      
+      final results = await Future.wait([articlesFuture, trendingFuture]);
+      final rawList = results[0] as List<NewsModel>;
+      final trending = results[1] as List<NewsModel>;
+      
       debugPrint('[HOME] Loaded ${rawList.length} articles from API');
-
-      List<NewsModel> trending;
-      try {
-        trending = await ServerApiService.getTrending(limit: 10).timeout(const Duration(seconds: 10));
-      } catch (_) {
-        trending = const [];
-      }
-
-      if (!kIsWeb) {
-        final db = NewsDatabase.instance;
-        final articleCount = await db.getArticleCount();
-        final serverEmpty = rawList.isEmpty;
-        final shouldInitialCrawl = articleCount == 0 && serverEmpty;
-
-        if (shouldInitialCrawl) {
-          final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-          if (isDesktop) {
-            debugPrint('[HOME] DB empty on desktop — triggering initial crawl');
-            _waitingForInitialCrawl = true;
-          } else {
-            final onWifi = await ConnectivityService.isWifi();
-            if (onWifi) {
-              debugPrint('[HOME] DB empty on mobile/tablet + WiFi — triggering initial crawl');
-              _waitingForInitialCrawl = true;
-            } else {
-              debugPrint('[HOME] DB empty on mobile/tablet but not on WiFi — skipping initial crawl');
-            }
-          }
-        }
-
-        final settings = await AppSettings.instance.getPrefs();
-        final backgroundEnabled = settings.getBool('background_crawler_enabled') ?? true;
-
-        if (backgroundEnabled) {
-          debugPrint('[HOME] Listening to background crawler stream');
-          _articleSubscription?.cancel();
-          _articleSubscription = BackgroundCrawlerService.instance.articleStream.listen((article) {
-            if (mounted) {
-              setState(() {
-                final existingIndex = _rawArticles.indexWhere((a) => a.url == article.url);
-                if (existingIndex >= 0) {
-                  _rawArticles[existingIndex] = article;
-                } else {
-                  _rawArticles.insert(0, article);
-                }
-              });
-              _applyBlendedArticles(_rawArticles);
-              if (_waitingForInitialCrawl) {
-                _waitingForInitialCrawl = false;
-                if (mounted) setState(() {});
-              }
-            }
-          });
-        }
-
-        if (shouldInitialCrawl && _waitingForInitialCrawl) {
-          final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-          BackgroundCrawlerService.instance.startSilentCrawl(
-            engineService: widget.engineService,
-            requireWifi: !isDesktop,
-          );
-        }
-
-        if (serverEmpty && articleCount > 0) {
-          debugPrint('[HOME] Server empty, loading ${articleCount} articles from local DB');
-          final localArticles = await db.getAllArticles(limit: 100);
-          rawList.addAll(localArticles);
-        }
-
-        if (rawList.isEmpty) {
-          debugPrint('[HOME] No articles from server or local DB, loading demo articles');
-          rawList.addAll(_getDemoArticles());
-        }
-      } else {
-        _articleSubscription?.cancel();
-        _articleSubscription = ArabicNewsProcessor.instance.articleStream.listen((article) {
-          if (mounted) {
-            setState(() {
-              final existingIndex = _rawArticles.indexWhere((a) => a.url == article.url);
-              if (existingIndex >= 0) {
-                _rawArticles[existingIndex] = article;
-              } else {
-                _rawArticles.insert(0, article);
-              }
-            });
-            _applyBlendedArticles(_rawArticles);
-          }
-        });
-      }
-
-      if (mounted) {
+      
+      // Show articles immediately if available
+      if (mounted && rawList.isNotEmpty) {
         _rawArticles = rawList;
         _allArticles = rawList;
         _articles = rawList;
-        debugPrint('[HOME] After load: rawList=${rawList.length}, _articles=${_articles.length}');
         setState(() {
           _selectedCategory = 'all';
           _categories = CategoryService.instance.categories;
           _trendingSearches = trending.map((t) => t.title).where((q) => q.isNotEmpty).toList();
           _isLoading = false;
-          _waitingForInitialCrawl = false;
         });
-        CategoryService.instance.updateCategoryCounts(_allArticles);
         _applyBlendedArticles(rawList);
+        CategoryService.instance.updateCategoryCounts(rawList);
+      }
+      
+      // Push to API in background
+      if (rawList.isNotEmpty) {
+        unawaited(_pushArticlesToApi(rawList));
+      }
+      
+      // Handle local DB and crawler in background
+      if (!kIsWeb) {
+        unawaited(_setupLocalDbAndCrawler(rawList, trending));
       }
     } catch (e) {
       debugPrint('[HOME] _loadData failed: $e');
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _waitingForInitialCrawl = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
+  }
+  
+  Future<void> _pushArticlesToApi(List<NewsModel> articles) async {
+    try {
+      int pushed = 0;
+      for (final article in articles) {
+        try {
+          await ServerApiService.saveArticle(article).timeout(const Duration(seconds: 8));
+          pushed++;
+        } catch (_) {}
+      }
+      debugPrint('[HOME] Pushed $pushed articles to API');
+    } catch (_) {}
+  }
+  
+  Future<void> _setupLocalDbAndCrawler(List<NewsModel> rawList, List<NewsModel> trending) async {
+    try {
+      final db = NewsDatabase.instance;
+      final articleCount = await db.getArticleCount();
+      final serverEmpty = rawList.isEmpty;
+      final shouldInitialCrawl = articleCount == 0 && serverEmpty;
+      
+      if (shouldInitialCrawl) {
+        final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+        if (isDesktop) {
+          debugPrint('[HOME] DB empty on desktop — triggering initial crawl');
+          _waitingForInitialCrawl = true;
+        } else {
+          final onWifi = await ConnectivityService.isWifi();
+          if (onWifi) {
+            debugPrint('[HOME] DB empty on mobile/tablet + WiFi — triggering initial crawl');
+            _waitingForInitialCrawl = true;
+          }
+        }
+      }
+      
+      final settings = await AppSettings.instance.getPrefs();
+      final backgroundEnabled = settings.getBool('background_crawler_enabled') ?? true;
+      
+      if (backgroundEnabled) {
+        debugPrint('[HOME] Listening to background crawler stream');
+        _articleSubscription?.cancel();
+        _crawlerFlushTimer?.cancel();
+        _crawlerBlendTimer?.cancel();
+        _pendingArticles.clear();
+        _articleSubscription = BackgroundCrawlerService.instance.articleStream.listen((article) {
+          if (!_isValidArticle(article)) return;
+          _pendingArticles.add(article);
+          if (_pendingArticles.length >= 20) {
+            _flushPendingArticles();
+          }
+        });
+        _crawlerFlushTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+          if (_pendingArticles.isNotEmpty) {
+            _flushPendingArticles();
+          }
+        });
+        _crawlerBlendTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+          if (_allArticles.isNotEmpty) {
+            unawaited(_blendInBackground(_allArticles));
+          }
+        });
+      }
+      
+      if (shouldInitialCrawl && _waitingForInitialCrawl) {
+        final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+        BackgroundCrawlerService.instance.startSilentCrawl(
+          engineService: widget.engineService,
+          requireWifi: !isDesktop,
+        );
+      }
+      
+      if (serverEmpty && articleCount > 0) {
+        debugPrint('[HOME] Server empty, loading ${articleCount} articles from local DB');
+        final localArticles = await db.getAllArticles(limit: 100);
+        final validLocal = localArticles.where(_isValidArticle).toList();
+        
+        if (validLocal.isNotEmpty && mounted) {
+          _rawArticles.addAll(validLocal);
+          _allArticles = List.from(_rawArticles);
+          _articles = List.from(_rawArticles);
+          setState(() {});
+          _applyBlendedArticles(_rawArticles);
+        }
+        
+        unawaited(_pushArticlesToApi(validLocal));
+      }
+    } catch (_) {}
   }
 
   Future<List<NewsModel>> _loadArticles() async {
@@ -391,7 +435,7 @@ class _HomePageState extends State<HomePage> {
       debugPrint('[HOME] Loading articles from server API...');
       final locale = AppSettings.instance.locale;
       final language = locale?.languageCode == 'ar' ? 'ar' : null;
-      final serverArticles = await ServerApiService.getNews(limit: 100, language: language).timeout(const Duration(seconds: 10));
+      final serverArticles = await ServerApiService.getNews(limit: 100, language: language).timeout(const Duration(seconds: 20));
       debugPrint('[HOME] Server returned ${serverArticles.length} articles');
       return serverArticles;
     } catch (e) {
@@ -402,20 +446,16 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _onRefresh() async {
     try {
-      final List<NewsModel> refreshed = await _loadArticles();
+      final List<NewsModel> rawRefreshed = await _loadArticles();
       if (mounted) {
-        _rawArticles = refreshed;
+        _rawArticles = rawRefreshed;
         setState(() {
-          _articles = refreshed;
+          _articles = rawRefreshed;
         });
-        _applyBlendedArticles(refreshed);
-        CategoryService.instance.updateCategoryCounts(_allArticles);
+        _applyBlendedArticles(rawRefreshed);
       }
     } catch (e) {
-      debugPrint('[HOME] _loadData failed: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      debugPrint('[HOME] _onRefresh failed: $e');
     }
   }
 
@@ -556,7 +596,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildHomeContent(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    if (_isLoading || _waitingForInitialCrawl) {
+    if (_isLoading) {
       return const ShimmerLoadingList();
     }
 
@@ -581,7 +621,7 @@ class _HomePageState extends State<HomePage> {
           physics: const AlwaysScrollableScrollPhysics(),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minHeight: MediaQuery.of(context).size.height - kToolbarHeight - MediaQuery.of(context).padding.top,
+              minHeight: max(0, MediaQuery.of(context).size.height - kToolbarHeight - MediaQuery.of(context).padding.top),
             ),
             child: Padding(
               padding: const EdgeInsets.all(32.0),
@@ -595,7 +635,7 @@ class _HomePageState extends State<HomePage> {
                       color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Icon(Icons.newspaper_rounded, size: 40, color: Theme.of(context).colorScheme.primary.withOpacity(0.4)),
+                     child: Icon(Icons.newspaper_rounded, size: 40, color: Theme.of(context).colorScheme.primary),
                   ),
                   const SizedBox(height: 24),
                   Text(
@@ -736,37 +776,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool _matchesCategory(String articleCat, String selectedCat) {
-    if (selectedCat.toLowerCase() == 'all') return true;
-    final a = articleCat.toLowerCase().trim();
-    final s = selectedCat.toLowerCase().trim();
-    if (a == s) return true;
-
-    final categoryAliases = <String, List<String>>{
-      'sports': ['sports', 'رياضة', 'كرة القدم', 'كرة السلة', 'تنس', 'sport', 'football'],
-      'politics': ['politics', 'سياسة', 'أخبار محلية', 'أخبار دولية', 'politic'],
-      'business': ['business', 'اقتصاد', 'أعمال', 'أسواق ومال', 'عقارات', 'economy', 'finance'],
-      'technology': ['technology', 'تكنولوجيا', 'تقنية', 'علوم وتكنولوجيا', 'tech'],
-      'health': ['health', 'صحة', 'طب وصحة', 'علوم وطب', 'medical'],
-      'entertainment': ['entertainment', 'ترفيه', 'فن', 'ثقافة', 'منوعات', 'فن وموسيقى', 'culture'],
-      'science': ['science', 'علوم', 'علم'],
-      'world': ['world', 'أخبار دولية', 'دولي', 'العالم'],
-      'general': ['general', 'general_news', 'أخبار عامة', 'عام'],
-    };
-
-    for (final aliases in categoryAliases.values) {
-      final matchesA = aliases.any((x) => x == a || a.contains(x) || x.contains(a));
-      final matchesS = aliases.any((x) => x == s || s.contains(x) || x.contains(s));
-      if (matchesA && matchesS) return true;
-    }
-
-    return false;
+    return CategoryService.matchesCategory(articleCat, selectedCat);
   }
 
   Widget _buildCategoryChips(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final allCats = <Map<String, dynamic>>[{'id': 'all', 'name': l10n.translate('all'), 'nameEn': 'All'}];
-    final blendedCount = _allArticles.where((a) => a.isBlended).length;
-    if (blendedCount > 0) {
+    if (_blendedCount > 0) {
       allCats.add({'id': 'blended', 'name': l10n.translate('blendedBadge'), 'nameEn': 'Blended'});
     }
     allCats.addAll(_categories);
@@ -783,8 +799,8 @@ class _HomePageState extends State<HomePage> {
           final int count = catKey == 'all'
               ? _allArticles.length
               : (catKey == 'blended'
-                  ? blendedCount
-                  : _allArticles.where((a) => _matchesCategory(a.category, catKey) || _matchesCategory(a.category, catName)).length);
+                  ? _blendedCount
+                  : (_categoryCounts[catKey] ?? 0));
           final isSelected = _selectedCategory == catKey;
 
           return FilterChip(
@@ -1178,17 +1194,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _getCategoryLabel(String category, BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final cat = category.toLowerCase().trim();
-    if (cat == 'sports' || cat == 'رياضة' || cat == 'كرة القدم' || cat == 'كرة السلة' || cat == 'تنس') return l10n.translate('sports');
-    if (cat == 'politics' || cat == 'سياسة' || cat == 'أخبار دولية' || cat == 'أخبار محلية') return l10n.translate('politics');
-    if (cat == 'business' || cat == 'economy' || cat == 'اقتصاد' || cat == 'أعمال' || cat == 'أسواق ومال' || cat == 'عقارات') return l10n.translate('business');
-    if (cat == 'technology' || cat == 'tech' || cat == 'تكنولوجيا' || cat == 'تقنية') return l10n.translate('technology');
-    if (cat == 'health' || cat == 'صحة' || cat == 'طب وصحة' || cat == 'medical') return l10n.translate('health');
-    if (cat == 'science' || cat == 'علوم' || cat == 'علم') return l10n.translate('science');
-    if (cat == 'entertainment' || cat == 'ترفيه' || cat == 'فن' || cat == 'ثقافة') return l10n.translate('entertainment');
-    if (cat == 'world' || cat == 'دولي' || cat == 'العالم') return l10n.translate('world');
-    return category.isNotEmpty ? category : l10n.translate('generalNews');
+    return CategoryService.getCategoryLabel(category, context);
   }
 
   String _getReadTime(NewsModel article, BuildContext context) {
@@ -1225,7 +1231,7 @@ class _HomePageState extends State<HomePage> {
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.25),
+                     color: Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.45),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: YallaNewsLogo(size: 28),

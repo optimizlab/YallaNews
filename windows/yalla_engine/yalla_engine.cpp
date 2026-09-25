@@ -761,22 +761,75 @@ YALLA_EXPORT const char* clean_article_content(const char* title_cstr, const cha
         if (!trimmed.empty()) segments.push_back(trimmed);
     }
 
+    // Helper: detect share/social-media rows
+    auto is_share_row = [](const std::string& seg) -> bool {
+        std::string lower = seg;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        bool hasShare = lower.find("شارك") != std::string::npos || lower.find("share") != std::string::npos;
+        if (!hasShare) return false;
+        std::vector<std::string> platforms = {
+            "telegram", "linkedin", "messenger", "facebook", "twitter", "whatsapp",
+            "instagram", "youtube", "tiktok", "طباعة", "البريد", "الالكتروني"
+        };
+        int count = 0;
+        for (const auto& p : platforms) {
+            if (lower.find(p) != std::string::npos) count++;
+        }
+        return count >= 2;
+    };
+
+    // Helper: detect breadcrumb/navigation text
+    auto is_breadcrumb = [](const std::string& seg) -> bool {
+        std::string lower = seg;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower.find("الرئيسية") != std::string::npos && lower.find("/") != std::string::npos) return true;
+        if (lower.find("الرئيسية") != std::string::npos && lower.find("أخبار") != std::string::npos) return true;
+        if (lower.find("الصفحه الرئيسية") != std::string::npos) return true;
+        if (lower.find("الصفحه") != std::string::npos && lower.find("الرئيسيه") != std::string::npos) return true;
+        if (lower.find("home") != std::string::npos && lower.find(">") != std::string::npos) return true;
+        if (lower.find("الرئيسيه") != std::string::npos && lower.find("الصفحه") != std::string::npos) return true;
+        return false;
+    };
+
+    // Helper: normalize whitespace for dedup comparison
+    auto normalize_for_dedup = [](const std::string& seg) -> std::string {
+        std::string n;
+        for (char c : seg) {
+            if (!std::isspace(static_cast<unsigned char>(c))) n += std::tolower(static_cast<unsigned char>(c));
+        }
+        return n;
+    };
+
     // Score each segment against title keywords
     std::vector<std::string> kept_segments;
     std::vector<std::string> removed_segments;
+    std::set<std::string> seen_segments;
     for (const auto& seg : segments) {
+        if (is_share_row(seg)) {
+            removed_segments.push_back(seg);
+            continue;
+        }
+        if (is_breadcrumb(seg)) {
+            removed_segments.push_back(seg);
+            continue;
+        }
         std::string lower_seg = seg;
         std::transform(lower_seg.begin(), lower_seg.end(), lower_seg.begin(), ::tolower);
         int match_count = 0;
         for (const auto& kw : title_keywords) {
             if (lower_seg.find(kw) != std::string::npos) match_count++;
         }
-        // Keep segment if it shares at least 1 title keyword or is very short (likely a continuation)
-        if (match_count > 0 || seg.length() < 40) {
-            kept_segments.push_back(seg);
-        } else {
+        if (match_count == 0 && seg.length() >= 40) {
             removed_segments.push_back(seg);
+            continue;
         }
+        std::string dedup_key = normalize_for_dedup(seg);
+        if (!dedup_key.empty() && seen_segments.count(dedup_key)) {
+            removed_segments.push_back(seg);
+            continue;
+        }
+        seen_segments.insert(dedup_key);
+        kept_segments.push_back(seg);
     }
 
     // Rebuild cleaned content
@@ -871,12 +924,32 @@ YALLA_EXPORT const char* extract_story_elements(const char* title_cstr, const ch
                 trimmed.erase(0, trimmed.find_first_not_of(" \t\n\r"));
                 trimmed.erase(trimmed.find_last_not_of(" \t\n\r") + 1);
                 if (!trimmed.empty() && trimmed.length() > 5) {
+                    // Filter out share/social-media rows
+                    std::string lower_trim = trimmed;
+                    std::transform(lower_trim.begin(), lower_trim.end(), lower_trim.begin(), ::tolower);
+                    bool hasShare = lower_trim.find("شارك") != std::string::npos || lower_trim.find("share") != std::string::npos;
+                    if (hasShare) {
+                        std::vector<std::string> platforms = {
+                            "telegram", "linkedin", "messenger", "facebook", "twitter", "whatsapp",
+                            "instagram", "youtube", "tiktok"
+                        };
+                        int platformCount = 0;
+                        for (const auto& p : platforms) {
+                            if (lower_trim.find(p) != std::string::npos) platformCount++;
+                        }
+                        if (platformCount >= 2) continue;
+                    }
                     events.push_back(trimmed);
                 }
                 break;
             }
         }
     }
+
+    // Sort events: longer/more descriptive events first (main event first)
+    std::sort(events.begin(), events.end(), [](const std::string& a, const std::string& b) {
+        return a.length() > b.length();
+    });
 
     // Deduplicate
     std::sort(persons.begin(), persons.end());

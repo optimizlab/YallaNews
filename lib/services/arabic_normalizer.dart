@@ -1,97 +1,335 @@
-
+import 'dart:math';
 
 class ArabicTextNormalizer {
-  // Arabic diacritics (tashkeel) to remove
   static final tashkeel = RegExp(r'[\u064B-\u065F\u0670\u0640]');
-
-  // Alef variants to normalize to plain alef (ا)
   static final alefVariants = RegExp(r'[أإآ]');
-
-  // Taa marbouta to normalize (ة -> ه)
   static final taaMarbouta = RegExp(r'ة');
-
-  // Yaa/alef maqsoura to normalize (ى -> ي)
   static final yaaAlefMaqsoura = RegExp(r'ى');
-
-  // Tatweel (kashida) to remove
   static final tatweel = RegExp(r'\u0640');
-
-  // Arabic-Indic digits to normalize to Western Arabic numerals
   static final arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+  static final westernDigits = '0123456789';
 
-  /// Remove tashkeel (diacritics) from Arabic text
+  static final _punctuationAndSymbols = [
+    '>',
+    '<',
+    '‘',
+    '\uFEFF',
+    '°',
+    '©',
+    '؛',
+    '~',
+    '\$',
+    '+',
+    '»',
+    '«',
+    '@',
+    '"',
+    '"',
+    '%',
+    ':',
+    '!',
+    '_',
+    '-',
+    '–',
+    '#',
+    '*',
+    '|',
+    '…',
+    '¨',
+    '’',
+    "'",
+    ':',
+    ')',
+    '(',
+    '[',
+    ']',
+    '}',
+    '{',
+    '/',
+    '\\',
+    '?',
+    '؟',
+    '&',
+    '=',
+    ';',
+    ',',
+    '¸',
+    '،',
+    '.',
+    '″',
+    '“',
+    '”',
+  ];
+
+  static final _stopWords = <String>{
+    'في',
+    'من',
+    'إلى',
+    'على',
+    'هذا',
+    'هذه',
+    'أن',
+    'كان',
+    'كانت',
+    'ليس',
+    'لكن',
+    'أو',
+    'ثم',
+    'أي',
+    'كل',
+    'التي',
+    'الذي',
+    'الذين',
+    'أنه',
+    'أنها',
+    'ذلك',
+    'تلك',
+    'قد',
+    'لقد',
+    'حتى',
+    'عبر',
+    'مع',
+    'بعد',
+    'قبل',
+    'خلال',
+    'بين',
+    'عن',
+    'هو',
+    'هي',
+    'نحن',
+    'هم',
+    'هن',
+    'منذ',
+    'حيث',
+    'كيف',
+    'متى',
+    'أين',
+    'لم',
+    'لن',
+    'إذا',
+    'ما',
+    'لا',
+    'بل',
+    'حتى',
+    'كذلك',
+    'بعض',
+    'جميع',
+    ' frente',
+  };
+
   static String removeTashkeel(String text) {
     if (text.isEmpty) return text;
-    return text.replaceAll(tashkeel, '');
+    return tashkeel.allMatches(text).fold<String>(text, (result, m) {
+      return result.replaceRange(m.start, m.end, '');
+    });
   }
 
-  /// Normalize alef variants: أ إ آ -> ا
   static String normalizeAlef(String text) {
     if (text.isEmpty) return text;
-    return text.replaceAll(alefVariants, 'ا');
+    return alefVariants.allMatches(text).fold<String>(text, (result, m) {
+      return result.replaceRange(m.start, m.end, 'ا');
+    });
   }
 
-  /// Normalize taa marbouta: ة -> ه
   static String normalizeTaaMarbouta(String text) {
     if (text.isEmpty) return text;
-    return text.replaceAll(taaMarbouta, 'ه');
+    return taaMarbouta.allMatches(text).fold<String>(text, (result, m) {
+      return result.replaceRange(m.start, m.end, 'ه');
+    });
   }
 
-  /// Normalize yaa/alef maqsoura: ى -> ي
   static String normalizeYaaAlefMaqsoura(String text) {
     if (text.isEmpty) return text;
-    return text.replaceAll(yaaAlefMaqsoura, 'ي');
+    return yaaAlefMaqsoura.allMatches(text).fold<String>(text, (result, m) {
+      return result.replaceRange(m.start, m.end, 'ي');
+    });
   }
 
-  /// Remove tatweel (kashida)
   static String removeTatweel(String text) {
     if (text.isEmpty) return text;
-    return text.replaceAll(tatweel, '');
+    return tatweel.allMatches(text).fold<String>(text, (result, m) {
+      return result.replaceRange(m.start, m.end, '');
+    });
   }
 
-  /// Full normalization pipeline
+  static String normalizeDigits(String text) {
+    if (text.isEmpty) return text;
+    for (int i = 0; i < arabicDigits.length; i++) {
+      text = text.replaceAll(arabicDigits[i], westernDigits[i]);
+    }
+    return text;
+  }
+
+  static String removePunctuationAndSymbols(String text) {
+    if (text.isEmpty) return text;
+    for (final sym in _punctuationAndSymbols) {
+      text = text.replaceAll(sym, ' ');
+    }
+    return text;
+  }
+
+  static String collapseSpaces(String text) {
+    if (text.isEmpty) return text;
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static String stemSimple(String word) {
+    if (word.length <= 2) return word;
+
+    String w = word;
+
+    final prefixes = ['ب', 'ك', 'س', 'و', 'ل', 'أ', 'آ'];
+    if (prefixes.contains(w.substring(0, 1))) {
+      final second = w.length > 1 ? w.substring(1, 2) : '';
+      final third = w.length > 2 ? w.substring(2, 3) : '';
+
+      if (w.startsWith('ب')) {
+        if (second == 'أ' || second == 'إ' || second == 'ا') {
+          if (second == 'ا' && third == 'ل' && w.length >= 4) {
+            w = w.substring(3);
+          } else {
+            w = w.substring(1);
+          }
+        }
+      } else if (w.startsWith('ك')) {
+        if (second == 'أ' || second == 'إ' || second == 'ا') {
+          if (second == 'ا' && third == 'ل' && w.length >= 4) {
+            w = w.substring(3);
+          } else {
+            w = w.substring(1);
+          }
+        }
+      } else if (w.startsWith('س')) {
+        if (second == 'أ' || second == 'إ') {
+          w = w.substring(1);
+        } else if (second == 'ت') {
+          w = w.substring(2);
+        } else if (second == 'ي') {
+          w = w.substring(1);
+        }
+      } else if (w.startsWith('و')) {
+        if (second == 'أ' || second == 'إ' || second == 'ا') {
+          if (second == 'ا' && third == 'ل' && w.length >= 4) {
+            w = w.substring(3);
+          } else {
+            w = w.substring(1);
+          }
+        }
+      } else if (w.startsWith('ا')) {
+        if (second == 'ل' && w.length >= 3) {
+          w = w.substring(2);
+        }
+      } else if (w.startsWith('أ')) {
+        if (second == 'أ' && w.length >= 2) {
+          w = w.substring(1);
+        }
+      } else if (w.startsWith('ل')) {
+        if (second == 'أ' || second == 'إ' || second == 'ا') {
+          w = w.substring(1);
+        } else if (second == 'ل') {
+          final thirdChar = w.length > 2 ? w.substring(2, 3) : '';
+          if (thirdChar == 'أ' || thirdChar == 'ا' || thirdChar == 'إ') {
+            w = w.substring(2);
+          } else {
+            w = w.substring(1);
+          }
+        }
+      } else if (w.startsWith('آ')) {
+        w = w.replaceFirst('آ', 'أ');
+      }
+    }
+
+    return w;
+  }
+
+  static String removeStopwords(String text) {
+    if (text.isEmpty) return text;
+    final words = text.split(RegExp(r'\s+'));
+    final filtered = words.where((w) => w.isNotEmpty && !_stopWords.contains(w)).toList();
+    return filtered.join(' ');
+  }
+
+  static List<String> split(String text) {
+    final cleaned = removePunctuationAndSymbols(text);
+    final normalized = normalize(cleaned);
+    final words = normalized.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+
+    final result = <String>[];
+    for (final word in words) {
+      final lowered = word.toLowerCase();
+      final stemmed = stemSimple(lowered);
+      final parts = stemmed.split(' ').where((w) => w.isNotEmpty).toList();
+      result.addAll(parts);
+    }
+
+    return result;
+  }
+
   static String normalize(String text) {
     if (text.isEmpty) return text;
     text = removeTashkeel(text);
     text = normalizeAlef(text);
+    text = normalizeTaaMarbouta(text);
     text = normalizeYaaAlefMaqsoura(text);
     text = removeTatweel(text);
-    // Normalize multiple spaces
-    text = text.replaceAll(RegExp(r'\s+'), ' ');
-    return text.trim();
+    text = normalizeDigits(text);
+    text = removePunctuationAndSymbols(text);
+    text = collapseSpaces(text);
+    return text;
   }
 
-  /// Detect and filter out ad/comment/navigation text
+  static String normalizeForSearch(String text) {
+    if (text.isEmpty) return text;
+    text = normalize(text);
+    text = removeStopwords(text);
+    text = collapseSpaces(text);
+    return text;
+  }
+
+  static bool isArabic(String text) {
+    if (text.isEmpty) return true;
+    final length = text.length;
+    int arabicCount = 0;
+    final threshold = max(1, (0.6 * length).floor());
+
+    for (int i = 0; i < length; i++) {
+      final code = text.codeUnitAt(i);
+      if (code >= 0x0600 && code <= 0x06FF) {
+        arabicCount++;
+        if (arabicCount >= threshold) return true;
+      }
+    }
+
+    return arabicCount >= threshold;
+  }
+
   static bool isAdLike(String text) {
     if (text.isEmpty) return false;
     final lower = text.toLowerCase();
     final patterns = [
-      r'javascript:',
-      r'cookie',
-      r'subscribe now',
-      r'sign up',
-      r'follow us',
-      r'read more',
-      r'click here',
-      r'advertisement',
-      r'تبليغ',
-      r'اعلان',
-      r'مسجل',
-      r'تسجيل',
-      r'المزيد',
-      r'اقرأ المزيد',
-      r'شاركنا',
-      r'تابعنا',
+      'javascript:',
+      'cookie',
+      'subscribe now',
+      'sign up',
+      'follow us',
+      'read more',
+      'click here',
+      'advertisement',
+      'تبليغ',
+      'اعلان',
+      'مسجل',
+      'تسجيل',
+      'المزيد',
+      'اقرأ المزيد',
+      'شاركنا',
+      'تابعنا',
     ];
     for (final pattern in patterns) {
-      if (RegExp(pattern, caseSensitive: false).hasMatch(lower)) {
-        return true;
-      }
+      if (lower.contains(pattern)) return true;
     }
     return false;
   }
 
-  /// Detect language of text
   static String detectLanguage(String text) {
     if (text.isEmpty) return 'unknown';
     int arabicChars = 0;

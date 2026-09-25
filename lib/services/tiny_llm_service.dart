@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'engine_ffi.dart';
 
 /// Qwen3-0.6B — offline Tiny LLM for YallaNews
-/// Runs entirely on-device via flutter_gemma / MediaPipe LiteRT after one-time download (~614 MB).
-/// If the model is not yet installed the service is unavailable;
-/// call [installModel()] once (first launch) to download the .litertlm bundle.
+/// Runs via C++ bridge (engine_ffi.dart → yalla_engine.dll) when available,
+/// otherwise falls back to the built-in Dart stub.
 class TinyLLMService {
   static final TinyLLMService instance = TinyLLMService._();
   TinyLLMService._();
@@ -33,7 +33,6 @@ class TinyLLMService {
     if (_loading || _installed || _failed) return;
     _loading = true;
     try {
-      // Dummy init
       final prefs = await SharedPreferences.getInstance();
       final alreadyDone = prefs.getBool('qwen3_done') ?? false;
       if (alreadyDone) {
@@ -60,14 +59,11 @@ class TinyLLMService {
     onProgress?.call(0);
 
     try {
-      // FlutterGemma is removed
       onProgress?.call(100);
 
-      // Mark as downloaded so we can restore it on next app launch
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('qwen3_done', true);
 
-      // Load into GPU/CPU now
       await _loadModel();
       return null;
     } catch (e) {
@@ -91,7 +87,7 @@ class TinyLLMService {
     }
   }
 
-  // ── Core: analyse one article ──────────────────────────────────────────────
+  // ── Core: analyse one article via C++ TinyLLM bridge ───────────────────────
   /// Returns structured analysis. Throws if model is not ready.
   Future<NewsLLMResult> analyzeArticle({
     required String title,
@@ -111,9 +107,63 @@ class TinyLLMService {
     final prompt = _buildPrompt(t, s, c);
 
     try {
-      // Dummy response since flutter_gemma is removed
-      final raw = '{"category":"general","summary":"Fallback","confidence":1.0}';
-      return _parseResponse(raw);
+      List<String> mainEvents = [];
+      String category = 'general';
+      String subcategory = 'general';
+      String shortTitle = '';
+      double sentiment = 0.0;
+      double confidence = 0.5;
+      String eventType = 'general';
+      String geopoliticalRegion = 'global';
+      String llmSummary = '';
+
+      if (hasNativeEngine) {
+        final analysisJson = analyzeArticleJson(jsonEncode({
+          'title': t,
+          'content': c,
+          'summary': s,
+        }));
+        if (analysisJson.isNotEmpty) {
+          category = (analysisJson['category'] as String?)?.trim() ?? 'general';
+          subcategory = (analysisJson['subcategory'] as String?)?.trim() ?? 'general';
+          sentiment = (analysisJson['sentiment'] as num?)?.toDouble() ?? 0.0;
+          confidence = (analysisJson['confidence'] as num?)?.toDouble() ?? 0.5;
+          eventType = (analysisJson['event_type'] as String?)?.trim() ?? 'general';
+          geopoliticalRegion = (analysisJson['geopolitical_region'] as String?)?.trim() ?? 'global';
+        }
+
+        final storyElements = extractStoryElementsJson(t, c);
+        if (storyElements.isNotEmpty) {
+          final events = (storyElements['events'] as List<dynamic>?) ?? [];
+          mainEvents = events.map((e) => e.toString()).toList();
+          if (mainEvents.isEmpty) {
+            llmSummary = 'Event detected: $eventType';
+          } else {
+            llmSummary = mainEvents.first;
+          }
+        } else {
+          llmSummary = 'Event detected: $eventType';
+        }
+      } else {
+        final raw = '{"category":"general","summary":"Fallback","confidence":1.0}';
+        final fallback = _parseResponse(raw);
+        return fallback.copyWith(mainEvents: const <String>[]);
+      }
+
+      return NewsLLMResult(
+        category: category,
+        subcategory: subcategory,
+        shortTitle: shortTitle,
+        sentiment: sentiment,
+        confidence: confidence,
+        eventType: eventType,
+        geopoliticalRegion: geopoliticalRegion,
+        entities: const <NewsLLMEntity>[],
+        sportsData: const {},
+        summary: llmSummary,
+        mainEvents: mainEvents,
+        parseError: null,
+      );
     } catch (e) {
       return NewsLLMResult.fallback('Inference error: $e', raw: e.toString());
     }
@@ -294,7 +344,8 @@ class NewsLLMResult {
   final List<NewsLLMEntity> entities;
   final Map<String, dynamic> sportsData;
   final String summary;
-  final String? rawResponse;   // LLM raw text — useful for debugging
+  final List<String> mainEvents;
+  final String? rawResponse;
   final String? parseError;
 
   const NewsLLMResult({
@@ -308,9 +359,42 @@ class NewsLLMResult {
     required this.entities,
     required this.sportsData,
     required this.summary,
+    this.mainEvents = const <String>[],
     this.rawResponse,
     this.parseError,
   });
+
+  NewsLLMResult copyWith({
+    String? category,
+    String? subcategory,
+    String? shortTitle,
+    double? sentiment,
+    double? confidence,
+    String? eventType,
+    String? geopoliticalRegion,
+    List<NewsLLMEntity>? entities,
+    Map<String, dynamic>? sportsData,
+    String? summary,
+    List<String>? mainEvents,
+    String? rawResponse,
+    String? parseError,
+  }) {
+    return NewsLLMResult(
+      category: category ?? this.category,
+      subcategory: subcategory ?? this.subcategory,
+      shortTitle: shortTitle ?? this.shortTitle,
+      sentiment: sentiment ?? this.sentiment,
+      confidence: confidence ?? this.confidence,
+      eventType: eventType ?? this.eventType,
+      geopoliticalRegion: geopoliticalRegion ?? this.geopoliticalRegion,
+      entities: entities ?? this.entities,
+      sportsData: sportsData ?? this.sportsData,
+      summary: summary ?? this.summary,
+      mainEvents: mainEvents ?? this.mainEvents,
+      rawResponse: rawResponse ?? this.rawResponse,
+      parseError: parseError ?? this.parseError,
+    );
+  }
 
   factory NewsLLMResult.fallback(String error, {String? raw}) =>
       NewsLLMResult(
@@ -324,6 +408,7 @@ class NewsLLMResult {
         entities: const [],
         sportsData: const {},
         summary: '',
+        mainEvents: const <String>[],
         rawResponse: raw,
         parseError: error,
       );

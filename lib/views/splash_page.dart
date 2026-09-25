@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../services/tiny_llm_service.dart';
 import '../services/yalla_engine_service.dart';
+import '../services/app_settings.dart';
+import '../services/category_service.dart';
 import '../widgets/custom_logo.dart';
 import '../arabic_news_processor.dart';
 import 'home_page.dart';
@@ -31,6 +33,11 @@ class _SplashPageState extends State<SplashPage> {
 
   Future<void> _initApp() async {
     await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    
+    // Start background initialization
+    _backgroundInit();
+    
     if (mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -38,6 +45,13 @@ class _SplashPageState extends State<SplashPage> {
         ),
       );
     }
+  }
+  
+  Future<void> _backgroundInit() async {
+    try {
+      await AppSettings.instance.loadSettings();
+      await CategoryService.instance.loadCategories();
+    } catch (_) {}
   }
 
   static Future<int> _installModelIsolate(_) async {

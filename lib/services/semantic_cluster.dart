@@ -204,12 +204,12 @@ class SemanticCluster {
 
   /// Returns a 0..1 score: 1.0 for same-hour, decaying to 0.1 at ≥72h apart.
   static double _timeSimilarity(NewsModel a, NewsModel b) {
-    if (a.publishDate.isEmpty || b.publishDate.isEmpty) return 0.7;
+    if (a.publishDate.isEmpty || b.publishDate.isEmpty) return 0.0;
 
     try {
       final dateA = DateTime.tryParse(a.publishDate);
       final dateB = DateTime.tryParse(b.publishDate);
-      if (dateA == null || dateB == null) return 0.7;
+      if (dateA == null || dateB == null) return 0.0;
 
       final diffHours = dateA.difference(dateB).inHours.abs();
       if (diffHours <= 4) return 1.0;
@@ -219,7 +219,7 @@ class SemanticCluster {
       if (diffHours <= 72) return 0.3;
       return 0.1;
     } catch (_) {
-      return 0.7;
+      return 0.0;
     }
   }
 

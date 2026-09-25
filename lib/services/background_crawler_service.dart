@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -127,7 +128,7 @@ double _calculateSentiment(String text) {
   return ((positiveCount - negativeCount) / total).clamp(-1.0, 1.0);
 }
 
-String _cleanTitleIsolate(String title, String url) {
+String _cleanTitleIsolate(String title, String url, [List<String>? sourceNames]) {
   if (title.isEmpty) return title;
   String cleaned = title;
   final uri = Uri.tryParse(url);
@@ -146,6 +147,29 @@ String _cleanTitleIsolate(String title, String url) {
       break;
     }
   }
+  
+  // Strip known source names from anywhere in the title
+  final namesToStrip = <String>[];
+  if (domain.isNotEmpty) {
+    final domainParts = domain.split('.');
+    final sourceName = domainParts.first;
+    if (sourceName.length > 3) {
+      namesToStrip.add(sourceName);
+    }
+  }
+  if (sourceNames != null) {
+    namesToStrip.addAll(sourceNames.where((n) => n.length > 2));
+  }
+  
+  for (final name in namesToStrip) {
+    final escaped = RegExp.escape(name);
+    // Match with optional Arabic preposition prefix like "لـ", "من", "إلى", "مع", etc.
+    final pattern = RegExp('(?:\\s*(?:لـ|من|إلى|مع|عبر|بواسطة|في|عند)\\s+)?$escaped', caseSensitive: false);
+    cleaned = cleaned.replaceAll(pattern, '').trim();
+    // Also remove trailing separators left behind
+    cleaned = cleaned.replaceAll(RegExp(r'^[\s\-\|:»]+|[\s\-\|:»]+$'), '').trim();
+  }
+  
   if (domain.isNotEmpty) {
     final domainParts = domain.split('.');
     final sourceName = domainParts.first;
@@ -308,7 +332,8 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
     extractedContent = extractedContent.replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
     final decodedTitle = _decodeHtmlIsolate(metaTitle.isNotEmpty ? metaTitle : title);
-    final cleanedTitle = _cleanTitleIsolate(decodedTitle, url);
+    final sourceNames = task['sourceNames'] as List<String>?;
+    final cleanedTitle = _cleanTitleIsolate(decodedTitle, url, sourceNames);
     final decodedSummary = _stripHtmlTags(_decodeHtmlIsolate(effectiveSummary));
 
     // ── N-gram paragraph scorer (TinyLLM-style) ─────────────────────────────
@@ -349,7 +374,6 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
       classificationText,
       url: url,
       validCategoryIds: validCategoryIds,
-      titleOnly: cleanedTitle,
     );
 
     final sourceUri = Uri.tryParse(url);
@@ -646,21 +670,28 @@ class BackgroundCrawlerService {
         return;
       }
 
-      // Filter for Moroccan Arabic sources only
-      final List<NewsSource> moroccanSources = allSources
-          .where((s) => s.language.contains('ar') && s.countryCode == 'MA')
-          .toList();
+      final appLanguage = AppSettings.instance.locale?.languageCode ?? 'ar';
+      final appCountry = AppSettings.instance.countryCode;
 
-      if (moroccanSources.isEmpty) {
-        engineService.addLog('[SILENT CRAWLER] No Moroccan sources found in DB.');
+      final List<NewsSource> matchedSources = allSources.where((s) {
+        final sourceLanguages = s.language.split(',').map((l) => l.trim()).toList();
+        final languageMatch = sourceLanguages.any((l) => l == appLanguage || l.isEmpty);
+        final countryMatch = appCountry.isEmpty || s.countryCode.isEmpty || s.countryCode == appCountry;
+        return languageMatch && countryMatch;
+      }).toList();
+
+      if (matchedSources.isEmpty) {
+        engineService.addLog('[SILENT CRAWLER] No sources matched app language/country filters.');
         _isRunning = false;
         return;
       }
 
-      final List<NewsSource> topSources = List.from(moroccanSources)
+      final List<NewsSource> topSources = List.from(matchedSources)
         ..sort((a, b) => b.rank.compareTo(a.rank));
       final sourcesToCrawl =
           topSources.take(await _topSourcesCount).toList();
+
+      sourcesToCrawl.shuffle(Random());
 
       engineService.addLog(
           '[SILENT CRAWLER] Queued ${sourcesToCrawl.length} top sources for background crawling.');
@@ -676,9 +707,9 @@ class BackgroundCrawlerService {
       for (int i = 0; i < sourcesToCrawl.length; i++) {
         final source = sourcesToCrawl[i];
 
-         // Skip only if crawled in the last 1 minute (prevents hammering sources)
+         // Skip if crawled in the last 35 minutes
          final last = await db.getLastCrawlTime(source.url);
-         if (last != null && DateTime.now().difference(last).inMinutes < 1) {
+         if (last != null && DateTime.now().difference(last).inMinutes < 35) {
           engineService.addLog(
               '[SILENT CRAWLER] [${i + 1}/${sourcesToCrawl.length}] ${source.name}: last crawled ${DateTime.now().difference(last).inMinutes} min ago, skipping.');
           continue;
@@ -688,10 +719,18 @@ class BackgroundCrawlerService {
             '[SILENT CRAWLER] [${i + 1}/${sourcesToCrawl.length}] Crawling: ${source.name} (${source.url})');
 
         try {
-          await _crawlSource(source, jsonStr, engineService);
+          final quality = await _crawlSource(source, jsonStr, engineService);
           onProgress?.call();
           engineService.addLog('[SILENT CRAWLER] √ ${source.name} done.');
           await Future.delayed(const Duration(milliseconds: 500));
+          try {
+            await ServerApiService.updateSourceCrawlTime(source.url);
+          } catch (_) {}
+          if (quality != null && quality > 0) {
+            try {
+              await ServerApiService.updateSourceScore(source.url, quality);
+            } catch (_) {}
+          }
         } catch (e) {
           engineService.addLog('[SILENT CRAWLER] X ${source.name} failed: $e');
         }
@@ -744,14 +783,21 @@ class BackgroundCrawlerService {
       final db = NewsDatabase.instance;
       final allSources = await db.getAllSources();
 
-      // Filter for Moroccan Arabic sources
-      final List<NewsSource> moroccanSources = allSources
-          .where((s) => s.language.contains('ar') && s.countryCode == 'MA')
-          .toList();
+      final appLanguage = AppSettings.instance.locale?.languageCode ?? 'ar';
+      final appCountry = AppSettings.instance.countryCode;
 
-      final List<NewsSource> topSources = List.from(moroccanSources)
+      final List<NewsSource> matchedSources = allSources.where((s) {
+        final sourceLanguages = s.language.split(',').map((l) => l.trim()).toList();
+        final languageMatch = sourceLanguages.any((l) => l == appLanguage || l.isEmpty);
+        final countryMatch = appCountry.isEmpty || s.countryCode.isEmpty || s.countryCode == appCountry;
+        return languageMatch && countryMatch;
+      }).toList();
+
+      final List<NewsSource> topSources = List.from(matchedSources)
         ..sort((a, b) => b.rank.compareTo(a.rank));
       final sourcesToCrawl = topSources.take(await _topSourcesCount).toList();
+
+      sourcesToCrawl.shuffle(Random());
 
       String jsonStr = '[]';
       try {
@@ -764,11 +810,18 @@ class BackgroundCrawlerService {
             '[SILENT CRAWLER] [${i + 1}/${sourcesToCrawl.length}] Refreshing: ${source.name}');
 
         try {
-          // Clear old articles first
           await db.clearArticlesForSource(source.url);
-          await _crawlSource(source, jsonStr, engineService);
+          final quality = await _crawlSource(source, jsonStr, engineService);
           onProgress?.call();
           await Future.delayed(const Duration(milliseconds: 500));
+          try {
+            await ServerApiService.updateSourceCrawlTime(source.url);
+          } catch (_) {}
+          if (quality != null && quality > 0) {
+            try {
+              await ServerApiService.updateSourceScore(source.url, quality);
+            } catch (_) {}
+          }
         } catch (e) {
           engineService.addLog('[SILENT CRAWLER] ✗ ${source.name} failed: $e');
         }
@@ -784,7 +837,8 @@ class BackgroundCrawlerService {
   }
 
   /// Multi-Pass, Isolate-Threaded news crawl pipeline for a single source.
-  Future<void> _crawlSource(
+  /// Returns a quality score between 0.0 and 1.0, or null if crawl failed.
+  Future<double?> _crawlSource(
     NewsSource source,
     String jsonStr,
     YallaEngineService engineService,
@@ -808,7 +862,7 @@ class BackgroundCrawlerService {
       // Already an article – treat directly
       final article = NewsModel.fromJson(sourceResult, source.url);
       await NewsDatabase.instance.saveCrawledArticles([article], source.url);
-      return;
+      return 0.5;
     }
 
     if (rawUrls.isEmpty) {
@@ -843,7 +897,7 @@ class BackgroundCrawlerService {
 
     if (rawUrls.isEmpty) {
       engineService.addLog('[CRAWL FILTER] No URLs passed source-domain filter for ${source.url}.');
-      return;
+      return 0.0;
     }
 
     // PASS 2: URL Pre-Validation, Blacklist filtering, Jaccard Similarity Deduplication, and Priority Ranking (Threaded Isolate)
@@ -874,7 +928,7 @@ class BackgroundCrawlerService {
 
     if (sortedArticleUrls.isEmpty) {
       engineService.addLog('[CRAWL PASS 2] Zero unique news articles survived the deduplication pipeline.');
-      return;
+      return 0.0;
     }
 
     // PASS 3: Background-isolate Crawling & AI Analysis
@@ -884,7 +938,7 @@ class BackgroundCrawlerService {
 
     engineService.addLog('[CRAWL PASS 3] Initiating background-isolate article processing...');
 
-    const int batchSize = 5;
+    const int batchSize = 10;
     final int totalBatches = (sortedArticleUrls.length / batchSize).ceil();
 
     for (int batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
@@ -894,11 +948,19 @@ class BackgroundCrawlerService {
 
       engineService.addLog('[CRAWL PASS 3] Processing batch ${batchIndex + 1}/$totalBatches (${batchUrls.length} articles)...');
 
+      final sourceNames = <String>[source.name];
+      final domain = Uri.tryParse(source.url)?.host.toLowerCase() ?? '';
+      if (domain.isNotEmpty) {
+        final domainParts = domain.split('.');
+        if (domainParts.first.isNotEmpty) sourceNames.add(domainParts.first);
+      }
+
       final batchTasks = batchUrls.map((artUrl) {
         return <String, dynamic>{
           'url': artUrl,
           'validCategoryIds': CategoryService.instance.initialized ? CategoryService.instance.categoryIds : null,
           'sourceLanguage': source.language,
+          'sourceNames': sourceNames,
         };
       }).toList();
 
@@ -916,15 +978,9 @@ class BackgroundCrawlerService {
           }
 
           final articleRaw = NewsModel.fromJson(result, result['url'] as String);
-          final String classificationText = '${articleRaw.title} ${articleRaw.summary} ${articleRaw.content}';
-          final String detectedCategory = NewsIntelligence.classifyCategory(
-            classificationText,
-            url: result['url'] as String,
-            validCategoryIds: CategoryService.instance.categoryIds,
-            titleOnly: articleRaw.title,
-          );
+          final String detectedCategory = result['category']?.toString() ?? articleRaw.category;
           var article = articleRaw.copyWith(category: detectedCategory);
-          engineService.addLog('[CATEGORY] Raw: "${articleRaw.category}", Detected: "$detectedCategory" for URL: ${result['url']}');
+          engineService.addLog('[CATEGORY] Detected: "$detectedCategory" for URL: ${result['url']}');
 
           if (!YallaEngineService.hasValidTitle(article.title)) {
             engineService.addLog('[VALIDATION] Skipped invalid title for URL: ${result['url']}');
@@ -974,6 +1030,7 @@ class BackgroundCrawlerService {
             await Future.delayed(const Duration(milliseconds: 1500));
           }
           _emitArticle(article);
+          await Future.delayed(Duration.zero);
         }
       } catch (e) {
         engineService.addLog('[CRAWL PASS 3] Batch failed: $e');
@@ -985,7 +1042,10 @@ class BackgroundCrawlerService {
     }
 
     if (fetchedArticles.isNotEmpty) {
-      final groupedArticles = _groupSimilarNews(fetchedArticles, source.name);
+      final groupedArticles = await compute(_groupSimilarNewsIsolate, {
+        'articles': fetchedArticles.map((a) => a.toJson()).toList(),
+        'sourceName': source.name,
+      });
       await NewsDatabase.instance.saveCrawledArticles(groupedArticles, source.url);
 
       for (final article in groupedArticles) {
@@ -1014,8 +1074,16 @@ class BackgroundCrawlerService {
         }
       }
     }
+    final double quality = fetchedArticles.length / max(sortedArticleUrls.length, 1);
     engineService.addLog(
-        '[CRAWL PASS 3] Crawl complete. Success: $successCount, Failures: $failureCount.');
+        '[CRAWL PASS 3] Crawl complete. Success: $successCount, Failures: $failureCount, Quality: ${quality.toStringAsFixed(2)}.');
+    return quality;
+  }
+
+  static List<NewsModel> _groupSimilarNewsIsolate(Map<String, dynamic> input) {
+    final articles = (input['articles'] as List).map((json) => NewsModel.fromJson(json, json['url'] as String)).toList();
+    final sourceName = input['sourceName'] as String;
+    return _groupSimilarNews(articles, sourceName);
   }
 
   static List<NewsModel> _groupSimilarNews(List<NewsModel> articles, String sourceName) {
@@ -1116,6 +1184,166 @@ class BackgroundCrawlerService {
       }
     }
     return false;
+  }
+}
+
+class _NoPertinentStore {
+  static final List<String> _texts = [];
+  static final List<String> _images = [];
+
+  static Future<void> loadFromLocalJson(String jsonStr) async {
+    try {
+      final List<dynamic> decoded = jsonDecode(jsonStr);
+      for (final item in decoded) {
+        final map = Map<String, dynamic>.from(item as Map);
+        final text = map['text'] as String?;
+        final uri = map['uri'] as String?;
+        if (text != null && text.isNotEmpty) _texts.add(text);
+        if (uri != null && uri.isNotEmpty) _images.add(uri);
+      }
+    } catch (_) {}
+  }
+
+  static String removeText(String content) {
+    if (_texts.isEmpty || content.isEmpty) return content;
+    String cleaned = content;
+    for (final text in _texts) {
+      final escaped = text.replaceAll(RegExp(r'[.*+?^${}()|[\]\\]'), r'\$&');
+      cleaned = cleaned.replaceAll(RegExp(escaped, caseSensitive: false), ' ');
+    }
+    return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static bool isNoPertinentImage(String imageUrl) {
+    if (imageUrl.isEmpty || _images.isEmpty) return false;
+    final lower = imageUrl.toLowerCase();
+    for (final uri in _images) {
+      if (lower.contains(uri.toLowerCase())) return true;
+    }
+    return false;
+  }
+}
+
+const _userAgents = <String>[
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+  'EagleNews/1.0; (+https://www.bladipresse.com/)',
+];
+
+Future<http.Response> _getWithRotatingUserAgent(Uri uri) async {
+  final agent = _userAgents[Random().nextInt(_userAgents.length)];
+  return http.get(uri, headers: {
+    'User-Agent': agent,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'ar,en-US;q=0.7,en;q=0.5',
+    'Referer': 'https://www.bladipresse.com/',
+  }).timeout(const Duration(seconds: 20));
+}
+
+Future<String> _extractYouTubeVideoId(String title, String html) async {
+  final embedPattern = RegExp(r'youtube\.com/embed/([\w\-]+)', caseSensitive: false);
+  final matches = embedPattern.allMatches(html);
+  final ids = matches.map((m) => m.group(1)!).toSet().toList();
+  if (ids.isEmpty) return '';
+
+  for (final videoId in ids) {
+    try {
+      final videoUrl = Uri.parse('https://www.youtube.com/watch?v=$videoId');
+      final response = await http.get(videoUrl, headers: {
+        'User-Agent': _userAgents[Random().nextInt(_userAgents.length)],
+      }).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) continue;
+
+      final titleMatch = RegExp(r'<title>(.*?)</title>', caseSensitive: false).firstMatch(response.body);
+      if (titleMatch == null) continue;
+
+      final videoTitle = titleMatch.group(1)!
+          .replaceAll(' - YouTube', '')
+          .replaceAll('&amp;', '&')
+          .trim();
+
+      final expectedClean = title.toLowerCase().trim();
+      final videoClean = videoTitle.toLowerCase().trim();
+      final similarity = _similarity(expectedClean, videoClean);
+      if (similarity >= 0.7) return videoId;
+    } catch (_) {
+      continue;
+    }
+  }
+
+  return '';
+}
+
+String _extractInstagramVideoId(String html) {
+  final pattern = RegExp(r'instagram\.com/(?:p|reel|tv)/([^/?\s"]+)', caseSensitive: false);
+  final match = pattern.firstMatch(html);
+  return match != null && match.groupCount >= 1 ? match.group(1)! : '';
+}
+
+String _extractTwitterVideoUrl(String html) {
+  final pattern = RegExp(r'https?://(?:twitter\.com|x\.com)/[a-z0-9_]+/status/\d+', caseSensitive: false);
+  final match = pattern.firstMatch(html);
+  return match != null ? match.group(0)! : '';
+}
+
+String _buildHashtags(String? keywords, String category) {
+  final buffer = StringBuffer('#أخبار ');
+  final normalizedCategory = category.trim();
+  if (normalizedCategory.isNotEmpty) {
+    buffer.write('#$normalizedCategory ');
+  }
+
+  if (keywords != null && keywords.isNotEmpty) {
+    final tags = keywords
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .map((e) => e.replaceAll(RegExp(r'\s+'), '_'))
+        .toSet()
+        .take(8)
+        .toList();
+    for (final tag in tags) {
+      buffer.write('#$tag ');
+    }
+  }
+
+  return buffer.toString().trim();
+}
+
+double _similarity(String a, String b) {
+  final setA = a.split(RegExp(r'\s+')).toSet();
+  final setB = b.split(RegExp(r'\s+')).toSet();
+  final intersection = setA.intersection(setB).length;
+  final union = setA.union(setB).length;
+  if (union == 0) return 0.0;
+  return intersection / union;
+}
+
+class _StoryExtractor {
+  static List<String> extract(String html) {
+    final pattern = RegExp(r'>([^<]{20,})<');
+    final matches = pattern.allMatches(html);
+
+    final raw = <String>[];
+    for (final match in matches) {
+      final segment = match.group(1)!.trim();
+      if (segment.isEmpty) continue;
+      if (!ArabicTextNormalizer.isArabic(segment)) continue;
+      if (ArabicTextNormalizer.isAdLike(segment)) continue;
+      raw.add(segment);
+    }
+
+    final counted = <String, int>{};
+    for (final segment in raw) {
+      final cleaned = ArabicTextNormalizer.normalize(segment);
+      if (cleaned.length < 90) continue;
+      counted[cleaned] = (counted[cleaned] ?? 0) + 1;
+    }
+
+    final result = counted.keys.toList();
+    result.sort((a, b) => counted[b]!.compareTo(counted[a]!));
+    return result;
   }
 }
 

@@ -47,9 +47,10 @@ class NewsGroupingService {
   static final NewsGroupingService instance = NewsGroupingService._internal();
 
   static const int _minTitleWords = 3;
-  static const double _titleSimilarityThreshold = 0.32;
-  static const double _semanticSimilarityThreshold = 0.28;
-  static const double _ollamaEmbeddingThreshold = 0.82;
+  static const double _titleSimilarityThreshold = 0.55;
+  static const double _semanticSimilarityThreshold = 0.50;
+  static const double _ollamaEmbeddingThreshold = 0.88;
+  static const double _contentSimilarityThreshold = 0.45;
 
   bool hasValidTitle(NewsModel article) {
     final words = article.title.trim().split(RegExp(r'\s+'));
@@ -76,7 +77,8 @@ class NewsGroupingService {
         final otherNormalized = _normalize(other.title);
         final titleSim = _computeSimilarity(normalizedTitle, otherNormalized);
         final semanticSim = SemanticCluster.calculateSimilarity(article, other);
-        if (titleSim >= titleThreshold || semanticSim >= semanticThreshold) {
+        final contentSim = _computeContentSimilarity(article, other);
+        if (titleSim >= titleThreshold && semanticSim >= semanticThreshold && contentSim >= _contentSimilarityThreshold) {
           cluster.add(other);
           assigned.add(other);
         }
@@ -129,16 +131,20 @@ class NewsGroupingService {
           final vecB = embeddings[other.url];
           if (vecB != null) {
             final sim = EmbeddingService.denseCosineSimilarity(vecA, vecB);
-            isMatch = sim >= _ollamaEmbeddingThreshold;
+            final semanticSim = SemanticCluster.calculateSimilarity(article, other);
+            final contentSim = _computeContentSimilarity(article, other);
+            isMatch = sim >= _ollamaEmbeddingThreshold && semanticSim >= _semanticSimilarityThreshold && contentSim >= _contentSimilarityThreshold;
           } else {
             final semanticSim = SemanticCluster.calculateSimilarity(article, other);
-            isMatch = semanticSim >= _semanticSimilarityThreshold;
+            final contentSim = _computeContentSimilarity(article, other);
+            isMatch = semanticSim >= _semanticSimilarityThreshold && contentSim >= _contentSimilarityThreshold;
           }
         } else {
           final otherNormalized = _normalize(other.title);
           final titleSim = _computeSimilarity(normalizedTitle, otherNormalized);
           final semanticSim = SemanticCluster.calculateSimilarity(article, other);
-          isMatch = titleSim >= _titleSimilarityThreshold || semanticSim >= _semanticSimilarityThreshold;
+          final contentSim = _computeContentSimilarity(article, other);
+          isMatch = titleSim >= _titleSimilarityThreshold && semanticSim >= _semanticSimilarityThreshold && contentSim >= _contentSimilarityThreshold;
         }
 
         if (isMatch) {
@@ -181,8 +187,9 @@ class NewsGroupingService {
         final otherNormalized = _normalize(other.title);
         final titleSim = _computeSimilarity(normalizedTitle, otherNormalized);
         final semanticSim = SemanticCluster.calculateSimilarity(article, other);
+        final contentSim = _computeContentSimilarity(article, other);
 
-        if (titleSim >= _titleSimilarityThreshold || semanticSim >= _semanticSimilarityThreshold) {
+        if (titleSim >= _titleSimilarityThreshold && semanticSim >= _semanticSimilarityThreshold && contentSim >= _contentSimilarityThreshold) {
           cluster.add(other);
           assigned.add(other);
         }
@@ -328,5 +335,11 @@ class NewsGroupingService {
     final union = wordsA.union(wordsB).length;
 
     return union == 0 ? 0.0 : intersection / union;
+  }
+
+  static double _computeContentSimilarity(NewsModel a, NewsModel b) {
+    final vecA = SemanticCluster.buildTfIdfVector(a);
+    final vecB = SemanticCluster.buildTfIdfVector(b);
+    return SemanticCluster.cosineSimilarity(vecA, vecB);
   }
 }

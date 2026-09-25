@@ -12,12 +12,15 @@ else()
     message(WARNING "This CMakeLists.txt is intended for Android NDK build")
 endif()
 
-# Source files - yalla_engine sources are in ../../../windows/yalla_engine/
-set(YALLA_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../windows/yalla_engine")
+# Source files - yalla_engine sources are in ../../../../../windows/yalla_engine/
+set(YALLA_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../windows/yalla_engine")
 
 file(GLOB_RECURSE YALLA_ENGINE_SOURCES
     "${YALLA_ENGINE_ROOT}/*.cpp"
 )
+
+# Exclude Windows-only server.cpp from Android builds
+list(REMOVE_ITEM YALLA_ENGINE_SOURCES "${YALLA_ENGINE_ROOT}/server.cpp")
 
 add_library(yalla_engine SHARED ${YALLA_ENGINE_SOURCES})
 

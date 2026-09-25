@@ -366,14 +366,14 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
                                                      color: Theme.of(context).colorScheme.surfaceContainer,
                                                      borderRadius: BorderRadius.circular(8),
                                                    ),
-                                                   child: Text(
-                                                     article.category.toUpperCase(),
-                                                     style: GoogleFonts.outfit(
-                                                       fontSize: 9,
-                                                       fontWeight: FontWeight.bold,
-                                                       color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                                     ),
-                                                   ),
+                                                    child: Text(
+                                                      CategoryService.getCategoryLabel(article.category, context),
+                                                      style: GoogleFonts.outfit(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.bold,
+                                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                      ),
+                                                    ),
                                                  ),
                                                 const SizedBox(width: 8),
                                                 // Sentiment Indicator

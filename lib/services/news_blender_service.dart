@@ -4,6 +4,7 @@ import '../models/news_model.dart';
 import 'arabic_normalizer.dart';
 import 'news_grouping_service.dart';
 import 'ollama_service.dart';
+import 'semantic_cluster.dart';
 
 class _BlendArticlesInput {
   final List<NewsModel> rawArticles;
@@ -167,6 +168,12 @@ class NewsBlenderService {
       ..['subject_topic'] = cluster.subjectTitle
       ..['original_source_count'] = attributions.length;
 
+    final uniqueSourceDomains = <String>{};
+    for (final a in articles) {
+      final domain = _extractDomain(a.url);
+      if (domain.isNotEmpty) uniqueSourceDomains.add(domain);
+    }
+
     final blendedModel = NewsModel(
       url: primary.url, urlHash: primary.urlHash,
       title: masterTitle, shortTitle: cluster.subjectTitle,
@@ -179,7 +186,7 @@ class NewsBlenderService {
       eventType: primary.eventType, subcategory: primary.subcategory,
       entities: mergedEntities, structuredData: structuredData,
       intelligenceJson: primary.intelligenceJson,
-      sourceCount: max(attributions.length, allSources.length),
+      sourceCount: uniqueSourceDomains.length,
       sources: allSources,
     );
     blendedModel.relatedArticles = List<NewsModel>.from(articles);
@@ -221,6 +228,10 @@ class NewsBlenderService {
     }
 
     if (articles.length == 1) {
+      return _optimizeSingleArticle(articles.first);
+    }
+
+    if (!_isCoherentCluster(articles)) {
       return _optimizeSingleArticle(articles.first);
     }
 
@@ -286,6 +297,12 @@ class NewsBlenderService {
     structuredData['subject_topic'] = cluster.subjectTitle;
     structuredData['original_source_count'] = attributions.length;
 
+    final uniqueSourceDomains = <String>{};
+    for (final a in articles) {
+      final domain = _extractDomain(a.url);
+      if (domain.isNotEmpty) uniqueSourceDomains.add(domain);
+    }
+
     final blendedModel = NewsModel(
       url: primary.url,
       urlHash: primary.urlHash,
@@ -305,7 +322,7 @@ class NewsBlenderService {
       entities: mergedEntities,
       structuredData: structuredData,
       intelligenceJson: primary.intelligenceJson,
-      sourceCount: max(attributions.length, allSources.length),
+      sourceCount: uniqueSourceDomains.length,
       sources: allSources,
     );
 
@@ -612,10 +629,11 @@ class NewsBlenderService {
 
     for (final a in articles) {
       final u = a.url.trim();
-      if (u.isEmpty || seen.contains(u)) continue;
-      seen.add(u);
-
+      if (u.isEmpty) continue;
       final domain = _extractDomain(u);
+      if (seen.contains(domain)) continue;
+      seen.add(domain);
+
       list.add({
         'name': _domainToName(domain),
         'domain': domain,
@@ -627,6 +645,23 @@ class NewsBlenderService {
     }
 
     return list;
+  }
+
+  bool _isCoherentCluster(List<NewsModel> articles) {
+    if (articles.length <= 1) return true;
+
+    final primary = articles.first;
+    final totalSim = <double>[];
+    for (final other in articles.skip(1)) {
+      final vecA = SemanticCluster.buildTfIdfVector(primary);
+      final vecB = SemanticCluster.buildTfIdfVector(other);
+      final sim = SemanticCluster.cosineSimilarity(vecA, vecB);
+      totalSim.add(sim);
+    }
+
+    if (totalSim.isEmpty) return true;
+    final avgSim = totalSim.reduce((a, b) => a + b) / totalSim.length;
+    return avgSim >= 0.35;
   }
 
   NewsModel _optimizeSingleArticle(NewsModel article) {

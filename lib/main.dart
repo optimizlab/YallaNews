@@ -23,8 +23,6 @@ Future<void> main() async {
     // } on MissingPluginException catch (_) {
     // } catch (_) {}
   }
-  await AppSettings.instance.loadSettings();
-  await CategoryService.instance.loadCategories();
   runApp(const MyApp());
 }
 
@@ -77,43 +75,45 @@ class _MyAppState extends State<MyApp> {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF4F5F7),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFEFEFEF),
-          foregroundColor: Color(0xFF555555),
+          backgroundColor: Colors.white,
+          foregroundColor: Color(0xFF1A1A1A),
           elevation: 0,
         ),
         textTheme: GoogleFonts.outfitTextTheme().apply(
-          bodyColor: const Color(0xFF333333),
-          displayColor: const Color(0xFF222222),
+          bodyColor: const Color(0xFF1A1A1A),
+          displayColor: const Color(0xFF1A1A1A),
         ),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8E8E8E),
-          primary: const Color(0xFF333333),
+          seedColor: const Color(0xFFC62828),
+          primary: const Color(0xFFC62828),
           secondary: const Color(0xFF8E8E8E),
           surface: Colors.white,
           surfaceContainer: const Color(0xFFF4F5F7),
+          onSurface: const Color(0xFF1A1A1A),
+          onSurfaceVariant: const Color(0xFF555555),
         ),
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF16213E),
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1A1A2E),
-          foregroundColor: Color(0xFFE8E8E8),
+          backgroundColor: Color(0xFF1E293B),
+          foregroundColor: Color(0xFFF8FAFC),
           elevation: 0,
         ),
         textTheme: GoogleFonts.outfitTextTheme().apply(
-          bodyColor: const Color(0xFFE0E0E0),
-          displayColor: const Color(0xFFF5F5F5),
+          bodyColor: const Color(0xFFF1F5F9),
+          displayColor: const Color(0xFFF8FAFC),
         ),
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF90CAF9),
           primary: const Color(0xFF90CAF9),
           secondary: const Color(0xFF64B5F6),
-          surface: const Color(0xFF1A1A2E),
+          surface: const Color(0xFF1E293B),
           surfaceContainer: const Color(0xFF16213E),
-          onSurface: const Color(0xFFE0E0E0),
-          onSurfaceVariant: const Color(0xFFB0BEC5),
-          surfaceContainerHighest: const Color(0xFF1F2937),
+          onSurface: const Color(0xFFF1F5F9),
+          onSurfaceVariant: const Color(0xFFCBD5E1),
+          surfaceContainerHighest: const Color(0xFF334155),
         ),
       ),
       themeMode: settings.themeMode,

@@ -12,6 +12,7 @@ import '../services/user_service.dart';
 import '../widgets/cached_news_image.dart';
 import '../services/server_api_service.dart';
 import '../services/knowledge_extraction_service.dart';
+import '../services/category_service.dart';
 
 class NewsDetailPage extends StatefulWidget {
   final NewsModel article;
@@ -306,13 +307,30 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     result = result.replaceAll(RegExp(r'جميع الحقوق.*', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'اضغط هنا.*', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'شارك المقال.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'شارك\s+(Telegram|LinkedIn|Messenger|Facebook|Twitter|WhatsApp|Instagram|YouTube|TikTok).*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'(Telegram|LinkedIn|Messenger|Facebook|Twitter|WhatsApp|Instagram|YouTube|TikTok)\s+.*?(?:share|شارك).*', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'للمزيد من الأخبار.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'الرئيسية\s*/\s*الأخبار\s*/.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'الرئيسية\s*/\s*.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'الصفحه\s+الرئيسية.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'الصفحه\s+الرئيسيه.*', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'تطبيق.*', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'www\..*?\.(com|ma|net|org)', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'https?://[^\s]+', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'[^\w\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\p{P}\p{N}]', caseSensitive: false), ' ');
     result = result.replaceAll(RegExp(r'\n{3,}'), '\n\n');
     result = result.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+
+    final paragraphs = result.split('\n').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    final seen = <String>{};
+    final unique = <String>[];
+    for (final p in paragraphs) {
+      final key = p.replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+      if (seen.add(key)) {
+        unique.add(p);
+      }
+    }
+    result = unique.join('\n\n');
 
     return result;
   }
@@ -459,14 +477,14 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     color: Theme.of(context).colorScheme.surfaceContainer,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Text(
-                    article.category.toUpperCase(),
-                    style: GoogleFonts.outfit(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    child: Text(
+                      CategoryService.getCategoryLabel(article.category, context),
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
                 ),
                 const SizedBox(width: 16),
                 Icon(Icons.calendar_today, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -482,7 +500,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               ],
             ),
             const SizedBox(height: 14),
-            Text(
+            SelectableText(
               article.title,
               style: GoogleFonts.outfit(
                 fontSize: 24,
@@ -508,11 +526,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
+                        SelectableText(
                           article.author,
                           style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface),
                         ),
-                        Text(
+                        SelectableText(
                           'محرر رياضي',
                           style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ),
@@ -530,7 +548,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                   color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
+                child: SelectableText(
                   "الموجز: ${article.shortTitle}",
                   style: GoogleFonts.outfit(
                     fontSize: 14,
@@ -567,7 +585,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    Text(
+                    SelectableText(
                       article.summary,
                       style: GoogleFonts.outfit(
                         fontSize: 14,
@@ -895,14 +913,13 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                   Icon(Icons.link, size: 18, color: Theme.of(context).colorScheme.primary),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
+                    child: SelectableText(
                       article.url,
                       style: GoogleFonts.outfit(
                         fontSize: 14,
                         color: Theme.of(context).colorScheme.primary,
                         decoration: TextDecoration.underline,
                       ),
-                      overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
                   ),
@@ -1485,7 +1502,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         child: Icon(
           _getCategoryIcon(category),
           size: size * 0.4,
-          color: Colors.white.withOpacity(0.6),
+           color: Colors.white.withOpacity(0.85),
         ),
       ),
     );
@@ -1707,7 +1724,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.22),
+                     color: Colors.white.withOpacity(0.35),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(

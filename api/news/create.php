@@ -47,9 +47,9 @@ try {
 
     $id = generate_secure_id('article_');
 
-    $sql = "INSERT INTO yn_news (id, title, summary, content, language, category, source_id, source_url_article, image_url, published_at, status, created_at, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-    $db->query($sql, [$id, $title, $summary, $content, $language, $category, $sourceId, $sourceUrlArticle, $imageUrl, $publishedAt, $status]);
+    $sql = "INSERT INTO yn_news (id, title, summary, content, language, category, source_id, source_score, source_url_article, image_url, published_at, status, created_at, updated_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+    $db->query($sql, [$id, $title, $summary, $content, $language, $category, $sourceId, 0.00, $sourceUrlArticle, $imageUrl, $publishedAt, $status]);
 
     json_response([
         'success' => true,

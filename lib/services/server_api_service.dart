@@ -116,6 +116,20 @@ class ServerApiService {
     return sources.map((s) => Map<String, dynamic>.from(s)).toList();
   }
 
+  static Future<void> updateSourceCrawlTime(String sourceUrl) async {
+    await postJson('sources/update_crawl_time.php', {
+      'url': sourceUrl,
+      'last_crawled': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  static Future<void> updateSourceScore(String sourceUrl, double score) async {
+    await postJson('sources/update_score.php', {
+      'url': sourceUrl,
+      'score': score,
+    });
+  }
+
   static Future<List<Map<String, dynamic>>> getComments(String articleId) async {
     final data = await getJson('comments/get.php', query: {'articleId': articleId});
     if (data['success'] != true) return [];

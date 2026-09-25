@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
+import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import 'server_api_service.dart';
 
@@ -65,7 +67,7 @@ class CategoryService extends ChangeNotifier {
     return map;
   }
 
-  bool _matchesCategory(String articleCat, String targetCat) {
+  static bool matchesCategory(String articleCat, String targetCat) {
     final a = articleCat.toLowerCase().trim();
     final t = targetCat.toLowerCase().trim();
     if (a == t) return true;
@@ -89,6 +91,25 @@ class CategoryService extends ChangeNotifier {
     }
 
     return false;
+  }
+
+  bool _matchesCategory(String articleCat, String targetCat) {
+    return CategoryService.matchesCategory(articleCat, targetCat);
+  }
+
+  static String getCategoryLabel(String category, BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final cat = category.toLowerCase().trim();
+    if (cat == 'sports' || cat == 'رياضة' || cat == 'كرة القدم' || cat == 'كرة السلة' || cat == 'تنس') return l10n.translate('sports');
+    if (cat == 'politics' || cat == 'سياسة' || cat == 'أخبار دولية' || cat == 'أخبار محلية') return l10n.translate('politics');
+    if (cat == 'business' || cat == 'economy' || cat == 'اقتصاد' || cat == 'أعمال' || cat == 'أسواق ومال' || cat == 'عقارات') return l10n.translate('business');
+    if (cat == 'technology' || cat == 'tech' || cat == 'تكنولوجيا' || cat == 'تقنية') return l10n.translate('technology');
+    if (cat == 'health' || cat == 'صحة' || cat == 'طب وصحة' || cat == 'medical') return l10n.translate('health');
+    if (cat == 'science' || cat == 'علوم' || cat == 'علم') return l10n.translate('science');
+    if (cat == 'entertainment' || cat == 'ترفيه' || cat == 'فن' || cat == 'ثقافة') return l10n.translate('entertainment');
+    if (cat == 'world' || cat == 'دولي' || cat == 'العالم') return l10n.translate('world');
+    if (cat == 'local' || cat == 'أخبار محلية') return l10n.translate('local');
+    return category.isNotEmpty ? category : l10n.translate('generalNews');
   }
 
   void updateCategoryCounts(List<NewsModel> articles) {

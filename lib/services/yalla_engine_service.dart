@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:core';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -1375,6 +1376,13 @@ final descMatch = RegExp(
       extractedContent = extractedContent.replaceAll(RegExp(r'\s*#\w+(?:\s*#\w+)*\s*'), ' ');
       extractedContent = extractedContent.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
       
+      // Remove breadcrumb/navigation text from raw HTML content
+      extractedContent = extractedContent.replaceAll(RegExp(r'الرئيسية\s*/\s*الأخبار\s*/.*', caseSensitive: false), '');
+      extractedContent = extractedContent.replaceAll(RegExp(r'الرئيسية\s*/\s*.*', caseSensitive: false), '');
+      extractedContent = extractedContent.replaceAll(RegExp(r'الصفحه\s+الرئيسية.*', caseSensitive: false), '');
+      extractedContent = extractedContent.replaceAll(RegExp(r'الصفحه\s+الرئيسيه.*', caseSensitive: false), '');
+      extractedContent = extractedContent.replaceAll(RegExp(r'الرئيسيه\s*/\s*.*', caseSensitive: false), '');
+      
       // Decode HTML entities and strip HTML tags for summary
       final decodedTitle = _decodeHtml(title);
       final cleanedTitle = cleanTitle(decodedTitle, url);
@@ -1386,6 +1394,18 @@ final descMatch = RegExp(
         final fallbackContent = 'Content extracted from $url';
         decodedContent = fallbackContent;
       }
+      
+      // Remove duplicate paragraphs before TinyLLM cleaning
+      final paragraphs = decodedContent.split('\n').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+      final seen = <String>{};
+      final unique = <String>[];
+      for (final p in paragraphs) {
+        final key = p.replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+        if (seen.add(key)) {
+          unique.add(p);
+        }
+      }
+      decodedContent = unique.join('\n\n');
       
       // TinyLLM C++ Content Cleaning
       String tinyLlmCleanedContent = decodedContent;
@@ -1412,6 +1432,18 @@ final descMatch = RegExp(
           // Non-fatal: continue with uncleaned content
         }
       }
+      
+      // Remove duplicate paragraphs again after TinyLLM cleaning
+      final postParagraphs = tinyLlmCleanedContent.split('\n').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+      final postSeen = <String>{};
+      final postUnique = <String>[];
+      for (final p in postParagraphs) {
+        final key = p.replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+        if (postSeen.add(key)) {
+          postUnique.add(p);
+        }
+      }
+      tinyLlmCleanedContent = postUnique.join('\n\n');
       
       // Local Ollama rewrite: removed to preserve real article content
       // The app now uses extracted real content only, no LLM-generated news text
@@ -1513,12 +1545,63 @@ final descMatch = RegExp(
     } catch (e, stackTrace) {
       if (!silent) {
         addLog('[ERROR] Failed to process URL: $e');
-        // In debug mode, print stack trace
-if (kDebugMode) {
-           print(stackTrace);
-         }
-       }
-       return {};
-     }
-   }
+        if (kDebugMode) {
+          print(stackTrace);
+        }
+      }
+      return {};
+    }
+  }
+
+  static String _buildHashtags(String keywords, String category) {
+    final buffer = StringBuffer('#أخبار ');
+    final normalizedCategory = category.trim();
+    if (normalizedCategory.isNotEmpty) {
+      buffer.write('#$normalizedCategory ');
+    }
+
+    if (keywords.isNotEmpty) {
+      final tags = keywords
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .map((e) => e.replaceAll(RegExp(r'\s+'), '_'))
+          .toSet()
+          .take(8)
+          .toList();
+      for (final tag in tags) {
+        buffer.write('#$tag ');
+      }
+    }
+
+    return buffer.toString().trim();
+  }
+
+  static String _extractYouTubeVideoId(String title, String html) {
+    final embedPattern = RegExp(r'youtube\.com/embed/([\w\-]+)', caseSensitive: false);
+    final matches = embedPattern.allMatches(html);
+    final ids = matches.map((m) => m.group(1)!).toSet().toList();
+    if (ids.isEmpty) return '';
+    return ids.first;
+  }
+
+  static String _extractInstagramVideoId(String html) {
+    final pattern = RegExp(r'instagram\.com/(?:p|reel|tv)/([^/?\s"]+)', caseSensitive: false);
+    final match = pattern.firstMatch(html);
+    return match != null && match.groupCount >= 1 ? match.group(1)! : '';
+  }
+
+  static String _extractTwitterVideoUrl(String html) {
+    final pattern = RegExp(r'https?://(?:twitter\.com|x\.com)/[a-z0-9_]+/status/\d+', caseSensitive: false);
+    final match = pattern.firstMatch(html);
+    return match != null ? match.group(0)! : '';
+  }
+
+  static String _generateImageId() {
+    final rand = Random();
+    final timestamp = DateTime.now().microsecondsSinceEpoch.toString();
+    final randomPart = String.fromCharCodes(List.generate(8, (_) => 65 + rand.nextInt(26)));
+    final numberPart = (rand.nextInt(900) + 100).toString();
+    return '$numberPart$randomPart';
+  }
 }
