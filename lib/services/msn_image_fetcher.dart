@@ -1,10 +1,11 @@
 /// msn_image_fetcher.dart
 ///
-/// Fetches relevant images from Bing Image Search (MSN backend) for a given
+/// Fetches relevant images from Bing/MSN and Qwant image search for a given
 /// news article title. Returns 1–5 image URLs scraped from the first page of
-/// results — no API key needed, uses the public HTML endpoint.
+/// results — no API key needed, uses the public HTML endpoints.
 ///
-/// One random image (positions 1–5) is injected into each paragraph slot.
+/// MSN/Bing is tried first; if it returns no usable results, Qwant is used as
+/// fallback. One random image (positions 1–5) is injected into each paragraph slot.
 
 library msn_image_fetcher;
 
@@ -23,8 +24,8 @@ class MsnImageFetcher {
   /// Cache: query → list of image URLs (in-process memory, cleared on restart)
   static final _cache = <String, List<String>>{};
 
-  /// Fetch up to [maxImages] Bing image URLs for [query].
-  /// Returns an empty list on any network / parse error.
+  /// Fetch up to [maxImages] image URLs for [query].
+  /// MSN/Bing is tried first; Qwant is used as fallback if MSN returns nothing.
   static Future<List<String>> fetchImages(
     String query, {
     int maxImages = 5,
@@ -32,37 +33,30 @@ class MsnImageFetcher {
     final cacheKey = query.trim().toLowerCase();
     if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
 
+    final urls = <String>[];
     try {
-      final encoded = Uri.encodeQueryComponent(query);
-      // Bing image search endpoint — safe-search moderate, news filter
-      final searchUrl =
-          'https://www.bing.com/images/search?q=${encoded}+news'
-          '&form=HDRSC2&safeSearch=Moderate&first=1';
+      final msnUrls = await _fetchFromMsn(query, maxImages);
+      urls.addAll(msnUrls);
+    } catch (_) {}
 
-      final response = await http
-          .get(Uri.parse(searchUrl), headers: {
-            'User-Agent': _ua,
-            'Accept-Language': 'ar,en;q=0.9',
-          })
-          .timeout(const Duration(seconds: 8));
-
-      if (response.statusCode != 200) return [];
-
-      final urls = _extractImageUrls(response.body, maxImages);
-      if (urls.isNotEmpty) _cache[cacheKey] = urls;
-      return urls;
-    } catch (_) {
-      return [];
+    if (urls.length < maxImages) {
+      try {
+        final qwantUrls = await _fetchFromQwant(query, maxImages - urls.length);
+        urls.addAll(qwantUrls);
+      } catch (_) {}
     }
+
+    final unique = urls.toSet().toList();
+    if (unique.isNotEmpty) _cache[cacheKey] = unique;
+    return unique;
   }
 
-  /// Fetch up to 5 Bing images then pick ONE at random (position 1–5).
+  /// Fetch up to [maxImages] Bing images then pick ONE at random (position 1–5).
   /// Each call to this method may return a different image for the same query
   /// because the random index is re-rolled every time.
   static Future<String?> fetchRandomImage(String query) async {
     final pool = await fetchImages(query, maxImages: 5);
     if (pool.isEmpty) return null;
-    // Pick a random index in [0, min(5, pool.length) - 1]
     final idx = Random().nextInt(pool.length.clamp(1, 5));
     return pool[idx];
   }
@@ -73,12 +67,42 @@ class MsnImageFetcher {
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
-  static List<String> _extractImageUrls(String html, int max) {
+  static Future<List<String>> _fetchFromMsn(String query, int max) async {
+    final encoded = Uri.encodeQueryComponent(query);
+    final searchUrl =
+        'https://www.bing.com/images/search?q=${encoded}+news'
+        '&form=HDRSC2&safeSearch=Moderate&first=1';
+
+    final response = await http
+        .get(Uri.parse(searchUrl), headers: {
+          'User-Agent': _ua,
+          'Accept-Language': 'ar,en;q=0.9',
+        })
+        .timeout(const Duration(seconds: 8));
+
+    if (response.statusCode != 200) return [];
+    return _extractMsnImageUrls(response.body, max);
+  }
+
+  static Future<List<String>> _fetchFromQwant(String query, int max) async {
+    final encoded = Uri.encodeQueryComponent(query);
+    final searchUrl =
+        'https://www.qwant.com/?l=fr&t=images&q=$encoded';
+
+    final response = await http
+        .get(Uri.parse(searchUrl), headers: {
+          'User-Agent': _ua,
+          'Accept-Language': 'ar,en;q=0.9',
+        })
+        .timeout(const Duration(seconds: 8));
+
+    if (response.statusCode != 200) return [];
+    return _extractQwantImageUrls(response.body, max);
+  }
+
+  static List<String> _extractMsnImageUrls(String html, int max) {
     final urls = <String>[];
 
-    // Bing stores image metadata in JSON blobs like:
-    // {"murl":"https://...","turl":"https://th.bing.com/th?...","..."}
-    // We extract murl (master/full image URL) values.
     final murlRe = RegExp(r'"murl"\s*:\s*"(https?://[^"]+)"');
     for (final m in murlRe.allMatches(html)) {
       final url = m.group(1);
@@ -89,7 +113,6 @@ class MsnImageFetcher {
       }
     }
 
-    // Fallback: og:image / meta image tags (for news pages)
     if (urls.isEmpty) {
       final ogRe = RegExp(
           r'<meta[^>]+(?:property="og:image"|name="twitter:image")[^>]+content="([^"]+)"',
@@ -103,7 +126,38 @@ class MsnImageFetcher {
       }
     }
 
-    // Fallback: <img src="..."> with width/height hints
+    if (urls.isEmpty) {
+      final imgRe = RegExp(
+          r'<img[^>]+src="(https?://[^"]+)"[^>]*(?:width="(\d+)")?',
+          caseSensitive: false);
+      for (final m in imgRe.allMatches(html)) {
+        final url = m.group(1) ?? '';
+        final w = int.tryParse(m.group(2) ?? '') ?? 0;
+        if (w == 0 || w >= _minImageSize) {
+          if (_isValidImageUrl(url)) {
+            urls.add(url);
+            if (urls.length >= max) break;
+          }
+        }
+      }
+    }
+
+    return urls;
+  }
+
+  static List<String> _extractQwantImageUrls(String html, int max) {
+    final urls = <String>[];
+
+    final qwantRe = RegExp(r'"media"\s*:\s*"(https?://[^"]+)"');
+    for (final m in qwantRe.allMatches(html)) {
+      final url = m.group(1);
+      if (url == null) continue;
+      if (_isValidImageUrl(url)) {
+        urls.add(url);
+        if (urls.length >= max) break;
+      }
+    }
+
     if (urls.isEmpty) {
       final imgRe = RegExp(
           r'<img[^>]+src="(https?://[^"]+)"[^>]*(?:width="(\d+)")?',
@@ -126,7 +180,6 @@ class MsnImageFetcher {
   static bool _isValidImageUrl(String url) {
     if (url.isEmpty) return false;
     final lower = url.toLowerCase();
-    // Must be an image extension or a known image CDN
     final validExt = lower.endsWith('.jpg') ||
         lower.endsWith('.jpeg') ||
         lower.endsWith('.png') ||
@@ -138,7 +191,6 @@ class MsnImageFetcher {
         lower.contains('picture') ||
         lower.contains('media');
     if (!validExt) return false;
-    // Exclude icons, logos, ads, tracking pixels
     if (lower.contains('logo') ||
         lower.contains('icon') ||
         lower.contains('favicon') ||

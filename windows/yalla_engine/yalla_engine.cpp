@@ -387,9 +387,8 @@ YALLA_EXPORT const char* process_url(const char* url_cstr) {
     }
 
     if (image_url.empty()) {
-        log_to_engine("C++ TINY-LLM PHOTO ENGINE", "No valid image detected. Querying Bing Image Search...");
-        log_to_engine("C++ TINY-LLM PHOTO ENGINE", "Primary image acquired from web search.");
-        image_url = "https://www.bing.com/images/search?q=" + cached_category + "+news&first=1";
+        log_to_engine("C++ TINY-LLM PHOTO ENGINE", "No valid image detected. Leaving image empty for Dart-side fallback.");
+        image_url = "";
     }
 
     if (is_image_url_valid_internal(image_url)) {

@@ -44,7 +44,7 @@ class NewsDatabase {
       try {
       final db = await openDatabase(
         dbPath,
-        version: 14, // v14: add FTS5 search index
+        version: 15, // v15: add url_blacklist table
         onCreate: (Database db, int version) async {
           await _createSchema(db);
           try {
@@ -176,24 +176,40 @@ class NewsDatabase {
                   extracted_at INTEGER NOT NULL
                 )
               ''');
-              await db.execute('''
-                CREATE TABLE IF NOT EXISTS yn_claims (
-                  id TEXT PRIMARY KEY,
-                  article_url TEXT NOT NULL,
-                  claim_text TEXT NOT NULL,
-                  attributed_to TEXT NOT NULL DEFAULT '',
-                  evidence_span TEXT NOT NULL DEFAULT '',
-                  confidence REAL NOT NULL DEFAULT 1.0,
-                  extracted_at INTEGER NOT NULL
-                )
-              ''');
-            }
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS yn_claims (
+        id TEXT PRIMARY KEY,
+        article_url TEXT NOT NULL,
+        claim_text TEXT NOT NULL,
+        attributed_to TEXT NOT NULL DEFAULT '',
+        evidence_span TEXT NOT NULL DEFAULT '',
+        confidence REAL NOT NULL DEFAULT 1.0,
+        extracted_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS url_blacklist (
+        url_hash TEXT PRIMARY KEY,
+        reason TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL
+      )
+    ''');
+  }
             if (oldVersion < 14) {
               try {
                 await _createFtsIndex(db);
               } catch (_) {
                 _hasFts5 = false;
               }
+            }
+            if (oldVersion < 15) {
+              await db.execute('''
+                CREATE TABLE IF NOT EXISTS url_blacklist (
+                  url_hash TEXT PRIMARY KEY,
+                  reason TEXT NOT NULL DEFAULT '',
+                  added_at INTEGER NOT NULL
+                )
+              ''');
             }
           },
         onOpen: (Database db) async {
@@ -212,15 +228,15 @@ class NewsDatabase {
       if (await dbFile.exists()) {
         await dbFile.delete();
       }
-      final db = await openDatabase(
-        dbPath,
-        version: 14,
-        onCreate: (Database db, int version) async {
-          await _createSchema(db);
-          await _createFtsIndex(db);
-          await _seedFromJson(db);
-        },
-      );
+        final db = await openDatabase(
+          dbPath,
+          version: 15,
+          onCreate: (Database db, int version) async {
+            await _createSchema(db);
+            await _createFtsIndex(db);
+            await _seedFromJson(db);
+          },
+        );
       return db;
     }
   }
@@ -473,15 +489,10 @@ class NewsDatabase {
     List<NewsModel> articles,
     String sourceUrl,
   ) async {
-    final validArticles = articles
-        .where((art) => _hasEnoughTitleWords(art.title))
-        .toList();
-    if (validArticles.isEmpty) return;
-
     final db = await database;
     final batch = db.batch();
     final now = DateTime.now().millisecondsSinceEpoch;
-    for (final art in validArticles) {
+    for (final art in articles) {
       batch.insert('crawled_articles', {
         'source_url': sourceUrl,
         'url': art.url,
@@ -540,6 +551,84 @@ class NewsDatabase {
             .toList(),
       );
     }).toList();
+  }
+
+  Future<int> removeInvalidArticles() async {
+    final db = await database;
+    final invalidPatterns = [
+      '%أخبار قطاع الأعمال%',
+      '%أخبار القطاع%',
+      '%أخبار الشركات%',
+      '%أخبار التقنية%',
+      '%أخبار الرياضة%',
+      '%أخبار السياسة%',
+      '%أخبار الاقتصاد%',
+      '%أخبار المجتمع%',
+      '%أخبار المحلية%',
+      '%أخبار العالمية%',
+      '%أخبار الثقافة%',
+      '%أخبار الصحة%',
+      '%أخبار التعليم%',
+      '%أخبار العلوم%',
+      '%أخبار البيئة%',
+      '%أخبار السياحة%',
+      '%أخبار الترفيه%',
+      '%أخبار المنوعات%',
+      '%أخبار عاجلة%',
+      '%latest news%',
+      '%breaking news%',
+      '%top news%',
+      '%all news%',
+      '%all articles%',
+      '%مقالات%',
+      '%أخبار%',
+      '%تقارير%',
+      '%مجلة%',
+      '%مجلات%',
+      '%صحف%',
+      '%صحافة%',
+      '%إعلام%',
+      '%منوعات%',
+      '%العام%',
+      '%الكل%',
+      '%كل الأخبار%',
+    ];
+    
+    int totalRemoved = 0;
+    for (final pattern in invalidPatterns) {
+      final result = await db.delete(
+        'crawled_articles',
+        where: 'title LIKE ? OR content LIKE ?',
+        whereArgs: [pattern, pattern],
+      );
+      totalRemoved += result;
+    }
+    
+    // Also remove articles with very short content
+    final shortContentResult = await db.delete(
+      'crawled_articles',
+      where: 'length(content) < ?',
+      whereArgs: [100],
+    );
+    totalRemoved += shortContentResult;
+    
+    // Also remove articles with URL paths that look like categories (1-2 segments)
+    final categoryUrls = await db.query('crawled_articles');
+    int removedByUrl = 0;
+    for (final map in categoryUrls) {
+      final url = map['url'] as String;
+      final uri = Uri.tryParse(url);
+      if (uri != null) {
+        final pathSegments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+        if (pathSegments.length <= 2) {
+          await db.delete('crawled_articles', where: 'url = ?', whereArgs: [url]);
+          removedByUrl++;
+        }
+      }
+    }
+    totalRemoved += removedByUrl;
+    
+    return totalRemoved;
   }
 
   /// Return total count of crawled articles (fast check for first-run detection).
@@ -743,5 +832,53 @@ class NewsDatabase {
         await db.delete('crawled_articles', where: 'url = ?', whereArgs: [url]);
       }
     }
+  }
+
+  Future<bool> isUrlBlacklisted(String urlHash) async {
+    if (urlHash.isEmpty) return false;
+    final db = await database;
+    final result = await db.query(
+      'url_blacklist',
+      where: 'url_hash = ?',
+      whereArgs: [urlHash],
+      limit: 1,
+    );
+    return result.isNotEmpty;
+  }
+
+  Future<void> addToBlacklist(String urlHash, {String reason = ''}) async {
+    if (urlHash.isEmpty) return;
+    final db = await database;
+    await db.insert(
+      'url_blacklist',
+      {
+        'url_hash': urlHash,
+        'reason': reason,
+        'added_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<int> getBlacklistCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) FROM url_blacklist');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  Future<int> clearBlacklist() async {
+    final db = await database;
+    return await db.delete('url_blacklist');
+  }
+
+  Future<int> clearOldBlacklistEntries({int days = 7}) async {
+    final db = await database;
+    final cutoff = DateTime.now().subtract(Duration(days: days)).millisecondsSinceEpoch;
+    final result = await db.delete(
+      'url_blacklist',
+      where: 'added_at < ?',
+      whereArgs: [cutoff],
+    );
+    return result;
   }
 }

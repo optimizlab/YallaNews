@@ -41,7 +41,7 @@ try {
     $stmt = $db->query($countSql, $params);
     $total = intval($stmt->fetchColumn());
 
-    $sql = "SELECT n.id, n.title, n.summary, n.language, n.category, 
+    $sql = "SELECT n.id, n.title, n.summary, n.content, n.language, n.category, 
                    n.source_id, n.source_url_article, 
                    n.image_url, n.published_at, n.status,
                    c.name as category_name, c.name_en as category_name_en
@@ -66,6 +66,7 @@ try {
             'id' => $a['id'],
             'title' => $a['title'],
             'summary' => $a['summary'],
+            'content' => $a['content'],
             'language' => $a['language'],
             'category' => $a['category'],
             'categoryName' => $a['category_name'],

@@ -35,15 +35,19 @@ class ServerApiService {
       body: jsonEncode(body),
     ).timeout(_timeout);
     if (response.statusCode >= 200 && response.statusCode < 300) {
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      return data;
+      if (response.body.isEmpty) return <String, dynamic>{};
+      return jsonDecode(response.body) as Map<String, dynamic>;
     }
+    String parsedError;
     try {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      throw Exception(data['error'] ?? 'Request failed');
+      final error = (data['error'] ?? data['message'] ?? 'Request failed').toString();
+      final details = (data['details'] ?? '').toString();
+      parsedError = details.isEmpty ? error : '$error | $details';
     } on Exception catch (_) {
-      throw Exception('Server responded ${response.statusCode}');
+      parsedError = response.body.isEmpty ? 'Server responded ${response.statusCode}' : response.body;
     }
+    throw Exception('Server responded ${response.statusCode}: $parsedError');
   }
 
   static Future<List<NewsModel>> getNews({
@@ -111,6 +115,39 @@ class ServerApiService {
 
   static Future<List<Map<String, dynamic>>> getSources() async {
     final data = await getJson('sources/list.php');
+    if (data['success'] != true) return [];
+    final sources = data['sources'] as List<dynamic>? ?? [];
+    return sources.map((s) => Map<String, dynamic>.from(s)).toList();
+  }
+
+  static Future<List<String>> getSourceUrls({
+    String? countryCode,
+    String? language,
+    int? lastVisitedTimestamp,
+  }) async {
+    final query = <String, String>{
+      'fields': 'urls',
+      if (countryCode != null && countryCode.isNotEmpty) 'country_code': countryCode,
+      if (language != null && language.isNotEmpty) 'language': language,
+      if (lastVisitedTimestamp != null) 'last_visited': lastVisitedTimestamp.toString(),
+    };
+    final data = await getJson('sources/list.php', query: query);
+    if (data['success'] != true) return [];
+    final urls = data['urls'] as List<dynamic>? ?? [];
+    return urls.map((u) => u.toString()).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> getSourcesByCountryAndLanguage({
+    String? countryCode,
+    String? language,
+    int? lastVisitedTimestamp,
+  }) async {
+    final query = <String, String>{
+      if (countryCode != null && countryCode.isNotEmpty) 'country_code': countryCode,
+      if (language != null && language.isNotEmpty) 'language': language,
+      if (lastVisitedTimestamp != null) 'last_visited': lastVisitedTimestamp.toString(),
+    };
+    final data = await getJson('sources/list.php', query: query.isEmpty ? null : query);
     if (data['success'] != true) return [];
     final sources = data['sources'] as List<dynamic>? ?? [];
     return sources.map((s) => Map<String, dynamic>.from(s)).toList();
@@ -205,14 +242,14 @@ class ServerApiService {
   }
 
   static Future<void> saveArticle(NewsModel article) async {
-    final sourceName = (article.author.isNotEmpty) ? article.author : (article.url);
+    final sourceId = (article.author.isNotEmpty) ? article.author : NewsModel.extractDomain(article.url);
     await postJson('news/create.php', {
       'title': article.title,
       'summary': article.summary,
       'content': article.content,
       'language': 'ar',
       'category': article.category,
-      'sourceId': sourceName,
+      'sourceId': sourceId,
       'sourceUrlArticle': article.url,
       'imageUrl': article.imageUrl,
       'publishedAt': int.tryParse(article.publishDate) ?? DateTime.now().millisecondsSinceEpoch,

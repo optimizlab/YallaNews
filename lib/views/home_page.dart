@@ -39,31 +39,93 @@ bool _isValidArticle(NewsModel article) {
   final title = article.title.trim();
   final image = article.imageUrl.trim();
   final url = article.url.trim();
+  final content = article.content.trim();
 
   if (title.isEmpty || image.isEmpty) {
+    debugPrint('[HOME VALIDATION] Rejected: empty title/image');
     return false;
   }
   if (url.isEmpty || url.length < 10) {
+    debugPrint('[HOME VALIDATION] Rejected: bad url');
+    return false;
+  }
+  if (content.isEmpty || content.length < 50) {
+    debugPrint('[HOME VALIDATION] Rejected: short content');
     return false;
   }
 
-  final adPatterns = [
-    'livejournal.com', 't.co', 'bit.ly', 'ad.', 'advert', 'banner',
-    'sponsor', 'promotion', 'shop.', 'store.', 'buy now', 'اشترِ', 'تسوق',
+  final adPatterns = <String>[
+    'livejournal.com',
+    't.co',
+    'bit.ly',
+    'ad.',
+    'advert',
+    'banner',
+    'sponsor',
+    'promotion',
+    'shop.',
+    'store.',
+    'buy now',
+    'اشترِ',
+    'تسوق',
   ];
   final lowerUrl = url.toLowerCase();
-  if (adPatterns.any((p) => lowerUrl.contains(p))) {
+  final bool hasAdPattern = adPatterns.any((p) => lowerUrl.contains(p));
+  if (hasAdPattern) {
+    debugPrint('[HOME VALIDATION] Rejected: ad pattern | url=$url');
     return false;
   }
 
-  final sectionPatterns = [
-    'التصنيف:', 'التصنيف :', 'التواصل الاجتماعي', 'الأكثر قراءة', 'مقالات ذات صلة',
-    'التعليقات', 'الاسم', 'البريد الإلكتروني', 'الموقع الإلكتروني', 'ترك تعليق',
-    'إرسال تعليق', 'أضف تعليق', 'شارك المقال', 'شارك على', 'تابعنا على',
-    'حقوق النشر', 'جميع الحقوق', 'طباعة البريد', 'الالكتروني', 'اشترك في',
+  final sectionPatterns = <String>[
+    'التصنيف:',
+    'التصنيف :',
+    'التواصل الاجتماعي',
+    'الأكثر قراءة',
+    'مقالات ذات صلة',
+    'التعليقات',
+    'الاسم',
+    'البريد الإلكتروني',
+    'الموقع الإلكتروني',
+    'ترك تعليق',
+    'إرسال تعليق',
+    'أضف تعليق',
+    'شارك المقال',
+    'شارك على',
+    'تابعنا على',
+    'حقوق النشر',
+    'جميع الحقوق',
+    'طباعة البريد',
+    'الالكتروني',
+    'اشترك في',
     'للمزيد من الأخبار',
+    'latest news',
+    'breaking news',
+    'top news',
+    'all news',
+    'all articles',
   ];
   if (sectionPatterns.any((p) => title.contains(p))) {
+    debugPrint('[HOME VALIDATION] Rejected: section pattern in title');
+    return false;
+  }
+
+  final uri = Uri.tryParse(url);
+  if (uri != null) {
+    final pathSegments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (pathSegments.length <= 1) {
+      debugPrint('[HOME VALIDATION] Rejected: short path');
+      return false;
+    }
+    final lastSegment = pathSegments.last.toLowerCase();
+    if (lastSegment.length < 6 && !RegExp(r'^\d+$').hasMatch(lastSegment)) {
+      debugPrint('[HOME VALIDATION] Rejected: short last segment');
+      return false;
+    }
+  }
+
+  final titleWords = title.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+  if (titleWords.length < 2) {
+    debugPrint('[HOME VALIDATION] Rejected: too few title words');
     return false;
   }
 
@@ -224,6 +286,7 @@ class _HomePageState extends State<HomePage> {
       }
     });
     _applyBlendedArticles(_rawArticles);
+    widget.engineService.addLog('[HOME] Flushed ${batch.length} articles, total: ${_rawArticles.length}');
     if (_waitingForInitialCrawl) {
       _waitingForInitialCrawl = false;
       if (mounted) setState(() {});
@@ -289,17 +352,35 @@ class _HomePageState extends State<HomePage> {
     debugPrint('[HOME] _loadData started');
     _waitingForInitialCrawl = false;
     
-    // Show page immediately with empty state
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _rawArticles = [];
-        _articles = [];
-        _allArticles = [];
-      });
-    }
-    
     try {
+      // Clean up invalid articles from DB on startup
+      final db = NewsDatabase.instance;
+      final removedCount = await db.removeInvalidArticles();
+      if (removedCount > 0) {
+        debugPrint('[HOME] Removed $removedCount invalid articles from DB');
+      }
+      
+      final articleCount = await db.getArticleCount();
+      
+      // If we have cached articles, show them immediately
+      if (articleCount > 0 && mounted) {
+        final cachedArticles = await db.getAllArticles(limit: 100);
+        final validCached = cachedArticles.where(_isValidArticle).toList();
+        if (validCached.isNotEmpty) {
+          _rawArticles = validCached;
+          _allArticles = List.from(validCached);
+          _articles = List.from(validCached);
+          setState(() {
+            _isLoading = false;
+            _selectedCategory = 'all';
+            _categories = CategoryService.instance.categories;
+          });
+          _applyBlendedArticles(validCached);
+          CategoryService.instance.updateCategoryCounts(validCached);
+          debugPrint('[HOME] Loaded ${validCached.length} articles from local cache');
+        }
+      }
+      
       // Start all independent operations in parallel
       final articlesFuture = _loadArticles().timeout(const Duration(seconds: 20));
       final trendingFuture = ServerApiService.getTrending(limit: 10).timeout(const Duration(seconds: 10));
@@ -323,11 +404,36 @@ class _HomePageState extends State<HomePage> {
         });
         _applyBlendedArticles(rawList);
         CategoryService.instance.updateCategoryCounts(rawList);
+      } else if (mounted && _rawArticles.isEmpty) {
+        // No articles from API and no cached articles
+        setState(() => _isLoading = false);
       }
       
       // Push to API in background
       if (rawList.isNotEmpty) {
         unawaited(_pushArticlesToApi(rawList));
+      }
+      
+      // If API returns no articles, launch crawler immediately after getting latest sources by lang
+      if (rawList.isEmpty) {
+        final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+        if (isDesktop) {
+          debugPrint('[HOME] API returned no articles — launching crawler immediately');
+          _waitingForInitialCrawl = true;
+        } else {
+          final onWifi = await ConnectivityService.isWifi();
+          if (onWifi) {
+            debugPrint('[HOME] API returned no articles on WiFi — launching crawler immediately');
+            _waitingForInitialCrawl = true;
+          }
+        }
+        
+        if (_waitingForInitialCrawl) {
+          BackgroundCrawlerService.instance.startSilentCrawl(
+            engineService: widget.engineService,
+            requireWifi: !(Platform.isWindows || Platform.isLinux || Platform.isMacOS),
+          );
+        }
       }
       
       // Handle local DB and crawler in background
@@ -336,7 +442,7 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (e) {
       debugPrint('[HOME] _loadData failed: $e');
-      if (mounted) {
+      if (mounted && _rawArticles.isEmpty) {
         setState(() => _isLoading = false);
       }
     }
@@ -349,9 +455,12 @@ class _HomePageState extends State<HomePage> {
         try {
           await ServerApiService.saveArticle(article).timeout(const Duration(seconds: 8));
           pushed++;
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[HOME] Push failed: ${article.url} | $e');
+        }
+        await Future.delayed(const Duration(milliseconds: 200));
       }
-      debugPrint('[HOME] Pushed $pushed articles to API');
+      debugPrint('[HOME] Pushed $pushed/${articles.length} articles to API');
     } catch (_) {}
   }
   
@@ -360,33 +469,25 @@ class _HomePageState extends State<HomePage> {
       final db = NewsDatabase.instance;
       final articleCount = await db.getArticleCount();
       final serverEmpty = rawList.isEmpty;
-      final shouldInitialCrawl = articleCount == 0 && serverEmpty;
-      
-      if (shouldInitialCrawl) {
-        final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-        if (isDesktop) {
-          debugPrint('[HOME] DB empty on desktop — triggering initial crawl');
-          _waitingForInitialCrawl = true;
-        } else {
-          final onWifi = await ConnectivityService.isWifi();
-          if (onWifi) {
-            debugPrint('[HOME] DB empty on mobile/tablet + WiFi — triggering initial crawl');
-            _waitingForInitialCrawl = true;
-          }
-        }
-      }
       
       final settings = await AppSettings.instance.getPrefs();
       final backgroundEnabled = settings.getBool('background_crawler_enabled') ?? true;
       
       if (backgroundEnabled) {
         debugPrint('[HOME] Listening to background crawler stream');
+        widget.engineService.addLog('[HOME] Listening to background crawler stream');
         _articleSubscription?.cancel();
         _crawlerFlushTimer?.cancel();
         _crawlerBlendTimer?.cancel();
         _pendingArticles.clear();
         _articleSubscription = BackgroundCrawlerService.instance.articleStream.listen((article) {
-          if (!_isValidArticle(article)) return;
+          debugPrint('[HOME STREAM] Received article: ${article.title.substring(0, min(60, article.title.length))}...');
+          widget.engineService.addLog('[HOME STREAM] Received article: ${article.title.substring(0, min(60, article.title.length))}...');
+          if (!_isValidArticle(article)) {
+            debugPrint('[HOME VALIDATION] Dropped invalid article: ${article.url}');
+            widget.engineService.addLog('[HOME VALIDATION] Dropped invalid article: ${article.url}');
+            return;
+          }
           _pendingArticles.add(article);
           if (_pendingArticles.length >= 20) {
             _flushPendingArticles();
@@ -402,14 +503,6 @@ class _HomePageState extends State<HomePage> {
             unawaited(_blendInBackground(_allArticles));
           }
         });
-      }
-      
-      if (shouldInitialCrawl && _waitingForInitialCrawl) {
-        final isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-        BackgroundCrawlerService.instance.startSilentCrawl(
-          engineService: widget.engineService,
-          requireWifi: !isDesktop,
-        );
       }
       
       if (serverEmpty && articleCount > 0) {

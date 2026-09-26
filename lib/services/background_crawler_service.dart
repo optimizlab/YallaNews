@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' show parse;
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../database/news_db.dart';
 import '../models/news_source.dart';
 import '../models/news_model.dart';
@@ -237,6 +239,15 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
         final path = absolute.path;
         if (path.length < 10 || path.contains('/wp-') || path.contains('/tag/') || path.contains('/category/')) continue;
         
+        // Reject obvious category/listing pages by URL pattern
+        final lowerPath = path.toLowerCase();
+        if (lowerPath.contains('/news/') || lowerPath.contains('/articles/') || lowerPath.contains('/section/')) continue;
+        // Reject paths that end with generic category slugs
+        final segments = absolute.pathSegments.where((s) => s.isNotEmpty).toList();
+        if (segments.length <= 2) continue;
+        final lastSegment = segments.last.toLowerCase();
+        if (lastSegment.length < 8 && !RegExp(r'^\d+$').hasMatch(lastSegment)) continue;
+        
         // Calculate relevance score for this link
         int score = 0;
         
@@ -300,8 +311,9 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
     final hasValidMetaTitle = metaTitle.isNotEmpty && metaTitle.length >= 3;
     final hasValidSummary = effectiveSummary.isNotEmpty && effectiveSummary.length >= 10;
     final hasValidTwitter = twitterTitleMatch != null || twitterDescMatch != null;
+    final hasValidTitle = title.isNotEmpty && title.length >= 3;
 
-    if (!hasValidMetaTitle && !hasValidSummary && !hasValidTwitter) {
+    if (!hasValidMetaTitle && !hasValidSummary && !hasValidTwitter && !hasValidTitle) {
       return {'success': false, 'url': url, 'reason': 'No valid meta/social tags found'};
     }
 
@@ -436,13 +448,64 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
     }
 
     if (imageUrl.isEmpty) {
+      try {
+        final bingImages = await MsnImageFetcher.fetchImages(cleanedTitle, maxImages: 5);
+        if (bingImages.isNotEmpty) {
+          final rng = Random();
+          final position = rng.nextInt(bingImages.length.clamp(1, 5));
+          imageUrl = bingImages[position];
+        }
+      } catch (_) {}
+    }
+
+    if (imageUrl.isEmpty) {
       final categorySlug = detectedCategory.toLowerCase();
       final seed = Uri.parse(url).path.hashCode.abs() % 1000;
       imageUrl = 'https://placehold.co/600x400/EEE/31343C?text=$categorySlug+$seed';
     }
 
     var enrichedContent = decodedContent;
-    if (extraImageUrls.isNotEmpty && decodedContent.isNotEmpty) {
+    if (extraImageUrls.isEmpty && decodedContent.isNotEmpty) {
+      final paragraphs = decodedContent
+          .split('\n\n')
+          .map((p) => p.trim())
+          .where((p) => p.isNotEmpty)
+          .toList();
+
+      if (paragraphs.isNotEmpty) {
+        final rng = Random();
+        final imageCount = rng.nextInt(paragraphs.length) + 1;
+        final selectedIndices = <int>{};
+        while (selectedIndices.length < imageCount && selectedIndices.length < paragraphs.length) {
+          selectedIndices.add(rng.nextInt(paragraphs.length));
+        }
+        final sortedSelected = selectedIndices.toList()..sort();
+
+        final bingImagesToInject = <String>[];
+        for (final idx in sortedSelected) {
+          final query = paragraphs[idx].length > 200
+              ? paragraphs[idx].substring(0, 200)
+              : paragraphs[idx];
+          final bingImages = await MsnImageFetcher.fetchImages(query, maxImages: 5);
+          if (bingImages.isNotEmpty) {
+            final position = rng.nextInt(bingImages.length.clamp(1, 5));
+            bingImagesToInject.add(bingImages[position]);
+          }
+        }
+
+        if (bingImagesToInject.isNotEmpty) {
+          final buf = StringBuffer();
+          int imgIdx = 0;
+          for (int i = 0; i < paragraphs.length; i++) {
+            buf.write('<p style="font-size:16px;line-height:1.9;margin:0 0 14px 0;color:inherit;text-align:justify;">${paragraphs[i]}</p>');
+            if (sortedSelected.contains(i) && imgIdx < bingImagesToInject.length) {
+              buf.write('<img src="${bingImagesToInject[imgIdx++]}" style="width:100%;max-height:420px;object-fit:cover;border-radius:14px;margin:18px 0 10px 0;display:block;box-shadow:0 4px 18px rgba(0,0,0,0.13);" loading="lazy" />');
+            }
+          }
+          enrichedContent = buf.toString();
+        }
+      }
+    } else if (extraImageUrls.isNotEmpty && decodedContent.isNotEmpty) {
       enrichedContent = _injectImagesIntoContent(
         decodedContent,
         extraImageUrls,
@@ -460,7 +523,7 @@ Future<Map<String, dynamic>> _processArticleTask(Map<String, dynamic> task) asyn
       'url': url,
       'url_hash': urlHash,
       'title': cleanedTitle,
-      'summary': decodedSummary.isEmpty ? 'Latest updates from this source.' : decodedSummary,
+      'summary': decodedSummary,
       'sentiment': _calculateSentiment('$cleanedTitle $decodedSummary'),
       'image_url': imageUrl,
       'category': detectedCategory,
@@ -615,6 +678,34 @@ List<String> _splitContentIntoSegments(
 /// Silent background crawler service.
 /// Runs automatically on app launch to populate the news feed
 /// without any user interaction required.
+class CrawlerState {
+  final bool reset;
+  final bool running;
+  final int processedSources;
+  final int totalSources;
+
+  const CrawlerState({
+    this.reset = false,
+    this.running = false,
+    this.processedSources = 0,
+    this.totalSources = 0,
+  });
+
+  CrawlerState copyWith({
+    bool? reset,
+    bool? running,
+    int? processedSources,
+    int? totalSources,
+  }) {
+    return CrawlerState(
+      reset: reset ?? this.reset,
+      running: running ?? this.running,
+      processedSources: processedSources ?? this.processedSources,
+      totalSources: totalSources ?? this.totalSources,
+    );
+  }
+}
+
 class BackgroundCrawlerService {
   BackgroundCrawlerService._internal();
   static final BackgroundCrawlerService instance =
@@ -623,15 +714,30 @@ class BackgroundCrawlerService {
   bool _isRunning = false;
   bool get isRunning => _isRunning;
 
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
   /// Stream of crawled articles - UI can listen to this for real-time updates
   final _articleStreamController = StreamController<NewsModel>.broadcast();
   Stream<NewsModel> get articleStream => _articleStreamController.stream;
+
+  /// Stream of crawler state changes
+  final _stateStreamController = StreamController<CrawlerState>.broadcast();
+  Stream<CrawlerState> get stateStream => _stateStreamController.stream;
+
+  void resetCrawler() {
+    _isRunning = false;
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
+    _stateStreamController.add(const CrawlerState(reset: true));
+  }
 
   Future<int> get _topSourcesCount async =>
       await AppSettings.instance.getTopSourcesCount();
 
   Future<int> get _maxUrlsPerSource async =>
       await AppSettings.instance.getMaxUrlsPerSource();
+
+  bool _isSmallMemoryPlatform() => true;
 
   /// Start a silent background crawl.
   /// Only runs on Wi-Fi. Falls back silently on mobile data so the UI uses
@@ -644,7 +750,10 @@ class BackgroundCrawlerService {
     VoidCallback? onComplete,
     bool requireWifi = true,
   }) async {
-    if (_isRunning) return;
+    if (_isRunning) {
+      onComplete?.call();
+      return;
+    }
 
     // ── Wi-Fi gate: never crawl on mobile data unless explicitly bypassed ─────
     if (requireWifi) {
@@ -652,49 +761,123 @@ class BackgroundCrawlerService {
       if (!onWifi) {
         engineService.addLog(
             '[SILENT CRAWLER] Not on Wi-Fi — skipping crawl, API will serve content.');
+        resetCrawler();
         onComplete?.call();
         return;
       }
     }
 
     _isRunning = true;
+    _stateStreamController.add(const CrawlerState(running: true));
     engineService.addLog('[SILENT CRAWLER] Starting background crawler...');
+
+    // ── Wi-Fi connectivity listener: reset crawler when Wi-Fi is lost ─────────
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((result) {
+      final onWifi = result.contains(ConnectivityResult.wifi);
+      if (!onWifi && _isRunning) {
+        engineService.addLog('[SILENT CRAWLER] Wi-Fi lost — resetting crawler shoulder.');
+        resetCrawler();
+        onComplete?.call();
+      }
+    });
 
     try {
       final db = NewsDatabase.instance;
-      final allSources = await db.getAllSources();
-
-      if (allSources.isEmpty) {
-        engineService.addLog('[SILENT CRAWLER] No sources found in DB.');
-        _isRunning = false;
-        return;
-      }
-
       final appLanguage = AppSettings.instance.locale?.languageCode ?? 'ar';
       final appCountry = AppSettings.instance.countryCode;
+      final lastCrawlTime = await db.getLastCrawlTime('__global__');
+      final lastVisitedTimestamp = lastCrawlTime?.millisecondsSinceEpoch ?? 0;
 
-      final List<NewsSource> matchedSources = allSources.where((s) {
-        final sourceLanguages = s.language.split(',').map((l) => l.trim()).toList();
-        final languageMatch = sourceLanguages.any((l) => l == appLanguage || l.isEmpty);
-        final countryMatch = appCountry.isEmpty || s.countryCode.isEmpty || s.countryCode == appCountry;
-        return languageMatch && countryMatch;
-      }).toList();
+      // Clear blacklist at start of crawl to allow re-crawling of previously failed URLs
+      final clearedCount = await db.clearBlacklist();
+      engineService.addLog('[SILENT CRAWLER] Cleared $clearedCount blacklist entries at start of crawl.');
 
-      if (matchedSources.isEmpty) {
-        engineService.addLog('[SILENT CRAWLER] No sources matched app language/country filters.');
+      // ── Get list of source URLs from API based on last_crawled time ─────────
+      // The API responds with a list of source URLs that have not been visited since the timestamp
+      engineService.addLog('[SILENT CRAWLER] Fetching source URLs for country=$appCountry language=$appLanguage...');
+      List<NewsSource> sourcesToCrawl;
+      try {
+        final apiSourceUrls = await ServerApiService.getSourceUrls(
+          countryCode: appCountry.isEmpty ? null : appCountry,
+          language: appLanguage,
+          lastVisitedTimestamp: lastVisitedTimestamp > 0 ? lastVisitedTimestamp : null,
+        );
+        
+        if (apiSourceUrls.isNotEmpty) {
+          // Look up full source info from local DB
+          final allLocalSources = await db.getAllSources(syncApi: false);
+          final localSourceMap = {for (final s in allLocalSources) s.url: s};
+          
+          sourcesToCrawl = [];
+          for (final url in apiSourceUrls) {
+            final localSource = localSourceMap[url];
+            if (localSource != null) {
+              sourcesToCrawl.add(localSource);
+            } else {
+              // Create a minimal source entry for URLs not in local DB
+              final uri = Uri.tryParse(url);
+              final host = uri?.host.toLowerCase() ?? '';
+              sourcesToCrawl.add(NewsSource(
+                id: 0,
+                country: appCountry,
+                countryCode: appCountry,
+                name: host.isNotEmpty ? host : url,
+                url: url,
+                category: 'general_news',
+                type: 'digital_news',
+                language: appLanguage,
+                rank: 0,
+              ));
+            }
+          }
+          engineService.addLog('[SILENT CRAWLER] API returned ${sourcesToCrawl.length} source URLs to crawl.');
+          final smallSystemCap = _isSmallMemoryPlatform() ? 3 : await _topSourcesCount;
+          sourcesToCrawl = sourcesToCrawl.take(smallSystemCap).toList();
+          engineService.addLog('[SILENT CRAWLER] Capped crawl queue to ${sourcesToCrawl.length} sources for this run.');
+        } else {
+          // Fallback to local DB if API returns no sources
+          final allSources = await db.getAllSources(syncApi: false);
+          final matchedSources = allSources.where((s) {
+            final sourceLanguages = s.language.split(',').map((l) => l.trim()).toList();
+            final languageMatch = sourceLanguages.any((l) => l == appLanguage || l.isEmpty);
+            final countryMatch = appCountry.isEmpty || s.countryCode.isEmpty || s.countryCode == appCountry;
+            return languageMatch && countryMatch;
+          }).toList();
+          sourcesToCrawl = List.from(matchedSources)..sort((a, b) => b.rank.compareTo(a.rank));
+          sourcesToCrawl = sourcesToCrawl.take(await _topSourcesCount).toList();
+          engineService.addLog('[SILENT CRAWLER] API empty, using ${sourcesToCrawl.length} local sources.');
+        }
+      } catch (e, stack) {
+        engineService.addLog('[SILENT CRAWLER] Failed to fetch sources from API: $e');
+        debugPrint('[SILENT CRAWLER] Failed to fetch sources from API: $e');
+        debugPrint('[SILENT CRAWLER] Stack trace: $stack');
+        
+        // Fallback to local DB if API fails
+        final allSources = await db.getAllSources(syncApi: false);
+        final matchedSources = allSources.where((s) {
+          final sourceLanguages = s.language.split(',').map((l) => l.trim()).toList();
+          final languageMatch = sourceLanguages.any((l) => l == appLanguage || l.isEmpty);
+          final countryMatch = appCountry.isEmpty || s.countryCode.isEmpty || s.countryCode == appCountry;
+          return languageMatch && countryMatch;
+        }).toList();
+        sourcesToCrawl = List.from(matchedSources)..sort((a, b) => b.rank.compareTo(a.rank));
+        sourcesToCrawl = sourcesToCrawl.take(await _topSourcesCount).toList();
+        engineService.addLog('[SILENT CRAWLER] API failed, using ${sourcesToCrawl.length} local sources.');
+      }
+
+      if (sourcesToCrawl.isEmpty) {
+        engineService.addLog('[SILENT CRAWLER] No sources to crawl.');
         _isRunning = false;
+        _stateStreamController.add(const CrawlerState(running: false));
+        onComplete?.call();
         return;
       }
 
-      final List<NewsSource> topSources = List.from(matchedSources)
-        ..sort((a, b) => b.rank.compareTo(a.rank));
-      final sourcesToCrawl =
-          topSources.take(await _topSourcesCount).toList();
-
       sourcesToCrawl.shuffle(Random());
-
+      _stateStreamController.add(CrawlerState(running: true, totalSources: sourcesToCrawl.length));
       engineService.addLog(
-          '[SILENT CRAWLER] Queued ${sourcesToCrawl.length} top sources for background crawling.');
+          '[SILENT CRAWLER] Queued ${sourcesToCrawl.length} sources for background crawling.');
 
       // Load local URL DB JSON once
       String jsonStr = '[]';
@@ -704,14 +887,26 @@ class BackgroundCrawlerService {
         engineService.addLog('[SILENT CRAWLER] Could not load local DB JSON, using empty.');
       }
 
+      int processedCount = 0;
       for (int i = 0; i < sourcesToCrawl.length; i++) {
+        if (!_isRunning) {
+          engineService.addLog('[SILENT CRAWLER] Crawler was reset, stopping early.');
+          break;
+        }
+
         final source = sourcesToCrawl[i];
 
-         // Skip if crawled in the last 35 minutes
-         final last = await db.getLastCrawlTime(source.url);
-         if (last != null && DateTime.now().difference(last).inMinutes < 35) {
+        // Skip if crawled in the last 35 minutes
+        final last = await db.getLastCrawlTime(source.url);
+        if (last != null && DateTime.now().difference(last).inMinutes < 35) {
           engineService.addLog(
               '[SILENT CRAWLER] [${i + 1}/${sourcesToCrawl.length}] ${source.name}: last crawled ${DateTime.now().difference(last).inMinutes} min ago, skipping.');
+          processedCount++;
+          _stateStreamController.add(CrawlerState(
+            running: _isRunning,
+            processedSources: processedCount,
+            totalSources: sourcesToCrawl.length,
+          ));
           continue;
         }
 
@@ -721,8 +916,14 @@ class BackgroundCrawlerService {
         try {
           final quality = await _crawlSource(source, jsonStr, engineService);
           onProgress?.call();
+          processedCount++;
+          _stateStreamController.add(CrawlerState(
+            running: _isRunning,
+            processedSources: processedCount,
+            totalSources: sourcesToCrawl.length,
+          ));
           engineService.addLog('[SILENT CRAWLER] √ ${source.name} done.');
-          await Future.delayed(const Duration(milliseconds: 500));
+          await Future.delayed(const Duration(milliseconds: 100));
           try {
             await ServerApiService.updateSourceCrawlTime(source.url);
           } catch (_) {}
@@ -741,6 +942,9 @@ class BackgroundCrawlerService {
       engineService.addLog('[SILENT CRAWLER] Fatal error: $e');
     } finally {
       _isRunning = false;
+      _connectivitySubscription?.cancel();
+      _connectivitySubscription = null;
+      _stateStreamController.add(const CrawlerState(running: false));
       onComplete?.call();
     }
   }
@@ -753,7 +957,9 @@ class BackgroundCrawlerService {
   }
 
   void dispose() {
+    _connectivitySubscription?.cancel();
     _articleStreamController.close();
+    _stateStreamController.close();
   }
 
   /// Force re-crawl all top sources, ignoring cached articles.
@@ -813,7 +1019,7 @@ class BackgroundCrawlerService {
           await db.clearArticlesForSource(source.url);
           final quality = await _crawlSource(source, jsonStr, engineService);
           onProgress?.call();
-          await Future.delayed(const Duration(milliseconds: 500));
+          await Future.delayed(const Duration(milliseconds: 100));
           try {
             await ServerApiService.updateSourceCrawlTime(source.url);
           } catch (_) {}
@@ -879,25 +1085,27 @@ class BackgroundCrawlerService {
     }
 
     final sourceUri = Uri.tryParse(source.url);
-    final sourceHost = sourceUri?.host.toLowerCase() ?? '';
+    String sourceHost = sourceUri?.host.toLowerCase() ?? '';
+    if (sourceHost.startsWith('www.')) sourceHost = sourceHost.substring(4);
     final bool sourceIsArabic = source.language.toLowerCase().contains('ar');
 
     if (sourceHost.isNotEmpty) {
       final beforeDomainFilter = rawUrls.length;
       rawUrls = rawUrls.where((url) {
         final uri = Uri.tryParse(url);
-        final host = uri?.host.toLowerCase() ?? '';
+        if (uri == null) return false;
+        String host = uri.host.toLowerCase();
+        if (host.startsWith('www.')) host = host.substring(4);
         return host == sourceHost || host.endsWith('.$sourceHost');
       }).toList();
       final afterDomainFilter = rawUrls.length;
       if (afterDomainFilter < beforeDomainFilter) {
         engineService.addLog('[CRAWL DOMAIN FILTER] Kept $afterDomainFilter/$beforeDomainFilter URLs matching source domain "$sourceHost".');
       }
-    }
-
-    if (rawUrls.isEmpty) {
-      engineService.addLog('[CRAWL FILTER] No URLs passed source-domain filter for ${source.url}.');
-      return 0.0;
+      if (rawUrls.isEmpty) {
+        engineService.addLog('[CRAWL FILTER] No URLs passed source-domain filter for ${source.url} (host: $sourceHost).');
+        return 0.0;
+      }
     }
 
     // PASS 2: URL Pre-Validation, Blacklist filtering, Jaccard Similarity Deduplication, and Priority Ranking (Threaded Isolate)
@@ -926,8 +1134,24 @@ class BackgroundCrawlerService {
     engineService.addLog(
         '[CRAWL PASS 2] Finalized prioritized queue contains ${sortedArticleUrls.length} unique news articles.');
 
-    if (sortedArticleUrls.isEmpty) {
-      engineService.addLog('[CRAWL PASS 2] Zero unique news articles survived the deduplication pipeline.');
+    // ── Hashing the URL & Blacklist check (per flowchart: HASHING THE URL → BLACK LISTED?) ──
+    final db = NewsDatabase.instance;
+    final List<String> blacklistCheckedUrls = [];
+    int blacklistedCount = 0;
+    for (final url in sortedArticleUrls) {
+      final urlHash = NewsModel.hashUrl(url);
+      final isBlacklisted = await db.isUrlBlacklisted(urlHash);
+      if (isBlacklisted) {
+        blacklistedCount++;
+        engineService.addLog('[BLACKLIST] Skipped blacklisted URL: $url');
+        continue;
+      }
+      blacklistCheckedUrls.add(url);
+    }
+    engineService.addLog('[CRAWL PASS 2] Blacklist check complete. Blacklisted: $blacklistedCount, Remaining: ${blacklistCheckedUrls.length}');
+
+    if (blacklistCheckedUrls.isEmpty) {
+      engineService.addLog('[CRAWL PASS 2] All URLs blacklisted, nothing to crawl.');
       return 0.0;
     }
 
@@ -938,13 +1162,13 @@ class BackgroundCrawlerService {
 
     engineService.addLog('[CRAWL PASS 3] Initiating background-isolate article processing...');
 
-    const int batchSize = 10;
-    final int totalBatches = (sortedArticleUrls.length / batchSize).ceil();
+    const int batchSize = 5;
+    final int totalBatches = (blacklistCheckedUrls.length / batchSize).ceil();
 
     for (int batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
       final start = batchIndex * batchSize;
-      final end = (start + batchSize).clamp(start, sortedArticleUrls.length);
-      final batchUrls = sortedArticleUrls.sublist(start, end);
+      final end = (start + batchSize).clamp(start, blacklistCheckedUrls.length);
+      final batchUrls = blacklistCheckedUrls.sublist(start, end);
 
       engineService.addLog('[CRAWL PASS 3] Processing batch ${batchIndex + 1}/$totalBatches (${batchUrls.length} articles)...');
 
@@ -968,7 +1192,10 @@ class BackgroundCrawlerService {
         final List<Map<String, dynamic>> batchResults = await compute(
           _processArticleBatch,
           batchTasks,
-        );
+        ).timeout(const Duration(seconds: 30), onTimeout: () {
+          engineService.addLog('[CRAWL PASS 3] Batch ${batchIndex + 1} timed out after 30 seconds');
+          return <Map<String, dynamic>>[];
+        });
 
         for (final result in batchResults) {
           if (result['success'] != true) {
@@ -1021,13 +1248,25 @@ class BackgroundCrawlerService {
             successCount++;
           }
 
+          // ── Explicit news validation (per flowchart: IS NEWS VALID?) ─────────
+          if (!_isValidCrawledNews(article)) {
+            engineService.addLog('[VALIDATION] Skipped invalid article: ${article.url}');
+            continue;
+          }
+
           if (!kIsWeb) {
             try {
-              await ServerApiService.saveArticle(article);
+              final sw = Stopwatch()..start();
+              await ServerApiService.saveArticle(article).timeout(const Duration(seconds: 10));
+              sw.stop();
+              engineService.addLog('[SERVER] Saved article in ${sw.elapsedMilliseconds}ms: ${article.url}');
             } catch (e) {
-              engineService.addLog('[SERVER] Failed to sync article: $e');
+              engineService.addLog('[SERVER] Save failed for ${article.url}: $e');
             }
-            await Future.delayed(const Duration(milliseconds: 1500));
+            final pause = _isSmallMemoryPlatform()
+                ? const Duration(milliseconds: 250)
+                : const Duration(milliseconds: 50);
+            await Future.delayed(pause);
           }
           _emitArticle(article);
           await Future.delayed(Duration.zero);
@@ -1038,7 +1277,10 @@ class BackgroundCrawlerService {
       }
 
       // Yield to UI and let system rest between batches
-      await Future.delayed(const Duration(milliseconds: 200));
+      final batchPause = _isSmallMemoryPlatform()
+          ? const Duration(milliseconds: 300)
+          : const Duration(milliseconds: 50);
+      await Future.delayed(batchPause);
     }
 
     if (fetchedArticles.isNotEmpty) {
@@ -1066,15 +1308,21 @@ class BackgroundCrawlerService {
         try {
           final limited = groupedArticles.take(8).toList();
           for (final article in limited) {
-            await ServerApiService.saveArticle(article);
-            await Future.delayed(const Duration(milliseconds: 1500));
+            try {
+              final sw = Stopwatch()..start();
+              await ServerApiService.saveArticle(article).timeout(const Duration(seconds: 10));
+              sw.stop();
+              engineService.addLog('[SERVER] Synced article OK in ${sw.elapsedMilliseconds}ms: ${article.url}');
+            } catch (e) {
+              engineService.addLog('[SERVER] Failed to sync article: ${article.url} | $e');
+            }
           }
         } catch (e) {
           engineService.addLog('[SERVER] Failed to sync batch: $e');
         }
       }
     }
-    final double quality = fetchedArticles.length / max(sortedArticleUrls.length, 1);
+    final double quality = fetchedArticles.length / max(blacklistCheckedUrls.length, 1);
     engineService.addLog(
         '[CRAWL PASS 3] Crawl complete. Success: $successCount, Failures: $failureCount, Quality: ${quality.toStringAsFixed(2)}.');
     return quality;
@@ -1131,6 +1379,38 @@ class BackgroundCrawlerService {
     }
 
     return result;
+  }
+
+  static bool _isValidCrawledNews(NewsModel article) {
+    final title = article.title.trim();
+    final summary = article.summary.trim();
+    final url = article.url.trim();
+    final content = article.content.trim();
+
+    if (title.isEmpty || url.isEmpty || url.length < 10) return false;
+    if (content.isEmpty) return false;
+
+    final lowerSummary = summary.toLowerCase();
+    final genericSummaries = <String>[
+      'latest updates from this source.',
+      'latest updates from this source',
+      'latest news',
+      'breaking news',
+      'top news',
+      'all news',
+      'all articles',
+      'latest articles',
+      'read more',
+      'click here',
+      'more news',
+      'اخر الأخبار',
+      'أخبار عاجلة',
+      'كل الأخبار',
+      'المزيد من الأخبار',
+    ];
+    if (genericSummaries.any((g) => lowerSummary.contains(g))) return false;
+    
+    return true;
   }
 
   /// Checks if a new article is a duplicate with the same image but different title.

@@ -2,7 +2,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:core';
+import 'dart:io';
 import 'dart:math';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -76,7 +78,24 @@ class YallaEngineService extends ChangeNotifier {
     _consoleLogs.add(log);
     _logStreamController.add(log);
     notifyListeners();
-    debugPrint(log); // Also appears in `flutter run` terminal
+    debugPrint(log);
+    _writeLogToFile(log);
+  }
+
+  Future<void> _writeLogToFile(String log) async {
+    try {
+      final directory = Platform.isWindows || Platform.isLinux || Platform.isMacOS
+          ? Directory('${Platform.environment['LOCALAPPDATA'] ?? Platform.environment['HOME'] ?? '.'}/YallaNews/logs')
+          : await getApplicationDocumentsDirectory();
+      
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+      
+      final file = File('${directory.path}/yallanews_debug.log');
+      final timestamp = DateTime.now().toIso8601String();
+      await file.writeAsString('[$timestamp] $log\n', mode: FileMode.append);
+    } catch (_) {}
   }
 
   void clearLogs() {
@@ -1177,27 +1196,58 @@ class YallaEngineService extends ChangeNotifier {
   }) async {
     addLog('[PHOTO ENGINE] Selecting relevant images...');
 
-    final categorySlug = category.toLowerCase();
-    final query = Uri.encodeComponent('$categorySlug news');
-    final mainImage = imageUrl.isNotEmpty
-        ? imageUrl
-        : 'https://www.bing.com/images/search?q=$query&first=1';
-    final paragraphImages = <String>[
-      'https://www.bing.com/images/search?q=$query&first=1',
-      'https://www.bing.com/images/search?q=${Uri.encodeComponent(categorySlug)}&first=1',
-      'https://www.bing.com/images/search?q=${Uri.encodeComponent(title)}&first=1',
-    ];
+    String mainImage = imageUrl;
+    final paragraphs = _splitContentIntoSegments(
+      content,
+      title: title,
+      description: content.length > 200 ? content.substring(0, 200) : null,
+      metaKeywords: extractKeywords(title, content, category),
+    );
+
+    if (paragraphs.isEmpty) {
+      addLog('[PHOTO ENGINE] No paragraphs found for image search.');
+      return {'imageUrl': mainImage, 'content': content};
+    }
+
+    final rng = Random();
+    final imageCount = paragraphs.isEmpty ? 0 : rng.nextInt(paragraphs.length) + 1;
+    final selectedIndices = <int>{};
+    while (selectedIndices.length < imageCount && selectedIndices.length < paragraphs.length) {
+      selectedIndices.add(rng.nextInt(paragraphs.length));
+    }
+    final sortedSelected = selectedIndices.toList()..sort();
+
+    final injectedImages = <String>[];
+    for (final idx in sortedSelected) {
+      final query = paragraphs[idx].length > 200
+          ? paragraphs[idx].substring(0, 200)
+          : paragraphs[idx];
+      final bingImages = await fetchBingImages(query);
+      if (bingImages.isNotEmpty) {
+        final position = rng.nextInt(bingImages.length.clamp(1, 5));
+        injectedImages.add(bingImages[position]);
+      }
+    }
+
+    if (mainImage.isEmpty && injectedImages.isNotEmpty) {
+      mainImage = injectedImages.first;
+    }
 
     String finalContent = content;
-    if (paragraphImages.isNotEmpty && finalContent.isNotEmpty) {
-      finalContent = _injectImagesIntoContent(
-        finalContent,
-        paragraphImages,
-        title: title,
-        description: content.length > 200 ? content.substring(0, 200) : null,
-        metaKeywords: extractKeywords(title, content, category),
-      );
-      addLog('[PHOTO ENGINE] Injected ${paragraphImages.length} paragraph image(s).');
+    if (injectedImages.isNotEmpty && paragraphs.isNotEmpty) {
+      final buf = StringBuffer();
+      int imgIdx = 0;
+      for (int i = 0; i < paragraphs.length; i++) {
+        buf.write(paragraphs[i]);
+        if (sortedSelected.contains(i) && imgIdx < injectedImages.length) {
+          buf.write('\n\n<img src="${injectedImages[imgIdx++]}" style="width:100%;max-height:380px;object-fit:cover;border-radius:12px;margin:16px 0;display:block;" />');
+        }
+        if (i < paragraphs.length - 1) {
+          buf.write('\n\n');
+        }
+      }
+      finalContent = buf.toString().trimRight();
+      addLog('[PHOTO ENGINE] Injected ${injectedImages.length} paragraph image(s).');
     }
 
     addLog('[PHOTO ENGINE] Complete.');

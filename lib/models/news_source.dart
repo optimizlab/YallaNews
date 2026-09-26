@@ -23,15 +23,15 @@ class NewsSource {
 
   factory NewsSource.fromMap(Map<String, dynamic> map) {
     return NewsSource(
-      id: map['id'] as int,
-      country: map['country'] as String,
-      countryCode: map['country_code'] as String,
-      name: map['name'] as String,
-      url: map['url'] as String,
-      category: map['category'] as String,
-      type: map['type'] as String,
-      language: map['language'] as String,
-      rank: map['rank'] as int,
+      id: map['id'] is int ? map['id'] as int : int.tryParse('${map['id']}') ?? 0,
+      country: '${map['country'] ?? ''}',
+      countryCode: '${map['country_code'] ?? ''}',
+      name: '${map['name'] ?? ''}',
+      url: '${map['url'] ?? ''}',
+      category: '${map['category'] ?? 'general_news'}',
+      type: '${map['type'] ?? 'digital_news'}',
+      language: '${map['language'] ?? 'ar'}',
+      rank: map['rank'] is int ? map['rank'] as int : int.tryParse('${map['rank']}') ?? 0,
     );
   }
 
