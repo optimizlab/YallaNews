@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
@@ -5,14 +6,119 @@ import 'package:flutter/gestures.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import 'package:flutter/foundation.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/tts_service.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_windows/webview_flutter_windows.dart' as windows_webview;
 import '../services/comment_service.dart';
 import '../services/user_service.dart';
+import '../services/connectivity_service.dart';
 import '../widgets/cached_news_image.dart';
 import '../services/server_api_service.dart';
 import '../services/knowledge_extraction_service.dart';
 import '../services/category_service.dart';
+import '../database/news_db.dart';
+import 'auth/login_page.dart';
+
+class _SpeakingIndicator extends StatefulWidget {
+  final Color color;
+  const _SpeakingIndicator({required this.color});
+
+  @override
+  State<_SpeakingIndicator> createState() => _SpeakingIndicatorState();
+}
+
+class _WindowsSourceReaderPage extends StatefulWidget {
+  final Uri url;
+
+  const _WindowsSourceReaderPage({required this.url});
+
+  @override
+  State<_WindowsSourceReaderPage> createState() => _WindowsSourceReaderPageState();
+}
+
+class _WindowsSourceReaderPageState extends State<_WindowsSourceReaderPage> {
+  final windows_webview.WebviewController _controller = windows_webview.WebviewController();
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      await _controller.initialize();
+      await _controller.setPopupWindowPolicy(windows_webview.WebviewPopupWindowPolicy.deny);
+      await _controller.setDefaultContextMenusEnabled(true);
+      await _controller.loadUrl(widget.url.toString());
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.url.host, style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600)),
+        backgroundColor: theme.colorScheme.surface,
+        foregroundColor: theme.colorScheme.onSurface,
+      ),
+      body: _error != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.browser_not_supported_rounded, size: 48, color: theme.colorScheme.primary),
+                    const SizedBox(height: 12),
+                    const Text('Microsoft WebView2 Runtime is required to read sources inside the app.'),
+                    const SizedBox(height: 8),
+                    Text(_error!, textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+            )
+          : _controller.value.isInitialized
+              ? windows_webview.Webview(_controller)
+              : const Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+class _SpeakingIndicatorState extends State<_SpeakingIndicator> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 700))..repeat(reverse: true);
+
+  @override
+  void dispose() { _controller.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    builder: (_, __) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(3, (i) => Container(
+        width: 4,
+        height: 8 + (_controller.value * (i + 1) * 5),
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(color: widget.color, borderRadius: BorderRadius.circular(4)),
+      )),
+    ),
+  );
+}
 
 class NewsDetailPage extends StatefulWidget {
   final NewsModel article;
@@ -37,11 +143,18 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   List<dynamic> _knowledgeClaims = [];
   bool _isLoadingKnowledge = false;
 
+  // ─── Related "Read also" articles ────────────────────────────────────────────
+  List<NewsModel> _relatedArticles = [];
+  bool _isLoadingRelated = false;
+
   // ─── Like state ──────────────────────────────────────────────────────────────
   bool _isLiked = false;
   int _likeCount = 0;
   bool _likeLoading = false;
   bool _isLoggedIn = false;
+  bool _isSaved = false;
+  bool _saveLoading = false;
+  bool _isOfflineSaved = false;
 
   // ─── Comment refresh key ─────────────────────────────────────────────────────
   int _commentRefreshKey = 0;
@@ -57,6 +170,91 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     _enrichArticleIfNeeded();
     _loadKnowledge();
     _loadLikeState();
+    _loadOfflineSavedState();
+    _loadRelatedArticles();
+  }
+
+  Future<void> _loadOfflineSavedState() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() => _isOfflineSaved = (prefs.getStringList('offline_saved_urls') ?? []).contains(article.url));
+  }
+
+  Future<void> _loadRelatedArticles() async {
+    setState(() => _isLoadingRelated = true);
+    try {
+      final all = await NewsDatabase.instance.getAllArticles(limit: 200);
+      final related = all
+          .where((a) => a.url != article.url)
+          .where((a) => a.category.toLowerCase() == article.category.toLowerCase())
+          .take(6)
+          .toList();
+      if (mounted) {
+        setState(() {
+          _relatedArticles = related;
+          _isLoadingRelated = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingRelated = false);
+    }
+  }
+
+  Future<void> _shareArticle() async {
+    await Share.share('${article.title}\n\n${article.url}', subject: article.title);
+  }
+
+  Future<void> _reportArticle() async {
+    if (!await _requireAuthentication()) return;
+    if (!(await _requireInternet())) return;
+    final subject = Uri.encodeComponent('Report article: ${article.title}');
+    final body = Uri.encodeComponent('I want to report this article:\n${article.url}\n\nReason: ');
+    final uri = Uri.parse('mailto:support@inoov.com?subject=$subject&body=$body');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+      if (mounted) _showActionMessage('Report opened');
+    } else if (mounted) {
+      _showActionMessage('No email app available');
+    }
+  }
+
+  Future<bool> _requireAuthentication() async {
+    final loggedIn = await ServerApiService.isLoggedIn();
+    if (loggedIn) return true;
+    if (!mounted) return false;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+    if (!mounted) return false;
+    await _loadLikeState();
+    return ServerApiService.isLoggedIn();
+  }
+
+  void _showActionMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
+  }
+
+  /// Shows a connection screen when there is no internet and returns false.
+  /// Callers should bail out when this returns false.
+  Future<bool> _requireInternet() async {
+    if (!mounted) return false;
+    final connected = await ConnectivityService.hasInternet();
+    if (connected) return true;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('No internet connection'),
+        content: const Text('You appear to be offline. Please connect to the internet and try again.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    return false;
   }
 
   @override
@@ -100,6 +298,15 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         claims = await KnowledgeExtractionService.instance.getClaimsForArticle(article.url);
       }
 
+      // Knowledge records can be stale or produced from a page shell. Keep
+      // only facts grounded in this article's title/body; unrelated topics
+      // such as other competitions must never reach the reader UI.
+      final story = '${article.title} ${article.summary} $effectiveContent';
+      entities = entities.where((e) => _isGroundedInStory(e.value, story)).toList();
+      events = events.where((e) => _isGroundedInStory(e.label, story, minMatches: 2)).toList();
+      topics = topics.where((t) => _isGroundedInStory(t.primaryTopic, story, minMatches: 2)).toList();
+      claims = claims.where((c) => _isGroundedInStory(c.claimText, story, minMatches: 3)).toList();
+
       if (mounted) {
         setState(() {
           _knowledgeEntities = _deduplicate(entities, (e) => e.value);
@@ -124,6 +331,44 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     }).toList();
   }
 
+  static bool _isGroundedInStory(String value, String story, {int minMatches = 1}) {
+    final normalize = (String input) => input
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\u0600-\u06FF\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final phrase = normalize(value);
+    final source = normalize(story);
+    if (phrase.isEmpty || source.isEmpty) return false;
+    if (source.contains(phrase)) return true;
+    final stop = <String>{'من', 'في', 'على', 'إلى', 'عن', 'مع', 'هذا', 'هذه', 'ذلك', 'الذي', 'التي', 'دوري', 'كأس', 'أبطال', 'the', 'and', 'news'};
+    final words = phrase.split(' ').where((w) => w.length >= 3 && !stop.contains(w)).toSet();
+    final matches = words.where(source.contains).length;
+    return matches >= minMatches && (words.length <= 2 || matches / words.length >= 0.5);
+  }
+
+  String _stripHtml(String html) {
+    return html
+        .replaceAll(RegExp(r'<\s*br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</(p|div|h[1-6]|li)>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<[^>]*>'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _buildNewsReadText() {
+    final title = _stripHtml(article.title).trim();
+    final summary = _stripHtml(article.summary).trim();
+    final content = _stripHtml(effectiveContent).trim();
+
+    final parts = <String>[];
+    if (title.isNotEmpty) parts.add(title);
+    if (summary.isNotEmpty && summary != title) parts.add(summary);
+    if (content.isNotEmpty && content != summary && content != title) parts.add(content);
+
+    return parts.join('. ');
+  }
+
   void _toggleTts() async {
     if (_isSpeaking) {
       await TTSService.instance.stop();
@@ -133,17 +378,30 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         });
       }
     } else {
+      final contentToRead = _buildNewsReadText();
+      if (contentToRead.trim().isEmpty) {
+        if (mounted) setState(() => _isSpeaking = false);
+        return;
+      }
       if (mounted) {
         setState(() {
           _isSpeaking = true;
         });
       }
-      final contentToRead = "${article.title}. ${article.shortTitle}. ${article.summary}. ${effectiveContent}";
-      await TTSService.instance.speak(contentToRead);
-      if (mounted) {
-        setState(() {
-          _isSpeaking = false;
+      try {
+        await TTSService.instance.speak(contentToRead, onCompleted: () {
+          if (mounted) {
+            setState(() {
+              _isSpeaking = false;
+            });
+          }
         });
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isSpeaking = false;
+          });
+        }
       }
     }
   }
@@ -151,16 +409,30 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   String _getDisplayDate() {
     final datesIso = article.structuredData['dates_iso'] as List<dynamic>?;
     if (datesIso != null && datesIso.isNotEmpty) {
+      final parsed = DateTime.tryParse(datesIso.first.toString());
+      if (parsed != null) return _formatArabicDate(parsed);
       return datesIso.first.toString();
     }
     final dates = article.structuredData['dates'] as List<dynamic>?;
     if (dates != null && dates.isNotEmpty) {
+      final parsed = DateTime.tryParse(dates.first.toString());
+      if (parsed != null) return _formatArabicDate(parsed);
       return dates.first.toString();
     }
     if (article.publishDate.isNotEmpty) {
+      final parsed = article.publicationDate;
+      if (parsed != null) return _formatArabicDate(parsed);
       return article.publishDate.split('T')[0];
     }
     return 'Recent';
+  }
+
+  String _formatArabicDate(DateTime date) {
+    final months = const [
+      'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   /// Load like status and count from API.
@@ -169,13 +441,16 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       final loggedIn = await ServerApiService.isLoggedIn();
       final count = await ServerApiService.getLikeCount(article.url);
       bool liked = false;
+      bool saved = false;
       if (loggedIn) {
         liked = await ServerApiService.checkLike(article.url);
+        saved = await ServerApiService.checkSave(article.url);
       }
       if (mounted) {
         setState(() {
           _isLoggedIn = loggedIn;
           _isLiked = liked;
+          _isSaved = saved;
           _likeCount = count;
         });
       }
@@ -431,7 +706,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         actions: [
           IconButton(
             icon: Icon(Icons.share_rounded, color: Theme.of(context).colorScheme.onSurface),
-            onPressed: () {},
+            onPressed: _shareArticle,
           ),
         ],
         title: AnimatedSwitcher(
@@ -458,14 +733,39 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ),
         centerTitle: true,
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _toggleTts,
-        backgroundColor: _isSpeaking ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurface,
-        child: Icon(_isSpeaking ? Icons.stop : Icons.volume_up, color: Theme.of(context).colorScheme.onPrimary),
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'source_reader_${article.url.hashCode}',
+            onPressed: article.url.trim().isEmpty
+                ? null
+                : () => _openSourceUrl(context, article.url),
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            icon: const Icon(Icons.public_rounded, size: 19),
+            label: Text(
+                    'قراءة من المصدر',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 10),
+          if (_isSpeaking)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _SpeakingIndicator(color: Theme.of(context).colorScheme.primary),
+            ),
+          FloatingActionButton(
+            heroTag: 'article_tts_${article.url.hashCode}',
+            onPressed: _toggleTts,
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            child: Icon(_isSpeaking ? Icons.stop : Icons.volume_up, color: Theme.of(context).colorScheme.onSurface),
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         controller: _scrollController,
-        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10.0),
+        padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 120.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -575,7 +875,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                         Icon(Icons.auto_awesome, size: 16, color: Theme.of(context).colorScheme.primary),
                         const SizedBox(width: 8),
                         Text(
-                          "ملخص تنفيذي من C++ TINY-LLM",
+                          "ملخص تنفيذي",
                           style: GoogleFonts.outfit(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -883,9 +1183,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               ),
             ),
             const SizedBox(height: 20),
+            // ── Blended article banner ──────────────────────────────────────
             if (article.category.toLowerCase() == 'sports')
               _buildSportsDashboard(context),
-            // ── Blended article banner ──────────────────────────────────────
             if (article.isBlended) ...[
               _buildBlendedBanner(context),
               const SizedBox(height: 20),
@@ -901,35 +1201,16 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             const Divider(height: 14),
              ..._buildRichContent(context, effectiveContent),
             const SizedBox(height: 30),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.link, size: 18, color: Theme.of(context).colorScheme.primary),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: SelectableText(
-                      article.url,
-                      style: GoogleFonts.outfit(
-                        fontSize: 14,
-                        color: Theme.of(context).colorScheme.primary,
-                        decoration: TextDecoration.underline,
-                      ),
-                      maxLines: 1,
-                    ),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 30),
             _buildBlendedSourcesSection(context),
+            const SizedBox(height: 20),
+            _buildReadAlsoSection(context),
+
+/*
             const SizedBox(height: 30),
             _buildPipelineInspector(context),
+*/
+
             const SizedBox(height: 30),
             _buildActionButtons(context),
             const SizedBox(height: 30),
@@ -941,21 +1222,152 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     );
   }
 
+  Widget _buildReadAlsoSection(BuildContext context) {
+    if (_relatedArticles.isEmpty) return const SizedBox();
+    final l10n = AppLocalizations.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              l10n.translate('relatedNews'),
+              style: GoogleFonts.outfit(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            TextButton(
+              onPressed: () => _showAllRelated(context),
+              child: Text(
+                'عرض الكل',
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 210,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _relatedArticles.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              final rel = _relatedArticles[index];
+              return GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => NewsDetailPage(article: rel),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Stack(
+                        children: [
+                          CachedNewsImage(
+                            imageUrl: rel.imageUrl.isNotEmpty
+                                ? rel.imageUrl
+                                : NewsModel.getFallbackImage(rel.category),
+                            width: 150,
+                            height: 120,
+                            fit: BoxFit.cover,
+                            errorWidget: Container(
+                              width: 150,
+                              height: 120,
+                              color: Theme.of(context).colorScheme.surfaceContainer,
+                              child: Icon(
+                                Icons.article_outlined,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (rel.imageUrl.isEmpty)
+                            Positioned.fill(
+                              child: Container(
+                                color: Colors.black.withOpacity(0.25),
+                                child: Icon(
+                                  Icons.article_outlined,
+                                  color: Colors.white.withOpacity(0.6),
+                                  size: 32,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: 150,
+                      child: Text(
+                        rel.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Theme.of(context).colorScheme.onSurface,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      rel.displaySourceName,
+                      style: GoogleFonts.outfit(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+
+  void _showAllRelated(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _RelatedArticlesPage(article: article, related: _relatedArticles),
+      ),
+    );
+  }
+
   Widget _buildActionButtons(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Wrap(
+        alignment: WrapAlignment.spaceAround,
+        runAlignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
         children: [
           // ── Like button with count ────────────────────────────────────────
           InkWell(
-            onTap: _isLoggedIn ? _toggleLike : null,
+            onTap: _toggleLike,
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -991,23 +1403,43 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             ),
           ),
           _buildActionChip(
-            Icons.bookmark_border_rounded,
-            l10n.translate('save'),
+            _isOfflineSaved ? Icons.download_done_rounded : Icons.download_outlined,
+            _isOfflineSaved ? 'Offline' : 'Offline',
             null,
-            _isLoggedIn ? () => _toggleSave() : null,
+            () => _toggleOfflineSave(),
+            active: _isOfflineSaved,
           ),
           _buildActionChip(
             Icons.comment_outlined,
             l10n.translate('comments'),
             null,
-            () => _showCommentDialog(context),
+            () => _openCommentsForUser(context),
           ),
+          _buildActionChip(Icons.flag_outlined, 'Report', null, _reportArticle),
         ],
       ),
     );
   }
 
-  Widget _buildActionChip(IconData icon, String label, Color? color, VoidCallback? onTap) {
+  /// Comments require a real account.  Keep this check at the action boundary
+  /// as well as in the comments section because the top action is available
+  /// before the user scrolls to the form.
+  Future<void> _openCommentsForUser(BuildContext context) async {
+    if (!(await _requireInternet())) return;
+    final loggedIn = await ServerApiService.isLoggedIn();
+    if (!mounted) return;
+    if (!loggedIn) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+      );
+      if (mounted) await _loadLikeState();
+      return;
+    }
+    await _showCommentDialog(context);
+    if (mounted) setState(() => _commentRefreshKey++);
+  }
+
+  Widget _buildActionChip(IconData icon, String label, Color? color, VoidCallback? onTap, {bool active = false}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -1016,9 +1448,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: (onTap == null ? Colors.grey : null) ?? color ?? Theme.of(context).colorScheme.onSurfaceVariant),
+            Icon(icon, size: 20, color: active ? const Color(0xFFC62828) : (onTap == null ? Colors.grey : null) ?? color ?? Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(width: 6),
-            Text(label, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: onTap == null ? Colors.grey : Theme.of(context).colorScheme.onSurfaceVariant)),
+            Text(label, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: active ? const Color(0xFFC62828) : onTap == null ? Colors.grey : Theme.of(context).colorScheme.onSurfaceVariant)),
           ],
         ),
       ),
@@ -1131,11 +1563,15 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         const SizedBox(height: 16),
         // ── Add comment button — login required ───────────────────────────────
         if (!_isLoggedIn)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              l10n.translate('loginToComment'),
-              style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _openCommentsForUser(context),
+              icon: const Icon(Icons.login_rounded, size: 18),
+              label: Text(
+                l10n.translate('loginToComment'),
+                style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+              ),
             ),
           )
         else
@@ -1202,7 +1638,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   Future<void> _toggleLike() async {
-    if (!_isLoggedIn || _likeLoading) return;
+    if (!await _requireAuthentication()) return;
+    if (!(await _requireInternet())) return;
+    if (_likeLoading) return;
     setState(() => _likeLoading = true);
     try {
       if (_isLiked) {
@@ -1220,6 +1658,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       }
     } catch (_) {
       // Revert optimistic update on error
+      if (mounted) _showActionMessage('Like could not be updated');
       await _loadLikeState();
     } finally {
       if (mounted) setState(() => _likeLoading = false);
@@ -1229,7 +1668,32 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   Future<void> _toggleSave() async {
     final isLoggedIn = await ServerApiService.isLoggedIn();
     if (!isLoggedIn) return;
-    await UserService.saveArticle(article.url);
+    setState(() => _saveLoading = true);
+    try {
+      if (_isSaved) {
+        await ServerApiService.unsaveUserArticle(article.url);
+      } else {
+        await UserService.saveArticle(article.url);
+      }
+      if (mounted) setState(() => _isSaved = !_isSaved);
+    } finally {
+      if (mounted) setState(() => _saveLoading = false);
+    }
+  }
+
+  Future<void> _toggleOfflineSave() async {
+    if (!(await _requireInternet())) return;
+    final prefs = await SharedPreferences.getInstance();
+    final urls = List<String>.from(prefs.getStringList('offline_saved_urls') ?? const <String>[]);
+    if (_isOfflineSaved) {
+      urls.remove(article.url);
+      await NewsDatabase.instance.deleteArticleByUrl(article.url);
+    } else {
+      urls.add(article.url);
+      await NewsDatabase.instance.saveCrawledArticles([article], article.url);
+    }
+    await prefs.setStringList('offline_saved_urls', urls);
+    if (mounted) setState(() => _isOfflineSaved = !_isOfflineSaved);
   }
 
   List<Widget> _buildRichContent(BuildContext context, String text) {
@@ -1854,17 +2318,20 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           final sourceUrl = (attr['url'] as String?) ?? '';
           final sourceTitle = (attr['title'] as String?) ?? '';
           final date = (attr['publishDate'] as String?) ?? '';
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainer,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outlineVariant,
+          return InkWell(
+            onTap: sourceUrl.isEmpty ? null : () => _openSourceUrl(context, sourceUrl),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
               ),
-            ),
-            child: Row(
+              child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Index badge
@@ -1929,33 +2396,27 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                         ),
                       ],
                       if (sourceUrl.isNotEmpty) ...[
-                        const SizedBox(height: 6),
-                        GestureDetector(
-                          onTap: () => _openSourceUrl(context, sourceUrl),
-                          child: Row(
-                            children: [
-                              Icon(Icons.open_in_new, size: 13, color: Theme.of(context).colorScheme.primary),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Text(
-                                  sourceUrl,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.outfit(
-                                    fontSize: 11,
-                                    color: Theme.of(context).colorScheme.primary,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(Icons.menu_book_rounded, size: 15, color: Theme.of(context).colorScheme.primary),
+                            const SizedBox(width: 5),
+                            Text(
+                              'قراءة المقال من المصدر',
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ],
                     ],
                   ),
                 ),
               ],
+              ),
             ),
           );
         }),
@@ -1964,39 +2425,90 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   Widget _buildSingleSourceRow(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-      ),
-      child: Row(
+    final publisher = article.displaySourceName;
+    final author = article.authorName.isNotEmpty
+        ? article.authorName
+        : article.author;
+    return InkWell(
+      onTap: article.url.isEmpty ? null : () => _openSourceUrl(context, article.url),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        ),
+        child: Row(
         children: [
           Icon(Icons.link, size: 16, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 10),
           Expanded(
-            child: GestureDetector(
-              onTap: () => _openSourceUrl(context, article.url),
-              child: Text(
-                article.url,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.outfit(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.primary,
-                  decoration: TextDecoration.underline,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  publisher,
+                  style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
-              ),
+                if (author.isNotEmpty)
+                  Text(
+                    author,
+                    style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.menu_book_rounded, size: 15, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 5),
+                    Text(
+                      'قراءة المقال من المصدر',
+                      style: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
+        ),
       ),
     );
   }
 
   void _openSourceUrl(BuildContext context, String url) {
     if (url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return;
+
+    // webview_flutter has no registered Windows implementation in this app.
+    // Opening externally avoids the platform-interface assertion while still
+    // giving desktop users direct access to the original article.
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      if (Platform.isWindows) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => _WindowsSourceReaderPage(url: uri),
+          ),
+        );
+      } else {
+        launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -2013,7 +2525,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           body: WebViewWidget(
             controller: WebViewController()
               ..setJavaScriptMode(JavaScriptMode.unrestricted)
-              ..loadRequest(Uri.parse(url)),
+              ..loadRequest(uri),
           ),
         ),
       ),
@@ -2100,5 +2612,183 @@ class FullScreenImageScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _RelatedArticlesPage extends StatefulWidget {
+  final NewsModel article;
+  final List<NewsModel> related;
+
+  const _RelatedArticlesPage({required this.article, required this.related});
+
+  @override
+  State<_RelatedArticlesPage> createState() => _RelatedArticlesPageState();
+}
+
+class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
+  List<NewsModel> _related = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRelated();
+  }
+
+  Future<void> _loadRelated() async {
+    final all = await NewsDatabase.instance.getAllArticles(limit: 300);
+    final related = all
+        .where((a) => a.url != widget.article.url)
+        .where((a) => a.category.toLowerCase() == widget.article.category.toLowerCase())
+        .take(20)
+        .toList();
+    if (mounted) {
+      setState(() {
+        _related = related;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new, size: 22, color: Theme.of(context).colorScheme.onSurface),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          l10n.translate('relatedNews'),
+          style: GoogleFonts.outfit(
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _related.isEmpty
+              ? Center(
+                  child: Text(
+                    'لا توجد مقالات ذات صلة',
+                    style: GoogleFonts.outfit(
+                      fontSize: 16,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _related.length,
+                  itemBuilder: (context, index) {
+                    final rel = _related[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                      ),
+                      child: InkWell(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => NewsDetailPage(article: rel),
+                          ),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: CachedNewsImage(
+                                  imageUrl: rel.imageUrl.isNotEmpty
+                                      ? rel.imageUrl
+                                      : NewsModel.getFallbackImage(rel.category),
+                                  width: 90,
+                                  height: 70,
+                                  fit: BoxFit.cover,
+                                  errorWidget: Container(
+                                    width: 90,
+                                    height: 70,
+                                    color: Theme.of(context).colorScheme.surfaceContainer,
+                                    child: Icon(
+                                      Icons.article_outlined,
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      rel.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: Theme.of(context).colorScheme.onSurface,
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      rel.displaySourceName,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 11,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _getDisplayDate(rel),
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 11,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 14,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+    );
+  }
+
+  String _getDisplayDate(NewsModel art) {
+    if (art.publishDate.isNotEmpty) {
+      final parsed = DateTime.tryParse(art.publishDate.split('T').first);
+      if (parsed != null) {
+        final months = const [
+          'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+          'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+        ];
+        return '${parsed.day} ${months[parsed.month - 1]} ${parsed.year}';
+      }
+      return art.publishDate.split('T').first;
+    }
+    return 'Recent';
   }
 }

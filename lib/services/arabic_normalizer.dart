@@ -114,42 +114,98 @@ class ArabicTextNormalizer {
     'كذلك',
     'بعض',
     'جميع',
-    ' frente',
+    'frente',
   };
+
+  static bool isStopWord(String word) => _stopWords.contains(word.trim().toLowerCase());
+  static Set<String> get stopWords => _stopWords;
+
+  static Set<String> extractSignificantWords(String text) {
+    if (text.isEmpty) return const {};
+    final norm = normalize(text).toLowerCase();
+    final words = norm
+        .replaceAll(RegExp(r'[^\w\s\u0600-\u06FF]'), ' ')
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length >= 2 && !_stopWords.contains(w))
+        .map((w) => stemSimple(w).trim())
+        .where((w) => w.isNotEmpty)
+        .toSet();
+    return words;
+  }
 
   static String removeTashkeel(String text) {
     if (text.isEmpty) return text;
-    return tashkeel.allMatches(text).fold<String>(text, (result, m) {
-      return result.replaceRange(m.start, m.end, '');
-    });
+    final matches = tashkeel.allMatches(text).toList();
+    if (matches.isEmpty) return text;
+    var result = text;
+    for (final m in matches.reversed) {
+      final start = m.start.clamp(0, result.length);
+      final end = m.end.clamp(0, result.length);
+      if (start < end) {
+        result = result.replaceRange(start, end, '');
+      }
+    }
+    return result;
   }
 
   static String normalizeAlef(String text) {
     if (text.isEmpty) return text;
-    return alefVariants.allMatches(text).fold<String>(text, (result, m) {
-      return result.replaceRange(m.start, m.end, 'ا');
-    });
+    final matches = alefVariants.allMatches(text).toList();
+    if (matches.isEmpty) return text;
+    var result = text;
+    for (final m in matches.reversed) {
+      final start = m.start.clamp(0, result.length);
+      final end = m.end.clamp(0, result.length);
+      if (start < end) {
+        result = result.replaceRange(start, end, 'ا');
+      }
+    }
+    return result;
   }
 
   static String normalizeTaaMarbouta(String text) {
     if (text.isEmpty) return text;
-    return taaMarbouta.allMatches(text).fold<String>(text, (result, m) {
-      return result.replaceRange(m.start, m.end, 'ه');
-    });
+    final matches = taaMarbouta.allMatches(text).toList();
+    if (matches.isEmpty) return text;
+    var result = text;
+    for (final m in matches.reversed) {
+      final start = m.start.clamp(0, result.length);
+      final end = m.end.clamp(0, result.length);
+      if (start < end) {
+        result = result.replaceRange(start, end, 'ه');
+      }
+    }
+    return result;
   }
 
   static String normalizeYaaAlefMaqsoura(String text) {
     if (text.isEmpty) return text;
-    return yaaAlefMaqsoura.allMatches(text).fold<String>(text, (result, m) {
-      return result.replaceRange(m.start, m.end, 'ي');
-    });
+    final matches = yaaAlefMaqsoura.allMatches(text).toList();
+    if (matches.isEmpty) return text;
+    var result = text;
+    for (final m in matches.reversed) {
+      final start = m.start.clamp(0, result.length);
+      final end = m.end.clamp(0, result.length);
+      if (start < end) {
+        result = result.replaceRange(start, end, 'ي');
+      }
+    }
+    return result;
   }
 
   static String removeTatweel(String text) {
     if (text.isEmpty) return text;
-    return tatweel.allMatches(text).fold<String>(text, (result, m) {
-      return result.replaceRange(m.start, m.end, '');
-    });
+    final matches = tatweel.allMatches(text).toList();
+    if (matches.isEmpty) return text;
+    var result = text;
+    for (final m in matches.reversed) {
+      final start = m.start.clamp(0, result.length);
+      final end = m.end.clamp(0, result.length);
+      if (start < end) {
+        result = result.replaceRange(start, end, '');
+      }
+    }
+    return result;
   }
 
   static String normalizeDigits(String text) {

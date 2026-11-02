@@ -1,0 +1,15 @@
+# Add to pubspec.yaml (or keep as flutter_launcher_icons.yaml), then run:
+#   dart run flutter_launcher_icons
+# Copy the folder flutter/assets/icon -> <project>/assets/icon first.
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/icon/icon_1024.png"
+  adaptive_icon_background: "assets/icon/ic_launcher_background_1024.png"
+  adaptive_icon_foreground: "assets/icon/ic_launcher_foreground_1024.png"
+  adaptive_icon_monochrome: "assets/icon/ic_launcher_monochrome_1024.png"
+  remove_alpha_ios: true
+  windows:
+    generate: true
+    image_path: "assets/icon/icon_1024.png"
+    icon_size: 256

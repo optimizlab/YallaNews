@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 class NewsModel {
   final String url;
@@ -29,6 +29,22 @@ class NewsModel {
 
   final int sourceCount;
   final List<String> sources;
+  final bool isFresh; // true if publish date is within last 3 months (News & Magazines policy)
+
+  /// Original publisher name (source_name). Never fabricated: empty when unknown.
+  final String sourceName;
+  /// Original publisher website (source_url). Empty when unknown.
+  final String sourceUrl;
+  /// Original author name (author_name). Empty when not provided by the publisher.
+  final String authorName;
+  /// Original publication timestamp (published_at), epoch ms or ISO-8601 string.
+  final String publishedAt;
+  /// Last update timestamp (updated_at), epoch ms or ISO-8601 string.
+  final String updatedAt;
+  /// Image credit line provided by the publisher (image_credit).
+  final String imageCredit;
+  /// Source URL of the article image (image_source_url).
+  final String imageSourceUrl;
 
   NewsModel({
     required this.url,
@@ -57,10 +73,119 @@ class NewsModel {
     this.imageId = '',
     this.sourceCount = 1,
     this.sources = const [],
+    this.isFresh = true,
+    this.sourceName = '',
+    this.sourceUrl = '',
+    this.authorName = '',
+    this.publishedAt = '',
+    this.updatedAt = '',
+    this.imageCredit = '',
+    this.imageSourceUrl = '',
   });
 
   /// True if the article is synthesized from multiple sources or marked as blended
   bool get isBlended => sourceCount > 1 || sources.length > 1 || (structuredData['is_blended'] == true);
+
+  /// True if the article's publish date is within the last 3 months (News & Magazines policy).
+  bool get isContentFresh => isWithinMonths(3);
+
+  /// True if the article's publish date is within the last [months] months.
+  bool _isPublishDateWithinMonths(int months) {
+    if (publishDate.isEmpty) return true; // unknown date — don't reject, but flag
+    final parsed = _parsePublishDate(publishDate);
+    if (parsed == null) return true; // unparseable — keep rather than lose content
+    final now = DateTime.now();
+    final cutoff = DateTime(now.year, now.month - months, now.day);
+    return parsed.isAfter(cutoff);
+  }
+
+  /// Parsed original publication date, or null when missing/malformed.
+  /// The import/crawler date is never used as a substitute.
+  DateTime? get publicationDate => _parsePublishDate(publishDate.isNotEmpty ? publishDate : publishedAt);
+
+  /// True if the article's publish date is within the last [days] days.
+  bool isWithinDays(int days) {
+    final parsed = publicationDate;
+    if (parsed == null) return true; // unknown date — keep rather than lose content
+    if (parsed.isAfter(DateTime.now())) return false; // future date — treat as not verifiably current
+    final now = DateTime.now();
+    final cutoff = DateTime(now.year, now.month, now.day - days);
+    return parsed.isAfter(cutoff);
+  }
+
+  /// True if the article's publish date is within the last [months] months.
+  bool isWithinMonths(int months) {
+    final parsed = publicationDate;
+    if (parsed == null) return true;
+    if (parsed.isAfter(DateTime.now())) return false;
+    final now = DateTime.now();
+    final cutoff = DateTime(now.year, now.month - months, now.day);
+    return parsed.isAfter(cutoff);
+  }
+
+  /// News & Magazines policy: current-events (breaking/urgent) articles must
+  /// be no more than [currentEventsMaxAgeDays] days old; other news and
+  /// magazine content must be no more than [generalMaxAgeMonths] months old.
+  /// Missing or unparseable dates are kept (not fabricated); future dates are
+  /// never artificially adjusted.
+  bool isFreshForFeed({
+    int currentEventsMaxAgeDays = 30,
+    int generalMaxAgeMonths = 3,
+  }) {
+    final parsed = publicationDate;
+    if (parsed == null) return true; // unknown date — do not reject content
+    if (parsed.isAfter(DateTime.now())) return true; // future date — keep as-is
+    final now = DateTime.now();
+    final cutoff = isCurrentEvent
+        ? DateTime(now.year, now.month, now.day - currentEventsMaxAgeDays)
+        : DateTime(now.year, now.month - generalMaxAgeMonths, now.day);
+    return parsed.isAfter(cutoff);
+  }
+
+  /// True when the article looks like current-events (breaking/urgent) news.
+  bool get isCurrentEvent {
+    final et = eventType.toLowerCase();
+    if (et == 'breaking' || et == 'urgent' || et == 'live' || et == 'breakingnews') return true;
+    final cat = category.toLowerCase();
+    if (cat == 'breaking' || cat == 'breakingnews' || cat.contains('breaking') || cat.contains('عاجل')) return true;
+    return false;
+  }
+
+  /// Human-readable source name: the original publisher name when available,
+  /// otherwise the domain of the article URL. Never a fabricated publisher name.
+  String get displaySourceName {
+    if (sourceName.isNotEmpty) return sourceName;
+    final d = _extractDomain(sourceUrl.isNotEmpty ? sourceUrl : url);
+    return d.isNotEmpty ? d : '';
+  }
+
+  static DateTime? _parsePublishDate(String raw) {
+    if (raw.isEmpty) return null;
+    var value = raw.trim();
+    if (value.contains('T') && !RegExp(r'^\d+$').hasMatch(value)) {
+      value = value.split('T')[0];
+    }
+    DateTime? dateTime;
+    if (RegExp(r'^\d{10,}$').hasMatch(value)) {
+      final epoch = int.tryParse(value);
+      if (epoch == null) return null;
+      dateTime = epoch > 100000000000
+          ? DateTime.fromMillisecondsSinceEpoch(epoch)
+          : DateTime.fromMillisecondsSinceEpoch(epoch * 1000);
+    } else {
+      dateTime = DateTime.tryParse(value);
+    }
+    return dateTime;
+  }
+
+  static bool computeFreshness(String publishDate) {
+    if (publishDate.isEmpty) return true;
+    final parsed = _parsePublishDate(publishDate);
+    if (parsed == null) return true;
+    final now = DateTime.now();
+    final cutoff = DateTime(now.year, now.month - 3, now.day);
+    return parsed.isAfter(cutoff);
+  }
 
   /// Key highlights extracted across all contributing sources
   List<String> get highlights {
@@ -95,13 +220,14 @@ class NewsModel {
       }).toList();
     }
 
-    final d = _extractDomain(url);
+    final d = _extractDomain(sourceUrl.isNotEmpty ? sourceUrl : url);
     return [{
-      'name': _domainToName(d),
+      'name': sourceName.isNotEmpty ? sourceName : _domainToName(d),
       'domain': d,
-      'url': url,
+      'url': sourceUrl.isNotEmpty ? sourceUrl : url,
       'title': title,
       'publishDate': publishDate,
+      'author': authorName,
     }];
   }
 
@@ -187,6 +313,7 @@ class NewsModel {
     final cat = json['category'] ?? 'General';
     final rawHash = json['url_hash'] as String?;
     final computedHash = rawHash?.isNotEmpty == true ? rawHash! : hashUrl(url);
+    final pubDate = json['publishDate'] ?? '';
     return NewsModel(
       url: url,
       urlHash: computedHash,
@@ -200,7 +327,14 @@ class NewsModel {
       keywords: List<String>.from(json['keywords'] ?? []),
       logs: json['logs'] ?? '',
       author: json['author'] ?? '',
-      publishDate: json['publishDate'] ?? '',
+      authorName: json['author_name'] ?? '',
+      publishDate: pubDate,
+      publishedAt: json['published_at'] ?? pubDate,
+      updatedAt: json['updated_at'] ?? '',
+      sourceName: json['source_name'] ?? '',
+      sourceUrl: json['source_url'] ?? '',
+      imageCredit: json['image_credit'] ?? '',
+      imageSourceUrl: json['image_source_url'] ?? '',
       eventType: json['event_type'] ?? 'general',
       subcategory: json['subcategory'] ?? 'general',
       entities: json['entities'] != null ? List<String>.from(json['entities']) : const [],
@@ -216,65 +350,75 @@ class NewsModel {
       imageId: json['image_id'] ?? '',
       sourceCount: json['source_count'] ?? 1,
       sources: json['sources'] != null ? List<String>.from(json['sources']) : const [],
+      isFresh: computeFreshness(pubDate),
     );
   }
 
-   factory NewsModel.empty(String url) {
-     return NewsModel(
-       url: url,
-       urlHash: hashUrl(url),
-       title: 'Loading News...',
-       shortTitle: '',
-       summary: '',
-       content: '',
-       imageUrl: '',
-       category: 'General',
-       sentiment: 0.0,
-       keywords: [],
-       logs: '',
-       author: '',
-       publishDate: '',
-       eventType: 'general',
-       subcategory: 'general',
-       intelligenceJson: '',
-       hashtags: '',
-       youtubeVideoId: '',
-       instagramVideoId: '',
-       twitterVideoUrl: '',
-       imageId: '',
-     );
-   }
+factory NewsModel.empty(String url) {
+      return NewsModel(
+        url: url,
+        urlHash: hashUrl(url),
+        title: 'Loading News...',
+        shortTitle: '',
+        summary: '',
+        content: '',
+        imageUrl: '',
+        category: 'General',
+        sentiment: 0.0,
+        keywords: [],
+        logs: '',
+        author: '',
+        publishDate: '',
+        eventType: 'general',
+        subcategory: 'general',
+        intelligenceJson: '',
+        hashtags: '',
+        youtubeVideoId: '',
+        instagramVideoId: '',
+        twitterVideoUrl: '',
+        imageId: '',
+        isFresh: true,
+      );
+    }
 
-  Map<String, dynamic> toJson() {
-     return {
-       'url': url,
-       'url_hash': urlHash,
-       'title': title,
-       'short_title': shortTitle,
-       'summary': summary,
-       'content': content,
-       'image_url': imageUrl,
-       'category': category,
-       'sentiment': sentiment,
-       'keywords': keywords,
-       'logs': logs,
-       'author': author,
-       'publishDate': publishDate,
-       'eventType': eventType,
-       'subcategory': subcategory,
-       'entities': entities,
-       'structuredData': structuredData,
-       'intelligenceJson': intelligenceJson,
-      'meta_tags': metaTags,
-      'hashtags': hashtags,
-      'youtube_video_id': youtubeVideoId,
-      'instagram_video_id': instagramVideoId,
-      'twitter_video_url': twitterVideoUrl,
-      'image_id': imageId,
-      'source_count': sourceCount,
-      'sources': sources,
-     };
-   }
+Map<String, dynamic> toJson() {
+      return {
+        'url': url,
+        'url_hash': urlHash,
+        'title': title,
+        'short_title': shortTitle,
+        'summary': summary,
+        'content': content,
+        'image_url': imageUrl,
+        'category': category,
+        'sentiment': sentiment,
+        'keywords': keywords,
+        'logs': logs,
+        'author': author,
+        'publishDate': publishDate,
+        'eventType': eventType,
+        'subcategory': subcategory,
+        'entities': entities,
+        'structuredData': structuredData,
+        'intelligenceJson': intelligenceJson,
+       'meta_tags': metaTags,
+       'hashtags': hashtags,
+       'youtube_video_id': youtubeVideoId,
+       'instagram_video_id': instagramVideoId,
+       'twitter_video_url': twitterVideoUrl,
+       'image_id': imageId,
+        'source_count': sourceCount,
+        'sources': sources,
+        'is_fresh': isFresh,
+        'source_name': sourceName,
+        'source_url': sourceUrl,
+        'author_name': authorName,
+        'published_at': publishedAt,
+        'updated_at': updatedAt,
+        'image_credit': imageCredit,
+        'image_source_url': imageSourceUrl,
+      };
+    }
 
   NewsModel copyWith({
     String? url,
@@ -303,6 +447,14 @@ class NewsModel {
     int? sourceCount,
     List<String>? sources,
     String? intelligenceJson,
+    bool? isFresh,
+    String? sourceName,
+    String? sourceUrl,
+    String? authorName,
+    String? publishedAt,
+    String? updatedAt,
+    String? imageCredit,
+    String? imageSourceUrl,
     List<NewsModel>? relatedArticles,
   }) {
     final updated = NewsModel(
@@ -318,7 +470,10 @@ class NewsModel {
       keywords: keywords ?? this.keywords,
       logs: logs ?? this.logs,
       author: author ?? this.author,
+      authorName: authorName ?? this.authorName,
       publishDate: publishDate ?? this.publishDate,
+      publishedAt: publishedAt ?? this.publishedAt,
+      updatedAt: updatedAt ?? this.updatedAt,
       eventType: eventType ?? this.eventType,
       subcategory: subcategory ?? this.subcategory,
       entities: entities ?? this.entities,
@@ -331,7 +486,12 @@ class NewsModel {
       imageId: imageId ?? this.imageId,
       sourceCount: sourceCount ?? this.sourceCount,
       sources: sources ?? this.sources,
+      sourceName: sourceName ?? this.sourceName,
+      sourceUrl: sourceUrl ?? this.sourceUrl,
+      imageCredit: imageCredit ?? this.imageCredit,
+      imageSourceUrl: imageSourceUrl ?? this.imageSourceUrl,
       intelligenceJson: intelligenceJson ?? this.intelligenceJson,
+      isFresh: isFresh ?? this.isFresh,
     );
     updated.relatedArticles = relatedArticles ?? this.relatedArticles;
     return updated;

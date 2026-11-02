@@ -168,7 +168,7 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
                 }
                 final article = NewsModel.fromJson(artResult, artUrl);
                 final String classificationText = '${article.title} ${article.summary} ${article.content}';
-                final String detectedCategory = NewsIntelligence.classifyCategory(classificationText, url: artUrl, validCategoryIds: CategoryService.instance.categoryIds);
+                final String detectedCategory = await NewsIntelligence.classifyCategory(classificationText, url: artUrl, validCategoryIds: CategoryService.instance.categoryIds);
                 final classifiedArticle = article.copyWith(category: detectedCategory);
                 widget.engineService.addLog("[CATEGORY] Detected: \"$detectedCategory\" for URL: $artUrl");
 

@@ -70,9 +70,11 @@ class SemanticCluster {
   //  2. Entity Overlap
   // ═══════════════════════════════════════════════════════════════════════════
 
+  static Set<String> _extractEntities(NewsModel article) => extractEntities(article);
+
   /// Extract entities from LLM-produced intelligenceJson, or fall back to
   /// regex-based entity extraction from raw text.
-  static Set<String> _extractEntities(NewsModel article) {
+  static Set<String> extractEntities(NewsModel article) {
     if (article.intelligenceJson.isNotEmpty) {
       try {
         final data = jsonDecode(article.intelligenceJson) as Map<String, dynamic>;
@@ -184,6 +186,8 @@ class SemanticCluster {
     return tokens;
   }
 
+  static double entityOverlap(Set<String> a, Set<String> b) => _entityOverlap(a, b);
+
   /// Weighted Jaccard: intersection / union, but with a bonus for
   /// high-value entity types (persons, geo, orgs count double).
   static double _entityOverlap(Set<String> a, Set<String> b) {
@@ -201,6 +205,8 @@ class SemanticCluster {
   // ═══════════════════════════════════════════════════════════════════════════
   //  3. Publish Time Proximity
   // ═══════════════════════════════════════════════════════════════════════════
+
+  static double timeSimilarity(NewsModel a, NewsModel b) => _timeSimilarity(a, b);
 
   /// Returns a 0..1 score: 1.0 for same-hour, decaying to 0.1 at ≥72h apart.
   static double _timeSimilarity(NewsModel a, NewsModel b) {

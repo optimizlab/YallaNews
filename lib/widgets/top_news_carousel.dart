@@ -101,43 +101,68 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                     Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFC62828).withValues(alpha: 0.12),
+                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.bolt_rounded,
                         size: 18,
-                        color: Color(0xFFC62828),
+                        color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      l10n.translate('urgent'),
-                      style: GoogleFonts.outfit(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '•',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      l10n.translate('all'),
-                      style: GoogleFonts.outfit(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Text(
+                            l10n.translate('urgent'),
+                            style: GoogleFonts.outfit(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '•',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.outlineVariant,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            l10n.translate('all'),
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 16),
                     if (totalPages > 1) ...[
+                                            _buildNavigationButton(
+                        icon: isRtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+                        onPressed: activePage < totalPages - 1
+                            ? () {
+                                _pageController.nextPage(
+                                  duration: const Duration(milliseconds: 400),
+                                  curve: Curves.easeInOutCubic,
+                                );
+                              }
+                            : null,
+                      ),
+                    ],
+                                          const SizedBox(width: 6),
+                      // Next Page Arrow (Left arrow in RTL)
                       // Previous Page Arrow (Right arrow in RTL)
                       _buildNavigationButton(
                         icon: isRtl ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
@@ -150,20 +175,8 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                               }
                             : null,
                       ),
-                      const SizedBox(width: 6),
-                      // Next Page Arrow (Left arrow in RTL)
-                      _buildNavigationButton(
-                        icon: isRtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
-                        onPressed: activePage < totalPages - 1
-                            ? () {
-                                _pageController.nextPage(
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOutCubic,
-                                );
-                              }
-                            : null,
-                      ),
-                    ],
+
+
                     const Spacer(),
                   ],
                 ),
@@ -229,12 +242,12 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                         margin: const EdgeInsets.symmetric(horizontal: 3),
                         height: 6,
                         width: isSelected ? 22 : 6,
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFFC62828)
-                              : Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
+decoration: BoxDecoration(
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
                       );
                     }),
                   ),
@@ -321,9 +334,12 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                         height: double.infinity,
                         fit: BoxFit.cover,
                         errorWidget: Container(
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             gradient: LinearGradient(
-                              colors: [Color(0xFF1A1A2E), Color(0xFFC62828)],
+                              colors: [
+                                Theme.of(context).colorScheme.surfaceContainerHighest,
+                                Theme.of(context).colorScheme.primary,
+                              ],
                               begin: Alignment.topRight,
                               end: Alignment.bottomLeft,
                             ),
@@ -367,11 +383,11 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFC62828),
+                          color: Theme.of(context).colorScheme.primary,
                           borderRadius: BorderRadius.circular(8),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFFC62828).withValues(alpha: 0.4),
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
                               blurRadius: 6,
                               offset: const Offset(0, 2),
                             ),

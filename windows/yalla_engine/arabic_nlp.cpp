@@ -116,17 +116,68 @@ std::string classify_category(const std::string& title, const std::string& conte
     std::string lower = title + " " + content + " " + summary;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
     
-    out_confidence = 0.85;
-    if (lower.find("رياضة") != std::string::npos || lower.find("مدريد") != std::string::npos || lower.find("كرة") != std::string::npos) {
-        return "sports";
+    out_confidence = 0.6;
+    
+    struct CategoryScore { const char* name; int score; };
+    std::vector<CategoryScore> scores;
+    
+    auto add_score = [&](const char* category, int score) {
+        for (auto& cs : scores) {
+            if (std::strcmp(cs.name, category) == 0) {
+                cs.score += score;
+                return;
+            }
+        }
+        scores.push_back({category, score});
+    };
+    
+    auto has_keyword = [&](const std::string& keyword) -> bool {
+        return lower.find(keyword) != std::string::npos;
+    };
+    
+    auto has_any = [&](const std::vector<std::string>& keywords) -> bool {
+        for (const auto& kw : keywords) {
+            if (has_keyword(kw)) return true;
+        }
+        return false;
+    };
+    
+    const std::vector<std::string> sports_kw = {"رياضة", "كرة", "مباراة", "فريق", "لاعب", "هدف", "بطولة", "دوري", "كأس", "ملعب", "اتحاد", "مدريد", "برشلونة", "الكلاسيكو", "football", "soccer", "match", "game", "tournament", "league"};
+    const std::vector<std::string> politics_kw = {"سياسة", "حكومة", "رئيس", "وزير", "برلمان", "انتخاب", "حزب", "قانون", "دستور", "مجلس نواب", "وزارة", "policy", "government", "president", "minister", "election", "parliament"};
+    const std::vector<std::string> tech_kw = {"تقنية", "تكنولوجيا", "حاسوب", "هاتف", "إنترنت", "ذكاء اصطناعي", "روبوت", "تطبيق", "تطبيقات", "برمجة", "tech", "technology", "computer", "phone", "ai", "robot", "app", "software"};
+    const std::vector<std::string> economy_kw = {"اقتصاد", "مال", "سوق", "بنك", "استثمار", "تجارة", "عملة", "أسعار", "شركة", "نمو", "تضخم", "ميزانية", "economy", "finance", "banking", "market", "investment", "trade"};
+    const std::vector<std::string> health_kw = {"صحة", "طب", "مستشفى", "دواء", "مرض", "علاج", "فيروس", "لقاح", "طبيب", "وباء", "وزارة الصحة", "health", "medical", "hospital", "doctor", "vaccine", "virus"};
+    const std::vector<std::string> culture_kw = {"ثقافة", "كتاب", "متحف", "فنون", "أدب", "فنان", "معرض", "مسرح", "سينما", "رواية", "شاعر", "ناقد", "culture", "book", "museum", "art", "literature", "theater", "cinema"};
+    const std::vector<std::string> science_kw = {"علم", "بحث", "دراسة", "اكتشاف", "تجربة", "مختبر", "فضاء", "كوكب", "فيزياء", "كيمياء", "بيولوجيا", "science", "research", "study", "discovery", "experiment", "space", "physics", "chemistry"};
+    const std::vector<std::string> world_kw = {"العالم", "دولي", "أمريكا", "أوروبا", "آسيا", "أفريقيا", "شرق أوسط", "أمريكي", "أوروبي", "world", "international", "america", "europe", "asia", "africa"};
+    const std::vector<std::string> islamic_kw = {"إسلام", "مسجد", "صلاة", "قرآن", "حديث", "رمضان", "حج", "زكاة", "مسلم"};
+    const std::vector<std::string> society_kw = {"مجتمع", "عائلة", "تعليم", "شباب", "مرأة", "طفل", "مدرسة", "جامعة", "زواج", "طلاق", "حماية الطفل"};
+    const std::vector<std::string> varieties_kw = {"منوعات", "غريب", "عجيب", "ظريف", "مضحك", "نصيحة", "وصفة", "ترفيه"};
+    
+    int total_score = 0;
+    if (has_any(sports_kw)) { add_score("sports", 3); total_score += 3; }
+    if (has_any(politics_kw)) { add_score("politics", 3); total_score += 3; }
+    if (has_any(tech_kw)) { add_score("tech", 3); total_score += 3; }
+    if (has_any(economy_kw)) { add_score("economy", 2); total_score += 2; }
+    if (has_any(health_kw)) { add_score("health", 2); total_score += 2; }
+    if (has_any(culture_kw)) { add_score("culture", 2); total_score += 2; }
+    if (has_any(science_kw)) { add_score("science", 2); total_score += 2; }
+    if (has_any(world_kw)) { add_score("world", 2); total_score += 2; }
+    if (has_any(islamic_kw)) { add_score("islamic", 2); total_score += 2; }
+    if (has_any(society_kw)) { add_score("society", 2); total_score += 2; }
+    if (has_any(varieties_kw)) { add_score("varieties", 2); total_score += 2; }
+    
+    if (scores.empty() || total_score == 0) {
+        out_confidence = 0.3;
+        return "general";
     }
-    if (lower.find("سياسة") != std::string::npos || lower.find("رئيس") != std::string::npos) {
-        return "politics";
-    }
-    if (lower.find("تقنية") != std::string::npos || lower.find("ذكاء") != std::string::npos) {
-        return "tech";
-    }
-    return "general";
+    
+    std::sort(scores.begin(), scores.end(), [](const CategoryScore& a, const CategoryScore& b) {
+        return a.score > b.score;
+    });
+    
+    out_confidence = std::min(0.95, 0.5 + (double(scores.front().score) / total_score) * 0.4);
+    return scores.front().name;
 }
 
 // 8. Event Type Detector

@@ -1,5 +1,5 @@
 name: yallanews
-description: "A new Flutter project."
+description: "Yalla News - Smart real-time Arabic and world news reader with curated summaries, offline reading, text-to-speech, dark mode, and trusted sources."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.1.0+311026
 
 environment:
   sdk: ^3.8.1
@@ -38,7 +38,9 @@ dependencies:
   http: ^1.2.1
   ffi: ^2.1.2
   webview_flutter: ^4.7.0
+  webview_flutter_windows: ^1.1.1
   flutter_svg: ^2.0.10
+  lottie: ^3.3.1
   sqflite: ^2.3.0
   sqflite_common_ffi: ^2.3.0
   path_provider: ^2.1.0
@@ -47,8 +49,11 @@ dependencies:
   html: ^0.15.0
   vector_math: ^2.1.4
   connectivity_plus: ^7.1.1
-  flutter_tts: ^3.8.3
-  # google_mobile_ads: ^5.0.0
+  flutter_tts: ^4.0.0
+  google_mobile_ads: ^9.0.0
+  url_launcher: ^6.3.1
+  package_info_plus: ^8.2.0
+  share_plus: ^9.0.0
   flutter_localizations:
     sdk: flutter
   intl: any
@@ -65,3 +70,6 @@ flutter:
     - assets/news_sources_ar.json
     - assets/news_local_db.json
     - assets/img/yallanews_logo_2.svg
+    - assets/img/inoov_logo.svg
+    - assets/img/play_store_icon_512.png
+    - assets/animations/empty_news.json

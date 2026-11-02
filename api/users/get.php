@@ -6,8 +6,12 @@ cache_headers(300);
 
 $id = sanitize_string($_GET['id'] ?? '', 64);
 
+// No explicit id: resolve the currently authenticated user from the Bearer token/session.
 if (!$id) {
-    json_response(['error' => 'Missing user id'], 400);
+    $id = get_authenticated_user_id();
+    if (!$id) {
+        json_response(['error' => 'Missing user id'], 400);
+    }
 }
 
 try {

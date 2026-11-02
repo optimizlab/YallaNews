@@ -15,6 +15,15 @@ $category = sanitize_string($data['category'] ?? '', 64);
 $sourceId = sanitize_string($data['source']['name'] ?? $data['sourceId'] ?? $data['source']['id'] ?? '', 64);
 $sourceUrlArticle = filter_var(sanitize_string($data['sourceUrl'] ?? $data['sourceUrlArticle'] ?? '', 512), FILTER_SANITIZE_URL);
 $imageUrl = filter_var(sanitize_string($data['imageUrl'] ?? '', 512), FILTER_SANITIZE_URL);
+if (empty($sourceId)) {
+    $sourceId = 'يلا نيوز';
+}
+
+$isYallaNews = ($sourceId === 'يلا نيوز' || strtolower($sourceId) === 'yalla news' || strtolower($sourceId) === 'yallanews');
+if ($isYallaNews && (empty($sourceUrlArticle) || $sourceUrlArticle === 'https://yallanews.app' || $sourceUrlArticle === 'https://yallanews.app/')) {
+    $sourceUrlArticle = 'https://yallanews.app/news/exclusive_' . time() . '_' . substr(bin2hex(random_bytes(4)), 0, 6);
+}
+
 if (empty($imageUrl) || str_contains($imageUrl, 'bing.com/images/search')) {
     $seed = crc32($sourceUrlArticle . $title);
     $imageUrl = "https://placehold.co/600x400/EEE/31343C?text=" . urlencode($category) . "+$seed";

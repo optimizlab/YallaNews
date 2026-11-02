@@ -67,6 +67,8 @@ typedef _ExtractStoryElementsDart = Pointer<Utf8> Function(Pointer<Utf8> title, 
 
 typedef _OptimizeSentimentC = Double Function(Pointer<Utf8> text);
 typedef _OptimizeSentimentDart = double Function(Pointer<Utf8> text);
+typedef _ScoreArticleQualityC = Double Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _ScoreArticleQualityDart = double Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
 
 typedef _GetEngineLogsC = Pointer<Utf8> Function();
 typedef _GetEngineLogsDart = Pointer<Utf8> Function();
@@ -104,6 +106,7 @@ _AnalyzeArticleDart? _analyzeArticleFn;
 _CleanArticleContentDart? _cleanArticleContentFn;
 _ExtractStoryElementsDart? _extractStoryElementsFn;
 _OptimizeSentimentDart? _optimizeSentimentFn;
+_ScoreArticleQualityDart? _scoreArticleQualityFn;
 _GetEngineLogsDart? _getEngineLogsFn;
 _ClearEngineLogsDart? _clearEngineLogsFn;
   _IsValidImageUrlDart? _isValidImageUrlFn;
@@ -123,6 +126,7 @@ bool get _isNativeReady {
     _cleanArticleContentFn ??= _nativeLib!.lookup<NativeFunction<_CleanArticleContentC>>('clean_article_content').asFunction();
     _extractStoryElementsFn ??= _nativeLib!.lookup<NativeFunction<_ExtractStoryElementsC>>('extract_story_elements').asFunction();
     _optimizeSentimentFn ??= _nativeLib!.lookup<NativeFunction<_OptimizeSentimentC>>('optimize_sentiment').asFunction();
+    _scoreArticleQualityFn ??= _nativeLib!.lookup<NativeFunction<_ScoreArticleQualityC>>('newsbrain_score_article_quality').asFunction();
     _getEngineLogsFn ??= _nativeLib!.lookup<NativeFunction<_GetEngineLogsC>>('get_engine_logs').asFunction();
     _clearEngineLogsFn ??= _nativeLib!.lookup<NativeFunction<_ClearEngineLogsC>>('clear_engine_logs').asFunction();
     _isValidImageUrlFn ??= _nativeLib!.lookup<NativeFunction<_IsValidImageUrlC>>('is_valid_image_url').asFunction();
@@ -132,6 +136,18 @@ bool get _isNativeReady {
   } catch (_) {
     return false;
   }
+}
+
+double scoreArticleQuality(String title, String content, String summary) {
+  if (!_isNativeReady) return 0.0;
+  final t = title.toNativeUtf8();
+  final c = content.toNativeUtf8();
+  final s = summary.toNativeUtf8();
+  final score = _scoreArticleQualityFn!(t, c, s);
+  calloc.free(t);
+  calloc.free(c);
+  calloc.free(s);
+  return score;
 }
 
 /// Convenience wrapper that returns a Dart map decoded from JSON.

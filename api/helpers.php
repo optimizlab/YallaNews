@@ -104,14 +104,62 @@ function generate_secure_id($prefix = '') {
 }
 
 function require_auth() {
-    if (empty($_SESSION['user_id'])) {
-        json_response(['error' => 'Unauthorized'], 401);
+    // 1. Session-based (web browser / admin dashboard)
+    if (!empty($_SESSION['user_id'])) {
+        return $_SESSION['user_id'];
     }
-    return $_SESSION['user_id'];
+
+    // 2. Bearer token (Flutter mobile app)
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (preg_match('/^Bearer\s+(.+)$/i', $authHeader, $m)) {
+        $token = trim($m[1]);
+        if (!empty($token)) {
+            try {
+                require_once __DIR__ . '/db.php';
+                $db = Database::getInstance();
+                $stmt = $db->query(
+                    "SELECT id, role FROM yn_users WHERE auth_token = ? AND auth_token IS NOT NULL LIMIT 1",
+                    [$token]
+                );
+                $u = $stmt->fetch();
+                if ($u) {
+                    $_SESSION['user_id'] = $u['id'];
+                    $_SESSION['role']    = $u['role'];
+                    return $u['id'];
+                }
+            } catch (Exception $e) {
+                error_log('Token auth error: ' . $e->getMessage());
+            }
+        }
+    }
+
+    json_response(['error' => 'Unauthorized'], 401);
 }
 
 function get_authenticated_user_id() {
-    return $_SESSION['user_id'] ?? null;
+    if (!empty($_SESSION['user_id'])) return $_SESSION['user_id'];
+
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (preg_match('/^Bearer\s+(.+)$/i', $authHeader, $m)) {
+        $token = trim($m[1]);
+        if (!empty($token)) {
+            try {
+                require_once __DIR__ . '/db.php';
+                $db = Database::getInstance();
+                $stmt = $db->query(
+                    "SELECT id, role FROM yn_users WHERE auth_token = ? AND auth_token IS NOT NULL LIMIT 1",
+                    [$token]
+                );
+                $u = $stmt->fetch();
+                if ($u) {
+                    $_SESSION['user_id'] = $u['id'];
+                    $_SESSION['role']    = $u['role'];
+                    return $u['id'];
+                }
+            } catch (Exception $e) {}
+        }
+    }
+    return null;
 }
 
 function require_admin() {

@@ -8,6 +8,7 @@ import '../models/news_model.dart';
 import '../models/news_source.dart';
 import 'server_api_service.dart';
 import 'news_uri_parser.dart';
+import 'arabic_normalizer.dart';
 import 'yalla_engine_service.dart';
 
 typedef ArticleValidator = bool Function(NewsModel article);
@@ -246,7 +247,7 @@ class NewsCrawlerService {
     for (int i = 0; i < deduped.length; i++) {
       for (int j = i + 1; j < deduped.length; j++) {
         final similarity = _titleSimilarity(deduped[i], deduped[j]);
-        if (similarity >= 0.75) {
+        if (similarity >= 0.52) {
           final key = deduped[i].urlHash;
           similarityClusters.putIfAbsent(key, () => <NewsModel>[]).addAll(
             <NewsModel>[deduped[i], deduped[j]],
@@ -511,18 +512,8 @@ class NewsCrawlerService {
   }
 
   double _titleSimilarity(NewsModel a, NewsModel b) {
-    final wordsA = a.title
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), ' ')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.length > 2)
-        .toSet();
-    final wordsB = b.title
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), ' ')
-        .split(RegExp(r'\s+'))
-        .where((w) => w.length > 2)
-        .toSet();
+    final wordsA = ArabicTextNormalizer.extractSignificantWords(a.title);
+    final wordsB = ArabicTextNormalizer.extractSignificantWords(b.title);
 
     if (wordsA.isEmpty || wordsB.isEmpty) return 0.0;
     return wordsA.intersection(wordsB).length / wordsA.union(wordsB).length;

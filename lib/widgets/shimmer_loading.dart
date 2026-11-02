@@ -6,9 +6,13 @@ class ShimmerLoadingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final baseColor = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
+    final highlightColor = theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2);
+    final containerColor = theme.colorScheme.surface;
     return Shimmer.fromColors(
-      baseColor: const Color(0xFFE0E0E0),
-      highlightColor: const Color(0xFFF1F1F1),
+      baseColor: baseColor,
+      highlightColor: highlightColor,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
         child: Row(
@@ -25,7 +29,7 @@ class ShimmerLoadingCard extends StatelessWidget {
                     width: 120,
                     height: 14,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: containerColor,
                       borderRadius: BorderRadius.circular(6),
                     ),
                   ),
@@ -35,7 +39,7 @@ class ShimmerLoadingCard extends StatelessWidget {
                     width: double.infinity,
                     height: 10,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: containerColor,
                       borderRadius: BorderRadius.circular(5),
                     ),
                   ),
@@ -45,7 +49,7 @@ class ShimmerLoadingCard extends StatelessWidget {
                     width: double.infinity,
                     height: 10,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: containerColor,
                       borderRadius: BorderRadius.circular(5),
                     ),
                   ),
@@ -55,7 +59,7 @@ class ShimmerLoadingCard extends StatelessWidget {
                     width: 180,
                     height: 10,
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: containerColor,
                       borderRadius: BorderRadius.circular(5),
                     ),
                   ),
@@ -68,7 +72,7 @@ class ShimmerLoadingCard extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: containerColor,
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
@@ -85,6 +89,7 @@ class ShimmerLoadingList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return ListView.separated(
       physics: const NeverScrollableScrollPhysics(),
       shrinkWrap: true,
@@ -92,7 +97,7 @@ class ShimmerLoadingList extends StatelessWidget {
       separatorBuilder: (context, index) => Divider(
         height: 1,
         thickness: 1,
-        color: const Color(0xFFEFEFEF),
+        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
       ),
       itemBuilder: (context, index) => const ShimmerLoadingCard(),
     );

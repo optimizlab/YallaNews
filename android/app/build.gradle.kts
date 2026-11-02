@@ -6,6 +6,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.util.Properties
+import java.io.FileInputStream
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "inoov.app.yallanews"
     compileSdk = 36
@@ -14,10 +23,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     defaultConfig {
@@ -31,9 +36,17 @@ android {
         )
     }
 
+    signingConfigs {
+        val release = create("release")
+        release.storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+        release.storePassword = keystoreProperties.getProperty("storePassword")
+        release.keyAlias = keystoreProperties.getProperty("keyAlias")
+        release.keyPassword = keystoreProperties.getProperty("keyPassword")
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -42,6 +55,12 @@ android {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.18.4+"
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
 }
 

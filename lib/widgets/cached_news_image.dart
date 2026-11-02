@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 
 class CachedNewsImage extends StatefulWidget {
   final String imageUrl;
   final double? width;
   final double? height;
   final BoxFit fit;
+  /// Favors the upper visual region where faces normally appear in portraits
+  /// and news photos, preventing center-cropping from cutting them off.
+  final Alignment alignment;
   final Widget? placeholder;
   final Widget? errorWidget;
 
@@ -15,6 +19,7 @@ class CachedNewsImage extends StatefulWidget {
     this.width,
     this.height,
     this.fit = BoxFit.cover,
+    this.alignment = const Alignment(0, -0.18),
     this.placeholder,
     this.errorWidget,
   }) : super(key: key);
@@ -111,17 +116,7 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
     }
 
     if (_error != null || _imageProvider == null) {
-      return widget.errorWidget ??
-        Container(
-          width: widget.width,
-          height: widget.height,
-          color: Colors.grey[300],
-          child: Icon(
-            Icons.image_rounded,
-            size: 32,
-            color: Colors.grey[400],
-          ),
-        );
+      return widget.errorWidget ?? _buildPlaceholder(context);
     }
 
     return Image(
@@ -129,19 +124,27 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
       width: widget.width,
       height: widget.height,
       fit: widget.fit,
+      alignment: widget.alignment,
       errorBuilder: (context, error, stackTrace) => widget.errorWidget ?? _buildPlaceholder(context),
     );
   }
 
   Widget _buildPlaceholder(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       width: widget.width,
       height: widget.height,
-      color: Colors.grey[300],
-      child: Icon(
-        Icons.image_rounded,
-        size: 32,
-        color: Colors.grey[400],
+      color: theme.colorScheme.surfaceContainer,
+      child: Lottie.network(
+        'https://assets10.lottiefiles.com/packages/lf20_touohxv0.json',
+        fit: BoxFit.contain,
+        repeat: true,
+        animate: true,
+        errorBuilder: (_, __, ___) => Icon(
+          Icons.image_rounded,
+          size: 32,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }

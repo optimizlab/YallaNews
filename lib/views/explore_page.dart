@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../services/category_service.dart';
 import '../services/server_api_service.dart';
+import 'category_news_page.dart';
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({Key? key}) : super(key: key);
@@ -124,7 +125,7 @@ class _ExplorePageState extends State<ExplorePage> {
                 final icon = _categoryIcon(id);
                 final color = _categoryColor(id);
                 final displayKey = (AppLocalizations.of(context)?.locale?.languageCode ?? 'ar') == 'ar' ? name : nameEn;
-                return _buildCategoryCard(context, id, displayKey, count, icon, color);
+                return _buildCategoryCard(context, category, id, displayKey, count, icon, color);
               }).toList(),
                 );
               },
@@ -172,41 +173,50 @@ class _ExplorePageState extends State<ExplorePage> {
     }
   }
 
-  Widget _buildCategoryCard(BuildContext context, String key, String title, String count, IconData icon, Color color) {
+  Widget _buildCategoryCard(BuildContext context, Map<String, dynamic> category, String key, String title, String count, IconData icon, Color color) {
     final l10n = AppLocalizations.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Icon(icon, size: 28, color: color),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              l10n.translate('newsCount').replaceAll('{count}', count),
-              style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => CategoryNewsPage(category: category)),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
           ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(icon, size: 28, color: color),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.translate('newsCount').replaceAll('{count}', count),
+                style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
         ),
       ),
     );

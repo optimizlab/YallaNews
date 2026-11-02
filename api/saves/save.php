@@ -8,12 +8,17 @@ check_rate_limit('save:' . get_client_ip(), 60, 300);
 
 $data = get_json_input();
 
-$articleId = sanitize_string($data['articleId'] ?? '', 64);
+$articleId = sanitize_string($data['articleId'] ?? '', 512);
 
 validate_required(['articleId' => $articleId]);
 
 try {
     $db = Database::getInstance();
+
+    $found = $db->query("SELECT id FROM yn_news WHERE id = ? OR source_url_article = ? LIMIT 1", [$articleId, $articleId])->fetch();
+    if ($found) {
+        $articleId = $found['id'];
+    }
 
     $sql = "INSERT IGNORE INTO yn_user_saved_articles (user_id, article_id, created_at) VALUES (?, ?, NOW())";
     $db->query($sql, [$userId, $articleId]);

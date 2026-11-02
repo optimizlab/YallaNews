@@ -1,22 +1,85 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/news_model.dart';
 import 'news_intelligence.dart';
+import 'app_settings.dart';
+import 'tiny_llm_service.dart';
+import 'yalla_engine_service.dart';
 
 class ServerApiService {
   static const String _baseUrl = 'https://api.inoov.com/yallanews';
   static const Duration _timeout = Duration(seconds: 15);
+  static const String _tokenKey = 'yn_auth_token';
+  static const String _userKey  = 'yn_auth_user';
+
+  /// In-memory token cache (avoids SharedPreferences call on every request)
+  static String? _cachedToken;
+
+  /// True right after the server issued a token (login/signup). Lets the first
+  /// isLoggedIn() check trust the fresh token without a round-trip, in case
+  /// check_auth.php on the server does not verify Bearer tokens yet.
+  static bool _sessionAuthenticated = false;
+
+  // ─── Token persistence ────────────────────────────────────────────────────
+
+  static Future<String?> getToken() async {
+    if (_cachedToken != null) return _cachedToken;
+    final prefs = await SharedPreferences.getInstance();
+    _cachedToken = prefs.getString(_tokenKey);
+    return _cachedToken;
+  }
+
+  static Future<void> saveToken(String token) async {
+    _cachedToken = token;
+    _sessionAuthenticated = true;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
+  }
+
+  static Future<void> clearToken() async {
+    _cachedToken = null;
+    _sessionAuthenticated = false;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_userKey);
+  }
+
+  static Future<void> saveUser(Map<String, dynamic> user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userKey, jsonEncode(user));
+  }
+
+  static Future<Map<String, dynamic>?> getSavedUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_userKey);
+    if (raw == null) return null;
+    try { return jsonDecode(raw) as Map<String, dynamic>; } catch (_) { return null; }
+  }
+
+  // ─── HTTP helpers ─────────────────────────────────────────────────────────
 
   static Uri _endpoint(String path, [Map<String, String>? query]) {
     final uri = Uri.parse('$_baseUrl/$path');
     return query != null ? uri.replace(queryParameters: query) : uri;
   }
 
-  static Future<Map<String, dynamic>> getJson(String path, {Map<String, String>? query}) async {
-    final response = await http.get(_endpoint(path, query), headers: {
+  static Future<Map<String, String>> _authHeaders({bool isJson = false}) async {
+    final token = await getToken();
+    return {
+      if (isJson) 'Content-Type': 'application/json',
       'Accept': 'application/json',
       'User-Agent': 'YallaNewsApp/1.0',
-    }).timeout(_timeout);
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  static Future<Map<String, dynamic>> getJson(String path, {Map<String, String>? query}) async {
+    final response = await http
+        .get(_endpoint(path, query), headers: await _authHeaders())
+        .timeout(_timeout);
     if (response.statusCode == 200) {
       if (response.body.isEmpty) throw Exception('Empty response');
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -25,15 +88,13 @@ class ServerApiService {
   }
 
   static Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body) async {
-    final response = await http.post(
-      _endpoint(path),
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'YallaNewsApp/1.0',
-      },
-      body: jsonEncode(body),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          _endpoint(path),
+          headers: await _authHeaders(isJson: true),
+          body: jsonEncode(body),
+        )
+        .timeout(_timeout);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (response.body.isEmpty) return <String, dynamic>{};
       return jsonDecode(response.body) as Map<String, dynamic>;
@@ -49,6 +110,7 @@ class ServerApiService {
     }
     throw Exception('Server responded ${response.statusCode}: $parsedError');
   }
+
 
   static Future<List<NewsModel>> getNews({
     int limit = 20,
@@ -70,10 +132,22 @@ class ServerApiService {
     };
 
     final data = await getJson('news/list.php', query: query);
-    if (data['success'] != true) return [];
+    if (data['success'] != true) return <NewsModel>[];
 
-    final articles = data['articles'] as List<dynamic>? ?? [];
-    return articles.map((a) => _parseArticle(a as Map<String, dynamic>)).toList();
+    final articles = data['articles'] as List<dynamic>? ?? const <dynamic>[];
+    return articles.map((a) {
+      try {
+        return _parseArticle(Map<String, dynamic>.from(a as Map));
+      } on RangeError catch (e, stack) {
+        print('[API] _parseArticle RangeError: $e');
+        print('[API] _parseArticle stack: $stack');
+        rethrow;
+      } catch (e, stack) {
+        print('[API] _parseArticle error: $e');
+        print('[API] _parseArticle stack: $stack');
+        rethrow;
+      }
+    }).toList();
   }
 
   static Future<NewsModel?> getNewsById(String id) async {
@@ -83,27 +157,30 @@ class ServerApiService {
   }
 
   static Future<List<NewsModel>> getTrending({int limit = 10, String language = 'ar'}) async {
-    final data = await getJson('trending/list.php', query: {'limit': limit.toString(), 'language': language});
-    if (data['success'] != true) return [];
-    final trending = data['trending'] as List<dynamic>? ?? [];
-    return trending.map((t) {
-      final item = Map<String, dynamic>.from(t);
-      return NewsModel(
-        url: 'trending://${item['query']}',
-        title: item['query'] ?? '',
-        summary: '',
-        content: '',
-        imageUrl: '',
-        category: 'general',
-        sentiment: 0.0,
-        keywords: const [],
-        logs: '',
-        author: '',
-        publishDate: (item['createdAt'] ?? 0).toString(),
-        sourceCount: 0,
-        sources: const [],
-      );
-    }).toList();
+    try {
+      final data = await getJson('trending/list.php', query: {'limit': limit.toString(), 'language': language});
+      if (data['success'] != true) return [];
+      final trending = data['trending'] as List<dynamic>? ?? [];
+      return trending.map((t) {
+        final item = Map<String, dynamic>.from(t);
+        return NewsModel(
+          url: 'trending://${(item['query'] ?? '').toString()}',
+          title: (item['query'] ?? '').toString(),
+          summary: '',
+          content: '',
+          imageUrl: '',
+          category: 'general',
+          sentiment: 0.0,
+          keywords: const [],
+          logs: '',
+          author: '',
+          publishDate: '',
+          sourceUrl: '',
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   static Future<List<Map<String, dynamic>>> getCategories() async {
@@ -111,6 +188,13 @@ class ServerApiService {
     if (data['success'] != true) return [];
     final cats = data['categories'] as List<dynamic>? ?? [];
     return cats.map((c) => Map<String, dynamic>.from(c)).toList();
+  }
+
+  static Future<Map<String, String>> getCategoryMapping() async {
+    final data = await getJson('categories/mapping.php');
+    if (data['success'] != true) return <String, String>{};
+    final mapping = data['mapping'] as Map<String, dynamic>? ?? {};
+    return mapping.map((key, value) => MapEntry(key, value.toString()));
   }
 
   static Future<List<Map<String, dynamic>>> getSources() async {
@@ -181,6 +265,30 @@ class ServerApiService {
     return articles.map((a) => Map<String, dynamic>.from(a)).toList();
   }
 
+  static Future<List<NewsModel>> getSavedNews() async {
+    final data = await getJson('saves/list.php');
+    if (data['success'] != true) return [];
+    final articles = data['articles'] as List<dynamic>? ?? [];
+    return articles.map((a) => _parseArticle(Map<String, dynamic>.from(a as Map))).toList();
+  }
+
+  static Future<bool> checkSave(String articleId) async {
+    try {
+      final data = await getJson('saves/check.php', query: {'article_id': articleId});
+      return data['saved'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> saveUserArticle(String articleId) async {
+    await postJson('saves/save.php', {'articleId': articleId});
+  }
+
+  static Future<void> unsaveUserArticle(String articleId) async {
+    await postJson('saves/unsave.php', {'articleId': articleId});
+  }
+
   static Future<List<Map<String, dynamic>>> getHistory(String userId) async {
     final data = await getJson('history/list.php');
     if (data['success'] != true) return [];
@@ -189,25 +297,53 @@ class ServerApiService {
   }
 
   static Future<Map<String, dynamic>> login(String email, String password) async {
-    return await postJson('auth/login.php', {'email': email, 'password': password});
+    final result = await postJson('auth/login.php', {'email': email, 'password': password});
+    if (result['success'] == true) {
+      final token = result['token'] as String?;
+      if (token != null && token.isNotEmpty) await saveToken(token);
+      final user = result['user'];
+      if (user is Map<String, dynamic>) await saveUser(user);
+    }
+    return result;
   }
 
   static Future<Map<String, dynamic>> signup(Map<String, dynamic> userData) async {
-    return await postJson('auth/signup.php', userData);
+    final result = await postJson('auth/signup.php', userData);
+    if (result['success'] == true) {
+      final token = result['token'] as String?;
+      if (token != null && token.isNotEmpty) await saveToken(token);
+      final user = result['user'];
+      if (user is Map<String, dynamic>) await saveUser(user);
+    }
+    return result;
   }
 
   static Future<void> logout() async {
-    await postJson('auth/logout.php', {});
+    try {
+      await postJson('auth/logout.php', {});
+    } catch (_) {}
+    await clearToken();
   }
 
   static Future<bool> isLoggedIn() async {
+    // Fast path: check stored token first
+    final token = await getToken();
+    if (token == null) return false;
+    // Token was just issued by the server this session — trust it.
+    if (_sessionAuthenticated) return true;
+    // Optionally verify with server (can be skipped for speed)
     try {
       final data = await getJson('auth/check_auth.php');
-      return data['authenticated'] == true;
-    } catch (_e) {
+      if (data['authenticated'] == true) return true;
+      // Server says not authenticated — token invalid, clear it
+      await clearToken();
       return false;
+    } catch (_) {
+      // Network error: trust stored token
+      return true;
     }
   }
+
 
   // ─── Likes ────────────────────────────────────────────────────────────────────
 
@@ -241,8 +377,46 @@ class ServerApiService {
     await postJson('likes/unlike.php', {'articleId': articleId});
   }
 
+  // ─── Local like fallback ────────────────────────────────────────────────────
+  // Likes/unlikes made while the server is unreachable (or cannot verify the
+  // token) are kept locally so the user's +1 is never silently reverted.
+
+  static const String _pendingLikesKey = 'pending_likes';
+
+  /// Record the desired like state for [articleId] until the server confirms it.
+  static Future<void> setPendingLike(String articleId, bool liked) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = await getPendingLikes();
+    pending[articleId] = liked;
+    await prefs.setString(_pendingLikesKey, jsonEncode(pending));
+  }
+
+  /// Article ids whose local like state has not been confirmed by the server,
+  /// mapped to their desired state (true = liked, false = unliked).
+  static Future<Map<String, bool>> getPendingLikes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_pendingLikesKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+      return decoded.map((key, value) => MapEntry(key, value == true));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Drop the local override once the server has confirmed the like state.
+  static Future<void> clearPendingLike(String articleId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final pending = await getPendingLikes();
+    if (pending.remove(articleId) == true) {
+      await prefs.setString(_pendingLikesKey, jsonEncode(pending));
+    }
+  }
+
   static Future<void> saveArticle(NewsModel article) async {
-    final sourceId = (article.author.isNotEmpty) ? article.author : NewsModel.extractDomain(article.url);
+    final sourceId = NewsModel.extractDomain(article.url);
+    final publishedAt = _toEpochMilliseconds(article.publishDate);
     await postJson('news/create.php', {
       'title': article.title,
       'summary': article.summary,
@@ -252,40 +426,175 @@ class ServerApiService {
       'sourceId': sourceId,
       'sourceUrlArticle': article.url,
       'imageUrl': article.imageUrl,
-      'publishedAt': int.tryParse(article.publishDate) ?? DateTime.now().millisecondsSinceEpoch,
+      // Never fabricate a publication date: send the original value when
+      // parseable, otherwise 0 so the backend stores an epoch date that
+      // freshness filtering treats as stale instead of "now".
+      'publishedAt': publishedAt,
       'status': 'published',
     });
   }
 
+  static int _toEpochMilliseconds(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return 0;
+    final numeric = int.tryParse(raw);
+    if (numeric != null) {
+      // Accept both seconds and milliseconds from existing crawlers.
+      return numeric < 100000000000 ? numeric * 1000 : numeric;
+    }
+    final parsed = DateTime.tryParse(raw);
+    return parsed?.millisecondsSinceEpoch ?? 0;
+  }
 
 
-  static NewsModel _parseArticle(Map<String, dynamic> data) {
+
+static NewsModel _parseArticle(Map<String, dynamic> data) {
     final source = data['source'] as Map<String, dynamic>?;
-    final title = data['title'] ?? '';
-    final summary = data['summary'] ?? '';
-    final content = data['content'] ?? '';
+    final formatted = TinyLLMService.instance.formatArticleFields(
+      title: (data['title'] ?? '').toString(),
+      summary: (data['summary'] ?? '').toString(),
+      content: (data['content'] ?? '').toString(),
+    );
+    final sourceUrl = data['sourceUrl'] ?? data['source_url'] ?? data['id'] ?? '';
+    final sourceName = (data['sourceName'] ?? source?['name'] ?? '').toString();
+    final title = _cleanPublisherSuffix(
+      formatted['title']!,
+      sourceUrl: sourceUrl.toString(),
+      sourceName: sourceName,
+    );
+    final summary = formatted['summary']!;
+    final content = formatted['content']!;
+    final rawPublishedAt = data['publishedAt'] ?? data['published_at'] ?? 0;
+    // Epoch zero is the API's “unknown date” value, not 1 Jan 1970.
+    final publishedAt = rawPublishedAt.toString() == '0' ? '' : rawPublishedAt;
     // Compute sentiment from actual article text using local NLP
     final intel = NewsIntelligence.extract(title, content, summary);
+    // Original publisher name — taken from the API, never fabricated.
+    final displaySourceName = sourceName.isNotEmpty ? sourceName : NewsModel.extractDomain(sourceUrl);
+    // Build source attribution map for News & Magazines policy compliance
+    final sourceAttribution = <Map<String, dynamic>>[
+      {
+        'name': displaySourceName,
+        'domain': sourceUrl.isNotEmpty ? NewsModel.extractDomain(sourceUrl) : '',
+        'url': sourceUrl,
+        'title': title,
+        'publishDate': publishedAt.toString(),
+        'author': data['author_name'] ?? data['author'] ?? '',
+      }
+    ];
     return NewsModel(
-      url: data['sourceUrl'] ?? data['id'] ?? '',
+      url: sourceUrl,
       title: title,
       shortTitle: '',
       summary: summary,
       content: content,
       imageUrl: data['imageUrl'] ?? '',
       category: data['category'] ?? 'general',
-      sentiment: intel.sentiment,
-      keywords: const [],
+      sentiment: YallaEngineService.analyzeSentiment('$title $summary $content'),
+      keywords: YallaEngineService.extractKeywords(title, summary, content),
       logs: '',
-      author: source?['name'] ?? '',
-      publishDate: (data['publishedAt'] ?? 0).toString(),
+      author: data['author'] ?? '',
+      authorName: data['author_name'] ?? '',
+      publishDate: publishedAt.toString(),
+      publishedAt: publishedAt.toString(),
+      updatedAt: data['updated_at'] ?? '',
       eventType: intel.eventType,
       subcategory: intel.subcategory,
       entities: const [],
-      structuredData: const {},
+      structuredData: {'source_attributions': sourceAttribution},
       intelligenceJson: '',
+      sourceName: displaySourceName,
+      sourceUrl: sourceUrl,
       sourceCount: 1,
-      sources: [data['sourceUrl'] ?? ''],
+      sources: [sourceUrl],
+      isFresh: NewsModel.computeFreshness(publishedAt.toString()),
     );
   }
+
+  static String _cleanPublisherSuffix(String value, {String sourceUrl = '', String sourceName = ''}) {
+    var title = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+    // Repeat because headlines may contain chains such as "| رياضة | الجزيرة نت".
+    final suffix = RegExp(r'\s*(?:\||—|–|::|:)\s*([^|—–:]{1,60})\s*$', caseSensitive: false);
+    bool changed;
+    do {
+      final match = suffix.firstMatch(title);
+      changed = match != null && (match.group(1) ?? '').trim().split(RegExp(r'\s+')).length <= 6;
+      if (changed) title = title.substring(0, match!.start).trim();
+    } while (changed);
+    final host = Uri.tryParse(sourceUrl)?.host.toLowerCase().replaceFirst('www.', '') ?? '';
+    final aliases = <String>['هسبورت', 'هيسبورت', 'هسبريس', 'أراجيك', 'اراجيك', 'كووورة', 'اليوم24', 'اليوم 24'];
+    for (final candidate in <String>[sourceName, ...aliases].where((c) => c.trim().isNotEmpty)) {
+      title = title.replaceFirst(RegExp('\\s*${RegExp.escape(candidate)}\\s*\$', caseSensitive: false), '').trim();
+    }
+    if (host.contains('hesport')) {
+      title = title.replaceFirst(RegExp(r'\s*(?:هسبورت|هيسبورت)\s*$', caseSensitive: false), '').trim();
+    }
+    return title.replaceAll(RegExp(r'[|—–:]+\s*$'), '').trim();
+  }
+
+  static Timer? _heartbeatTimer;
+  static String? _sessionId;
+
+  /// Stable per-install session id shared with the analytics pipeline.
+  static String get sessionId {
+    _sessionId ??= 'session_${DateTime.now().millisecondsSinceEpoch}_${(1000 + (DateTime.now().microsecondsSinceEpoch % 9000))}';
+    return _sessionId!;
+  }
+
+  /// Send a live ping to api/stats/ping.php
+  static Future<void> sendPing() async {
+    try {
+      final os = Platform.isAndroid
+          ? 'android'
+          : Platform.isIOS
+              ? 'ios'
+              : Platform.isWindows
+                  ? 'windows'
+                  : Platform.isMacOS
+                      ? 'macos'
+                      : Platform.isLinux
+                          ? 'linux'
+                          : 'unknown';
+
+      String countryCode = 'EG';
+      try {
+        final loc = Platform.localeName;
+        final parts = loc.split(RegExp('[-_]'));
+        if (parts.length >= 2) {
+          countryCode = parts[1].toUpperCase();
+        } else if (parts.isNotEmpty) {
+          countryCode = parts[0].toUpperCase();
+        }
+      } catch (_) {}
+
+      bool isNewInstall = false;
+      try {
+        isNewInstall = await AppSettings.instance.isFirstRun();
+      } catch (_) {}
+
+      await postJson('stats/ping.php', {
+        'sessionId': _sessionId,
+        'deviceOs': os,
+        'appVersion': '1.0.0',
+        'countryCode': countryCode,
+        'isNewInstall': isNewInstall ? 1 : 0,
+      });
+    } catch (_) {
+      // Silent in background
+    }
+  }
+
+  /// Start periodic live heartbeat (every 60s)
+  static void startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    sendPing();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) => sendPing());
+  }
+
+  /// Stop heartbeat
+  static void stopHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
 }
+

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../database/news_db.dart';
@@ -27,8 +28,11 @@ class _BookmarksPageState extends State<BookmarksPage> {
     try {
       final db = NewsDatabase.instance;
       final articles = await db.getAllArticles(limit: 100);
+      final prefs = await SharedPreferences.getInstance();
+      final offlineUrls = prefs.getStringList('offline_saved_urls') ?? const <String>[];
       setState(() {
-        _bookmarks = articles.take(3).toList();
+        final saved = articles.where((article) => offlineUrls.contains(article.url)).toList();
+        _bookmarks = saved.take(100).toList();
         _isLoading = false;
       });
     } catch (e) {
@@ -55,7 +59,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  l10n.translate('youHaveSavedArticles'),
+                  l10n.translate('youHaveSavedArticles').replaceAll('{count}', _bookmarks.length.toString()),
                   style: GoogleFonts.outfit(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],

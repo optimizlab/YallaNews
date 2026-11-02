@@ -68,7 +68,8 @@ class _SplashPageState extends State<SplashPage> {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
-      body: Center(
+      body: SafeArea(
+        child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -132,6 +133,7 @@ class _SplashPageState extends State<SplashPage> {
           ],
         ),
       ),
+    ),
     );
   }
 }

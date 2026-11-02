@@ -5,7 +5,11 @@ import '../services/tts_service.dart';
 import '../l10n/app_localizations.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({Key? key}) : super(key: key);
+  /// When shown from the root navigation tabs, the parent [Scaffold] already
+  /// provides the app bar and bottom navigation.
+  final bool embedded;
+
+  const SettingsPage({super.key, this.embedded = false});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -15,6 +19,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _isDarkMode = false;
   bool _isNotificationsEnabled = true;
   bool _isBackgroundCrawlerEnabled = true;
+  bool _newsMode = true;
   int _topSourcesCount = 10;
   int _maxUrlsPerSource = 100;
   String _selectedLanguage = 'ar';
@@ -49,9 +54,29 @@ class _SettingsPageState extends State<SettingsPage> {
     final voices = await TTSService.instance.getVoices();
     if (mounted) {
       setState(() {
-        _ttsVoices = voices;
+        _ttsVoices = voices
+            .map((voice) => Map<String, String>.from(voice))
+            .where(_isSupportedVoice)
+            .toList();
+        final selectedName = TTSService.instance.selectedVoiceName;
+        if (selectedName != null) {
+          for (final voice in _ttsVoices) {
+            final candidate = voice as Map<String, String>;
+            if (candidate['name'] == selectedName) {
+              _selectedVoice = candidate;
+              break;
+            }
+          }
+        }
+        _newsMode = TTSService.instance.newsMode;
       });
     }
+  }
+
+  bool _isSupportedVoice(Map<String, String> voice) {
+    final locale = (voice['locale'] ?? '').toLowerCase().replaceAll('_', '-');
+    final language = locale.split('-').first;
+    return const {'ar', 'fr', 'en', 'tr'}.contains(language);
   }
 
   bool _isEffectiveDarkMode(BuildContext context) {
@@ -65,15 +90,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.translate('settings')),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: Center(
+    final content = Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 800),
           child: SingleChildScrollView(
@@ -134,6 +151,16 @@ class _SettingsPageState extends State<SettingsPage> {
                     await AppSettings.instance.setBackgroundCrawlerEnabled(value);
                   },
                 ),
+                const SizedBox(height: 12),
+                _buildToggleOption(
+                  l10n.translate('newsReaderMode'),
+                  Icons.record_voice_over_rounded,
+                  _newsMode,
+                  (value) async {
+                    setState(() => _newsMode = value);
+                    await TTSService.instance.setNewsMode(value);
+                  },
+                ),
                 const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -145,11 +172,24 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 12),
                 _buildTtsVoiceOption(),
+                const SizedBox(height: 96),
               ],
             ),
           ),
         ),
+      );
+
+    if (widget.embedded) return content;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.translate('settings')),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
+      body: content,
     );
   }
 
@@ -252,6 +292,18 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _buildTtsVoiceOption() {
+    final l10n = AppLocalizations.of(context);
+    final sorted = _ttsVoices
+        .map((voice) => voice as Map<String, String>)
+        .toList()
+      ..sort((a, b) {
+        final la = (a['locale'] ?? '').split(RegExp(r'[-_]')).first.toLowerCase();
+        final lb = (b['locale'] ?? '').split(RegExp(r'[-_]')).first.toLowerCase();
+        final c = la.compareTo(lb);
+        if (c != 0) return c;
+        return (a['name'] ?? '').compareTo(b['name'] ?? '');
+      });
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(16),
@@ -268,7 +320,7 @@ class _SettingsPageState extends State<SettingsPage> {
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
-                  AppLocalizations.of(context).translate('voiceSelection'),
+                  l10n.translate('voiceSelection'),
                   style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface),
                 ),
               ),
@@ -277,18 +329,34 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 12),
           DropdownButtonFormField<Map<String, String>>(
             isExpanded: true,
+            dropdownColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
+            iconEnabledColor: Theme.of(context).colorScheme.onSurface,
             decoration: InputDecoration(
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              hintText: TTSService.instance.selectedVoiceName ?? AppLocalizations.of(context).translate('voiceSelection'),
+              hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
             ),
             value: _selectedVoice,
-            items: _ttsVoices.map((voice) {
-              final v = Map<String, String>.from(voice);
-              final name = v['name'] ?? AppLocalizations.of(context).translate('unknownVoice');
-              final locale = v['locale'] ?? '';
+            selectedItemBuilder: (context) => sorted.map((voice) {
+              final name = voice['name'] ?? l10n.translate('unknownVoice');
+              final locale = voice['locale'] ?? '';
+              return Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: Text(
+                  '$name ($locale)',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
+                ),
+              );
+            }).toList(),
+            items: sorted.map((voice) {
+              final name = voice['name'] ?? l10n.translate('unknownVoice');
+              final locale = voice['locale'] ?? '';
               return DropdownMenuItem<Map<String, String>>(
-                value: v,
-                child: Text('$name ($locale)'),
+                value: voice,
+                child: Text('$name ($locale)', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
               );
             }).toList(),
             onChanged: (voice) async {

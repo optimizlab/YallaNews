@@ -47,10 +47,9 @@ class NewsGroupingService {
   static final NewsGroupingService instance = NewsGroupingService._internal();
 
   static const int _minTitleWords = 3;
-  static const double _titleSimilarityThreshold = 0.55;
-  static const double _semanticSimilarityThreshold = 0.50;
-  static const double _ollamaEmbeddingThreshold = 0.88;
-  static const double _contentSimilarityThreshold = 0.45;
+  static const double _titleSimilarityThreshold = 0.48;
+  static const double _semanticSimilarityThreshold = 0.45;
+  static const double _ollamaEmbeddingThreshold = 0.85;
 
   bool hasValidTitle(NewsModel article) {
     final words = article.title.trim().split(RegExp(r'\s+'));
@@ -61,48 +60,185 @@ class NewsGroupingService {
     return articles.where(hasValidTitle).toList();
   }
 
-  static List<SubjectCluster> _groupBySubjectSync(List<NewsModel> articles, double titleThreshold, double semanticThreshold) {
-    if (articles.isEmpty) return const [];
-    final valid = articles.where((a) => a.title.trim().split(RegExp(r'\s+')).length >= _minTitleWords).toList();
-    final clusters = <List<NewsModel>>[];
-    final assigned = <NewsModel>{};
-    for (final article in valid) {
-      if (assigned.contains(article)) continue;
-      final cluster = <NewsModel>[article];
-      assigned.add(article);
-      final normalizedTitle = _normalize(article.title);
-      for (final other in valid) {
-        if (assigned.contains(other)) continue;
-        if (!_isSameCategory(article, other)) continue;
-        final otherNormalized = _normalize(other.title);
-        final titleSim = _computeSimilarity(normalizedTitle, otherNormalized);
-        final semanticSim = SemanticCluster.calculateSimilarity(article, other);
-        final contentSim = _computeContentSimilarity(article, other);
-        if (titleSim >= titleThreshold && semanticSim >= semanticThreshold && contentSim >= _contentSimilarityThreshold) {
-          cluster.add(other);
-          assigned.add(other);
+  /// Fast in-memory deduplication of articles by URL and title similarity
+  static List<NewsModel> fastDeduplicate(List<NewsModel> articles, {double titleThreshold = 0.55}) {
+    if (articles.length <= 1) return articles;
+
+    final seenUrls = <String>{};
+    final unique = <NewsModel>[];
+
+    for (final a in articles) {
+      final cleanUrl = a.url.trim().toLowerCase();
+      if (cleanUrl.isNotEmpty && seenUrls.add(cleanUrl)) {
+        unique.add(a);
+      }
+    }
+
+    final n = unique.length;
+    final titleWords = List<Set<String>>.generate(
+      n,
+      (i) => ArabicTextNormalizer.extractSignificantWords(unique[i].title),
+    );
+
+    final toRemove = <int>{};
+    for (int i = 0; i < n; i++) {
+      if (toRemove.contains(i)) continue;
+      final wordsA = titleWords[i];
+      if (wordsA.isEmpty) continue;
+
+      for (int j = i + 1; j < n; j++) {
+        if (toRemove.contains(j)) continue;
+        final wordsB = titleWords[j];
+        if (wordsB.isEmpty) continue;
+
+        final sim = _jaccard(wordsA, wordsB);
+        if (sim >= titleThreshold) {
+          // Keep the one with better content or image
+          final scoreA = _qualityScore(unique[i]);
+          final scoreB = _qualityScore(unique[j]);
+          if (scoreB > scoreA) {
+            toRemove.add(i);
+            break; // i is removed, move to next i
+          } else {
+            toRemove.add(j);
+          }
         }
       }
+    }
+
+    final result = <NewsModel>[];
+    for (int i = 0; i < n; i++) {
+      if (!toRemove.contains(i)) {
+        result.add(unique[i]);
+      }
+    }
+    return result;
+  }
+
+  static double _qualityScore(NewsModel a) {
+    double s = 0.0;
+    if (a.imageUrl.isNotEmpty && !a.imageUrl.contains('placeholder')) s += 5.0;
+    if (a.content.length > 200) s += 4.0;
+    if (a.summary.length > 50) s += 2.0;
+    if (a.author.isNotEmpty) s += 1.0;
+    s += _sourcePriority(a);
+    return s;
+  }
+
+  /// Precomputed, vectorized synchronous grouping engine (O(N) vectorization + fast O(N²) float math)
+  static List<SubjectCluster> _groupBySubjectSync(
+    List<NewsModel> articles,
+    double titleThreshold,
+    double semanticThreshold,
+  ) {
+    if (articles.isEmpty) return const [];
+    final valid = articles.where((a) => a.title.trim().split(RegExp(r'\s+')).length >= _minTitleWords).toList();
+    if (valid.isEmpty) return const [];
+    if (valid.length == 1) {
+      return [
+        SubjectCluster(
+          subjectTitle: valid.first.title,
+          category: valid.first.category,
+          articles: valid,
+        )
+      ];
+    }
+
+    final n = valid.length;
+    // 1. Precalculate all features once (O(N))
+    final titleWords = List<Set<String>>.generate(
+      n,
+      (i) => ArabicTextNormalizer.extractSignificantWords(valid[i].title),
+    );
+    final tfidfVectors = List<Map<String, double>>.generate(
+      n,
+      (i) => SemanticCluster.buildTfIdfVector(valid[i]),
+    );
+    final entitySets = List<Set<String>>.generate(
+      n,
+      (i) => SemanticCluster.extractEntities(valid[i]),
+    );
+
+    final clusters = <List<NewsModel>>[];
+    final assignedIndices = <int>{};
+
+    for (int i = 0; i < n; i++) {
+      if (assignedIndices.contains(i)) continue;
+      final cluster = <NewsModel>[valid[i]];
+      assignedIndices.add(i);
+
+      final wordsA = titleWords[i];
+      final vecA = tfidfVectors[i];
+      final entA = entitySets[i];
+
+      for (int j = i + 1; j < n; j++) {
+        if (assignedIndices.contains(j)) continue;
+
+        final wordsB = titleWords[j];
+        final titleSim = _jaccard(wordsA, wordsB);
+        final contentSim = SemanticCluster.cosineSimilarity(vecA, tfidfVectors[j]);
+        final entitySim = SemanticCluster.entityOverlap(entA, entitySets[j]);
+        final isCategoryCompatible = _isSameCategory(valid[i], valid[j]);
+
+        bool isMatch = false;
+
+        // Condition 1: High title similarity (shared headline keywords)
+        if (titleSim >= titleThreshold) {
+          isMatch = true;
+        }
+        // Condition 2: Solid title overlap + good content or entity overlap
+        else if (titleSim >= 0.30 && (contentSim >= 0.35 || entitySim >= 0.35)) {
+          isMatch = true;
+        }
+        // Condition 3: Strong semantic content overlap in compatible category
+        else if (contentSim >= 0.55 && isCategoryCompatible) {
+          isMatch = true;
+        }
+        // Condition 4: Shared key entities + related narrative
+        else if (entitySim >= 0.50 && contentSim >= 0.30 && (titleSim >= 0.18 || isCategoryCompatible)) {
+          isMatch = true;
+        }
+
+        if (isMatch) {
+          cluster.add(valid[j]);
+          assignedIndices.add(j);
+        }
+      }
+
       clusters.add(cluster);
     }
+
     clusters.sort((a, b) => b.length.compareTo(a.length));
     return clusters.map((cList) {
       cList.sort((a, b) => _sourcePriority(b).compareTo(_sourcePriority(a)));
       final subjectTitle = _extractSubjectTitle(cList);
-      final category = cList.first.category;
+      final category = _resolveClusterCategory(cList);
       return SubjectCluster(subjectTitle: subjectTitle, category: category, articles: cList);
     }).toList();
   }
 
-  /// Groups articles into rich SubjectClusters using Ollama dense embeddings.
-  /// Falls back to TF-IDF + title overlap if Ollama is not reachable.
+  /// Groups articles into rich SubjectClusters using Ollama dense embeddings if available.
+  /// Falls back to fast precomputed TF-IDF + title overlap.
   Future<List<SubjectCluster>> groupBySubjectAsync(List<NewsModel> articles) async {
     if (articles.isEmpty) return const [];
     final valid = filterValidTitles(articles);
+    if (valid.isEmpty) return const [];
+    if (valid.length == 1) {
+      return [
+        SubjectCluster(
+          subjectTitle: valid.first.title,
+          category: valid.first.category,
+          articles: valid,
+        )
+      ];
+    }
 
     final ollamaAvailable = await OllamaService.instance.isOllamaAvailable();
     if (!ollamaAvailable) {
-      return compute(_groupBySubjectIsolate, _GroupBySubjectInput(valid, _titleSimilarityThreshold, _semanticSimilarityThreshold));
+      return compute(
+        _groupBySubjectIsolate,
+        _GroupBySubjectInput(valid, _titleSimilarityThreshold, _semanticSimilarityThreshold),
+      );
     }
 
     final embeddings = <String, List<double>?>{};
@@ -111,45 +247,67 @@ class NewsGroupingService {
       embeddings[a.url] = vec;
     }
 
+    final n = valid.length;
+    final titleWords = List<Set<String>>.generate(
+      n,
+      (i) => ArabicTextNormalizer.extractSignificantWords(valid[i].title),
+    );
+    final tfidfVectors = List<Map<String, double>>.generate(
+      n,
+      (i) => SemanticCluster.buildTfIdfVector(valid[i]),
+    );
+    final entitySets = List<Set<String>>.generate(
+      n,
+      (i) => SemanticCluster.extractEntities(valid[i]),
+    );
+
     final clusters = <List<NewsModel>>[];
-    final assigned = <NewsModel>{};
+    final assigned = <int>{};
 
-    for (final article in valid) {
-      if (assigned.contains(article)) continue;
-      final cluster = <NewsModel>[article];
-      assigned.add(article);
-      final normalizedTitle = _normalize(article.title);
-      final vecA = embeddings[article.url];
+    for (int i = 0; i < n; i++) {
+      if (assigned.contains(i)) continue;
+      final cluster = <NewsModel>[valid[i]];
+      assigned.add(i);
 
-      for (final other in valid) {
-        if (assigned.contains(other)) continue;
-        if (!_isSameCategory(article, other)) continue;
+      final vecA = embeddings[valid[i].url];
+      final wordsA = titleWords[i];
+      final tfidfA = tfidfVectors[i];
+      final entA = entitySets[i];
+
+      for (int j = i + 1; j < n; j++) {
+        if (assigned.contains(j)) continue;
+
+        final wordsB = titleWords[j];
+        final titleSim = _jaccard(wordsA, wordsB);
+        final contentSim = SemanticCluster.cosineSimilarity(tfidfA, tfidfVectors[j]);
+        final entitySim = SemanticCluster.entityOverlap(entA, entitySets[j]);
+        final isCategoryCompatible = _isSameCategory(valid[i], valid[j]);
 
         bool isMatch = false;
 
-        if (ollamaAvailable && vecA != null) {
-          final vecB = embeddings[other.url];
-          if (vecB != null) {
-            final sim = EmbeddingService.denseCosineSimilarity(vecA, vecB);
-            final semanticSim = SemanticCluster.calculateSimilarity(article, other);
-            final contentSim = _computeContentSimilarity(article, other);
-            isMatch = sim >= _ollamaEmbeddingThreshold && semanticSim >= _semanticSimilarityThreshold && contentSim >= _contentSimilarityThreshold;
-          } else {
-            final semanticSim = SemanticCluster.calculateSimilarity(article, other);
-            final contentSim = _computeContentSimilarity(article, other);
-            isMatch = semanticSim >= _semanticSimilarityThreshold && contentSim >= _contentSimilarityThreshold;
+        final vecB = embeddings[valid[j].url];
+        if (vecA != null && vecB != null) {
+          final denseSim = EmbeddingService.denseCosineSimilarity(vecA, vecB);
+          if (denseSim >= _ollamaEmbeddingThreshold) {
+            isMatch = true;
           }
-        } else {
-          final otherNormalized = _normalize(other.title);
-          final titleSim = _computeSimilarity(normalizedTitle, otherNormalized);
-          final semanticSim = SemanticCluster.calculateSimilarity(article, other);
-          final contentSim = _computeContentSimilarity(article, other);
-          isMatch = titleSim >= _titleSimilarityThreshold && semanticSim >= _semanticSimilarityThreshold && contentSim >= _contentSimilarityThreshold;
+        }
+
+        if (!isMatch) {
+          if (titleSim >= _titleSimilarityThreshold) {
+            isMatch = true;
+          } else if (titleSim >= 0.30 && (contentSim >= 0.35 || entitySim >= 0.35)) {
+            isMatch = true;
+          } else if (contentSim >= 0.55 && isCategoryCompatible) {
+            isMatch = true;
+          } else if (entitySim >= 0.50 && contentSim >= 0.30 && (titleSim >= 0.18 || isCategoryCompatible)) {
+            isMatch = true;
+          }
         }
 
         if (isMatch) {
-          cluster.add(other);
-          assigned.add(other);
+          cluster.add(valid[j]);
+          assigned.add(j);
         }
       }
       clusters.add(cluster);
@@ -159,52 +317,14 @@ class NewsGroupingService {
     return clusters.map((cList) {
       cList.sort((a, b) => _sourcePriority(b).compareTo(_sourcePriority(a)));
       final subjectTitle = _extractSubjectTitle(cList);
-      final category = cList.first.category;
+      final category = _resolveClusterCategory(cList);
       return SubjectCluster(subjectTitle: subjectTitle, category: category, articles: cList);
     }).toList();
   }
 
-  /// Synchronous fallback grouping (TF-IDF + title overlap). Used when async is not possible.
+  /// Synchronous fallback grouping
   List<SubjectCluster> groupBySubject(List<NewsModel> articles) {
-    if (articles.isEmpty) return const [];
-
-    final valid = filterValidTitles(articles);
-    final clusters = <List<NewsModel>>[];
-    final assigned = <NewsModel>{};
-
-    for (final article in valid) {
-      if (assigned.contains(article)) continue;
-
-      final cluster = <NewsModel>[article];
-      assigned.add(article);
-
-      final normalizedTitle = _normalize(article.title);
-
-      for (final other in valid) {
-        if (assigned.contains(other)) continue;
-        if (!_isSameCategory(article, other)) continue;
-
-        final otherNormalized = _normalize(other.title);
-        final titleSim = _computeSimilarity(normalizedTitle, otherNormalized);
-        final semanticSim = SemanticCluster.calculateSimilarity(article, other);
-        final contentSim = _computeContentSimilarity(article, other);
-
-        if (titleSim >= _titleSimilarityThreshold && semanticSim >= _semanticSimilarityThreshold && contentSim >= _contentSimilarityThreshold) {
-          cluster.add(other);
-          assigned.add(other);
-        }
-      }
-
-      clusters.add(cluster);
-    }
-
-    clusters.sort((a, b) => b.length.compareTo(a.length));
-    return clusters.map((cList) {
-      cList.sort((a, b) => _sourcePriority(b).compareTo(_sourcePriority(a)));
-      final subjectTitle = _extractSubjectTitle(cList);
-      final category = cList.first.category;
-      return SubjectCluster(subjectTitle: subjectTitle, category: category, articles: cList);
-    }).toList();
+    return _groupBySubjectSync(articles, _titleSimilarityThreshold, _semanticSimilarityThreshold);
   }
 
   /// Extracts the most representative topic/subject name for a cluster
@@ -212,7 +332,6 @@ class NewsGroupingService {
     if (cluster.isEmpty) return '';
     if (cluster.length == 1) return cluster.first.title;
 
-    // Look for shared named entities across articles
     final entityFreq = <String, int>{};
     for (final art in cluster) {
       for (final ent in art.entities) {
@@ -223,17 +342,25 @@ class NewsGroupingService {
       }
     }
 
-    // If strong shared entities exist, construct a concise subject label
     final sortedEntities = entityFreq.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
     if (sortedEntities.isNotEmpty && sortedEntities.first.value >= 2) {
-      final topEntities = sortedEntities.take(2).map((e) => e.key).join(' • ');
-      return topEntities;
+      return sortedEntities.take(2).map((e) => e.key).join(' • ');
     }
 
-    // Fallback: pick the highest quality headline from the most authoritative source
     return cluster.first.title;
+  }
+
+  /// Resolves the most specific, accurate category across contributing articles
+  static String _resolveClusterCategory(List<NewsModel> cluster) {
+    for (final a in cluster) {
+      final c = a.category.toLowerCase().trim();
+      if (c.isNotEmpty && c != 'general' && c != 'general_news' && c != 'local' && c != 'world') {
+        return c;
+      }
+    }
+    return cluster.first.category.isNotEmpty ? cluster.first.category : 'general';
   }
 
   /// Groups articles purely by similarity (returns lists of NewsModel)
@@ -251,11 +378,7 @@ class NewsGroupingService {
     for (final cluster in clusters) {
       if (cluster.isEmpty) continue;
 
-      cluster.sort((a, b) {
-        final aScore = _sourcePriority(a);
-        final bScore = _sourcePriority(b);
-        return bScore.compareTo(aScore);
-      });
+      cluster.sort((a, b) => _sourcePriority(b).compareTo(_sourcePriority(a)));
 
       final best = cluster.first;
       final seen = <String>{best.url};
@@ -294,18 +417,23 @@ class NewsGroupingService {
   }
 
   static bool _isSameCategory(NewsModel a, NewsModel b) {
-    if (a.category == b.category) return true;
+    if (a.category.toLowerCase() == b.category.toLowerCase()) return true;
 
-    final aCat = a.category.toLowerCase();
-    final bCat = b.category.toLowerCase();
+    final aCat = a.category.toLowerCase().trim();
+    final bCat = b.category.toLowerCase().trim();
+
+    if (aCat == 'general' || bCat == 'general' || aCat == 'general_news' || bCat == 'general_news') {
+      return true; // General can match with any topic if text similarity is high
+    }
 
     const equivalentGroups = [
-      {'world', 'international'},
-      {'politics', 'world'},
-      {'business', 'economy'},
+      {'world', 'international', 'general'},
+      {'politics', 'world', 'local'},
+      {'business', 'economy', 'markets'},
       {'technology', 'tech'},
-      {'general_news', 'general'},
-      {'sport', 'sports'},
+      {'general_news', 'general', 'local'},
+      {'sport', 'sports', 'football'},
+      {'arts', 'entertainment', 'culture'},
     ];
 
     for (final group in equivalentGroups) {
@@ -317,29 +445,10 @@ class NewsGroupingService {
     return false;
   }
 
-  static String _normalize(String text) {
-    var normalized = ArabicTextNormalizer.normalize(text);
-    normalized = normalized.toLowerCase();
-    normalized = normalized.replaceAll(RegExp(r'[^\w\s\u0600-\u06FF]'), ' ');
-    normalized = normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return normalized;
-  }
-
-  static double _computeSimilarity(String a, String b) {
-    final wordsA = a.split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
-    final wordsB = b.split(RegExp(r'\s+')).where((w) => w.length > 2).toSet();
-
-    if (wordsA.isEmpty || wordsB.isEmpty) return 0.0;
-
-    final intersection = wordsA.intersection(wordsB).length;
-    final union = wordsA.union(wordsB).length;
-
+  static double _jaccard(Set<String> a, Set<String> b) {
+    if (a.isEmpty || b.isEmpty) return 0.0;
+    final intersection = a.intersection(b).length;
+    final union = a.union(b).length;
     return union == 0 ? 0.0 : intersection / union;
-  }
-
-  static double _computeContentSimilarity(NewsModel a, NewsModel b) {
-    final vecA = SemanticCluster.buildTfIdfVector(a);
-    final vecB = SemanticCluster.buildTfIdfVector(b);
-    return SemanticCluster.cosineSimilarity(vecA, vecB);
   }
 }

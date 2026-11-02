@@ -9,8 +9,19 @@ list($page, $limit, $offset) = get_pagination_params();
 $category = sanitize_string($_GET['category'] ?? '', 64);
 $language = sanitize_string($_GET['language'] ?? '', 8);
 $search = sanitize_string($_GET['search'] ?? '', 200);
-$sortBy = in_array($_GET['sort'] ?? 'published_at', ['published_at', 'created_at', 'title']) ? ($_GET['sort'] ?? 'published_at') : 'published_at';
+$sortParam = $_GET['sort'] ?? 'published_at';
 $sortOrder = in_array(strtoupper($_GET['order'] ?? 'DESC'), ['ASC', 'DESC']) ? strtoupper($_GET['order']) : 'DESC';
+
+$sortColumnMap = [
+    'published_at' => 'n.published_at',
+    'date' => 'n.published_at',
+    'created_at' => 'n.created_at',
+    'title' => 'n.title',
+    'views' => 'views_count',
+    'source' => 'n.source_id',
+    'category' => 'n.category'
+];
+$sortColumn = $sortColumnMap[$sortParam] ?? 'n.published_at';
 
 try {
     $db = Database::getInstance();
@@ -44,11 +55,12 @@ try {
     $sql = "SELECT n.id, n.title, n.summary, n.content, n.language, n.category, 
                    n.source_id, n.source_url_article, 
                    n.image_url, n.published_at, n.status,
-                   c.name as category_name, c.name_en as category_name_en
+                   c.name as category_name, c.name_en as category_name_en,
+                   (SELECT COUNT(*) FROM yn_user_reading_history rh WHERE rh.article_id = n.id) AS views_count
              FROM yn_news n
              LEFT JOIN yn_categories c ON n.category = c.id
              WHERE $whereClause
-             ORDER BY n.$sortBy $sortOrder
+             ORDER BY $sortColumn $sortOrder, n.published_at DESC
              LIMIT ? OFFSET ?";
 
     $params[] = $limit;
@@ -78,6 +90,7 @@ try {
             ],
             'sourceUrl' => $a['source_url_article'],
             'imageUrl' => $imageUrl,
+            'viewsCount' => intval($a['views_count'] ?? 0),
             'publishedAt' => intval($a['published_at']),
             'status' => $a['status']
         ];

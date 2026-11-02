@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>À propos | INOOV Software Engineering - Yalla News</title>
+    <meta name="description" content="À propos d'INOOV Software Engineering et de l'application Yalla News. Éditeur, agrégation d'actualités et contacts.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0F172A;
+            --bg-secondary: #1E293B;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-red: #E53935;
+            --accent-red-hover: #C62828;
+            --accent-glow: rgba(229, 57, 53, 0.25);
+            --text-primary: #F8FAFC;
+            --text-secondary: #94A3B8;
+            --text-muted: #64748B;
+            --badge-bg: rgba(229, 57, 53, 0.15);
+            --warning-bg: rgba(239, 68, 68, 0.12);
+            --warning-border: rgba(239, 68, 68, 0.3);
+            --radius-md: 16px;
+            --radius-lg: 24px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.8;
+            min-height: 100vh;
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(229, 57, 53, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(59, 130, 246, 0.06) 0%, transparent 45%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 40px 20px 80px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 40px 24px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
+        }
+
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--badge-bg);
+            color: #FF6B6B;
+            border: 1px solid rgba(229, 57, 53, 0.3);
+            padding: 6px 18px;
+            border-radius: 999px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #FFFFFF;
+            margin-bottom: 12px;
+        }
+
+        .header-sub {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            max-width: 650px;
+            margin: 0 auto;
+        }
+
+        .meta-info {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            flex-wrap: wrap;
+        }
+
+        .lang-switch {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+
+        .lang-btn {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            padding: 8px 20px;
+            border-radius: 999px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+
+        .lang-btn.active, .lang-btn:hover {
+            background: var(--accent-red);
+            color: #FFFFFF;
+            border-color: var(--accent-red);
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 32px;
+            margin-bottom: 28px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+
+        .card:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .card.alert-card {
+            background: var(--warning-bg);
+            border: 1px solid var(--warning-border);
+            position: relative;
+        }
+
+        .card.alert-card::before {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            background: var(--accent-red);
+            border-top-right-radius: var(--radius-md);
+            border-bottom-right-radius: var(--radius-md);
+        }
+
+        h2 {
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: #FFFFFF;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .icon-circle {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: rgba(229, 57, 53, 0.15);
+            color: var(--accent-red);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        p {
+            color: #E2E8F0;
+            margin-bottom: 14px;
+            font-size: 1.02rem;
+        }
+
+        p:last-child {
+            margin-bottom: 0;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 14px 0;
+        }
+
+        li {
+            position: relative;
+            padding-left: 24px;
+            margin-bottom: 10px;
+            color: #CBD5E1;
+        }
+
+        li::before {
+            content: '•';
+            position: absolute;
+            left: 8px;
+            color: var(--accent-red);
+            font-size: 1.4rem;
+            line-height: 1;
+        }
+
+        .highlight {
+            color: #FFFFFF;
+            font-weight: 700;
+        }
+
+        .dev-badge-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .dev-badge-box a {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--accent-red);
+            color: #FFFFFF;
+            padding: 8px 20px;
+            border-radius: 999px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.95rem;
+            transition: background 0.2s ease;
+        }
+
+        .dev-badge-box a:hover {
+            background: var(--accent-red-hover);
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            padding-top: 30px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.92rem;
+        }
+
+        footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        footer a:hover {
+            color: #FFFFFF;
+        }
+
+        .en-section, .ar-section, .fr-section, .tr-section {
+            display: none;
+        }
+
+        /* Drawer Menu Styles */
+        .drawer-toggle {
+            display: none;
+        }
+
+        .drawer-btn {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-primary);
+            transition: all 0.2s ease;
+            z-index: 1001;
+            width: 44px;
+            height: 44px;
+        }
+
+        .drawer-btn:hover {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            color: #FFFFFF;
+        }
+
+        .drawer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .drawer-toggle:checked ~ .drawer-overlay {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: -320px;
+            width: 320px;
+            height: 100vh;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+            z-index: 1001;
+            transition: right 0.3s ease;
+            padding: 80px 24px 24px;
+            overflow-y: auto;
+        }
+
+        .drawer-toggle:checked ~ .drawer {
+            right: 0;
+        }
+
+        .drawer-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: var(--radius-md);
+            transition: all 0.2s ease;
+        }
+
+        .drawer-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .drawer-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .drawer-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .drawer-link:hover {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            transform: translateX(-4px);
+        }
+
+        .drawer-link.current {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+        }
+
+        /* Drawer language sections */
+        .drawer-ar-section, .drawer-fr-section, .drawer-en-section, .drawer-tr-section {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .drawer {
+                width: 280px;
+                right: -280px;
+            }
+        }
+
+        .en-section {
+            direction: ltr;
+            text-align: left;
+            font-family: 'Outfit', system-ui, sans-serif;
+        }
+
+        .ar-section {
+            direction: rtl;
+            text-align: right;
+            font-family: 'Cairo', system-ui, sans-serif;
+        }
+
+        .ar-section li {
+            padding-right: 26px;
+            padding-left: 0;
+        }
+
+        .ar-section li::before {
+            right: 8px;
+            left: auto;
+        }
+
+        .ar-section .alert-card::before {
+            right: 0;
+            left: auto;
+            border-top-right-radius: var(--radius-md);
+            border-bottom-right-radius: var(--radius-md);
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+        }
+
+        .tr-section {
+            direction: ltr;
+            text-align: left;
+            font-family: 'Outfit', system-ui, sans-serif;
+        }
+
+        .tr-section li {
+            padding-right: 0;
+            padding-left: 24px;
+        }
+
+        .tr-section li::before {
+            right: auto;
+            left: 8px;
+        }
+
+        .tr-section .alert-card::before {
+            right: auto;
+            left: 0;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+            border-top-left-radius: var(--radius-md);
+            border-bottom-left-radius: var(--radius-md);
+        }
+
+        @media (max-width: 640px) {
+            .container { padding: 24px 16px 60px; }
+            h1 { font-size: 1.6rem; }
+        }
+    </style>
+</head>
+<body onload="initLang()">
+
+    <div class="container">
+
+        <input type="checkbox" id="drawer-toggle" class="drawer-toggle">
+
+        <button class="drawer-btn" onclick="document.getElementById('drawer-toggle').checked = true;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+
+        <div class="drawer-overlay" onclick="document.getElementById('drawer-toggle').checked = false;"></div>
+
+        <div class="drawer">
+            <button class="drawer-close" onclick="document.getElementById('drawer-toggle').checked = false;">
+                ✕
+            </button>
+
+            <nav class="drawer-nav drawer-ar-section">
+                <a href="about.html" class="drawer-link current">
+                    <span>📖</span>
+                    <span>حول</span>
+                </a>
+                <a href="contact.html" class="drawer-link">
+                    <span>✉️</span>
+                    <span>اتصل بنا</span>
+                </a>
+                <a href="privacy.html" class="drawer-link">
+                    <span>🔒</span>
+                    <span>سياسة الخصوصية</span>
+                </a>
+                <a href="terms.html" class="drawer-link">
+                    <span>📜</span>
+                    <span>شروط الاستخدام</span>
+                </a>
+            </nav>
+
+            <nav class="drawer-nav drawer-fr-section">
+                <a href="about.html" class="drawer-link current">
+                    <span>📖</span>
+                    <span>À propos</span>
+                </a>
+                <a href="contact.html" class="drawer-link">
+                    <span>✉️</span>
+                    <span>Contact</span>
+                </a>
+                <a href="privacy.html" class="drawer-link">
+                    <span>🔒</span>
+                    <span>Politique de confidentialité</span>
+                </a>
+                <a href="terms.html" class="drawer-link">
+                    <span>📜</span>
+                    <span>Conditions d'utilisation</span>
+                </a>
+            </nav>
+
+            <nav class="drawer-nav drawer-en-section">
+                <a href="about.html" class="drawer-link current">
+                    <span>📖</span>
+                    <span>About</span>
+                </a>
+                <a href="contact.html" class="drawer-link">
+                    <span>✉️</span>
+                    <span>Contact</span>
+                </a>
+                <a href="privacy.html" class="drawer-link">
+                    <span>🔒</span>
+                    <span>Privacy Policy</span>
+                </a>
+                <a href="terms.html" class="drawer-link">
+                    <span>📜</span>
+                    <span>Terms of Service</span>
+                </a>
+            </nav>
+
+            <nav class="drawer-nav drawer-tr-section">
+                <a href="about.html" class="drawer-link current">
+                    <span>📖</span>
+                    <span>Hakkında</span>
+                </a>
+                <a href="contact.html" class="drawer-link">
+                    <span>✉️</span>
+                    <span>İletişim</span>
+                </a>
+                <a href="privacy.html" class="drawer-link">
+                    <span>🔒</span>
+                    <span>Gizlilik Politikası</span>
+                </a>
+                <a href="terms.html" class="drawer-link">
+                    <span>📜</span>
+                    <span>Hizmet Şartları</span>
+                </a>
+            </nav>
+        </div>
+
+    <div class="lang-switch">
+        <button class="lang-btn active" id="btnAr" onclick="switchLang('ar')">العربية</button>
+        <button class="lang-btn" id="btnFr" onclick="switchLang('fr')">Français</button>
+        <button class="lang-btn" id="btnEn" onclick="switchLang('en')">English</button>
+        <button class="lang-btn" id="btnTr" onclick="switchLang('tr')">Türkçe</button>
+    </div>
+
+    <!-- ═══════════════════════ ARABIC CONTENT ═══════════════════════ -->
+    <div id="sectionAr" class="ar-section">
+        <header>
+            <div class="brand-badge">يلا نيوز | Yalla News</div>
+            <h1>عن التطبيق</h1>
+            <p class="header-sub">نقدّم لك تطبيق يلا نيوز لتفاعلك الذكي مع الأخبار.</p>
+        </header>
+
+        <section class="card">
+            <h2><span class="icon-circle">🏢</span>من نحن</h2>
+            <p><span class="highlight">الناشر :</span> INOOV Software Engineering هو مطور برمجيات متخصص في الحلول المحمولة والذكاء الاصطناعي والخدمات الرقمية.</p>
+            <p><span class="highlight">الموقع الرسمي :</span> <a href="https://apps.inoov.com/yallanews/" style="color:#FF6B6B; text-decoration:none;" target="_blank">https://apps.inoov.com/yallanews/</a></p>
+            <p><span class="highlight">البريد الإلكتروني :</span> <a href="mailto:info@inoov.com" style="color:#FF6B6B; text-decoration:none;">info@inoov.com</a></p>
+            <p>تم تصميم وتطوير وتشغيل تطبيق <span class="highlight">يلا نيوز (Yalla News)</span> بواسطة شركة INOOV Software Engineering (معرف التطبيق: <code style="color:#FF6B6B;">inoov.app.yallanews</code>).</p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📰</span>Yalla News — الوصف</h2>
+            <p><span class="highlight">الهدف :</span> تطبيق يلا نيوز يتيح لك متابعة الأخبار الوطنية والدولية في الوقت الفعلي، باللغتين العربية والفرنسية، مع تجربة قراءة سريعة ووضع عدم الاتصال وتحويل النص إلى كلام.</p>
+            <p><span class="highlight">الطريقة التي يعمل بها :</span> يجمع التطبيق الأخبار من مصادر إعلامية طرف ثالثة عامة وموثوقة وروابط خارجية (روابط تغذية رجعية)، ويصنفها ويعرضها بملخص، وتاريخ النشر، والإشارة إلى المصدر الأصلي.</p>
+        </section>
+
+        <section class="card alert-card">
+            <h2><span class="icon-circle">⚖️</span>نموذج التجميع ودور الناشرين الأصليين</h2>
+            <p><span class="highlight">يلا نيوز ليس مرشح إعلامي ينتج مقالاته الأصلية بنفسه :</span> يعتمد نموذجه في الغالب على تجميع الأخبار من مصادر طرف ثالثة.</p>
+            <ul>
+                <li>يبقى كل مقال والعنوان والوسائط الإعلامية ملكًا للـ <span class="highlight">ناشره الأصلي</span>، وهو المسؤول القانوني والحقوقي بالدرجة الكاملة.</li>
+                <li>لا تتحمل شركة INOOV ولا يلا نيوز أي مسؤولية عن الدقة أو الكمال أو ملاءمة الأخبار المستندة إلى مصادر طرف ثالثة.</li>
+                <li>التواريخ المعروضة هي تواريخ النشر الأصلية للمصادر، وليس تواريخ الاستيراد.</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📱</span>لقطات شاشة لتطبيق يلا نيوز</h2>
+            <p>يلا نيوز تطبيق أخبار متكامل متاح على Android وiOS. اكتشف الواجهة والميزات الرئيسية:</p>
+            <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin-top:16px;">
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">الصفحة الرئيسية</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #E53935 0%, #FF6B6B 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                لقطة شاشة للصفحة الرئيسية مع أحدث الأخبار
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">الفئات</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                التنقل حسب الفئات: سياسة،رياضة،تكنولوجيا،اقتصاد
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">المقال الكامل</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                قراءة المقال مع وضع عدم الاتصال وتحويل النص إلى كلام
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p style="margin-top:16px; text-align:center;">
+                حملوا يلا نيوز من <a href="https://apps.inoov.com/yallanews/" style="color:#FF6B6B; text-decoration:none;" target="_blank">https://apps.inoov.com/yallanews/</a>
+            </p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">✉️</span>اتصل بنا وسياسة الخصوصية</h2>
+            <p>لأي سؤال حول يلا نيوز أو شركة INOOV Software Engineering، يمكنكم التواصل معنا:</p>
+            <p><span class="highlight">البريد الإلكتروني :</span> <a href="mailto:info@inoov.com" style="color:#FF6B6B; text-decoration:none;">info@inoov.com</a></p>
+            <p><span class="highlight">صفحة الاتصال :</span> <a href="contact.html" style="color:#94A3B8; text-decoration:none;">contact.html</a></p>
+            <p><span class="highlight">سياسة الخصوصية :</span> <a href="privacy.html" style="color:#94A3B8; text-decoration:none;">privacy.html</a></p>
+        </section>
+    </div>
+
+    <!-- ═══════════════════════ FRENCH CONTENT ═══════════════════════ -->
+    <div id="sectionFr">
+        <header>
+            <div class="brand-badge">INOOV Software Engineering</div>
+            <h1>À propos</h1>
+            <p class="header-sub">INOOV Software Engineering et l'application Yalla News.</p>
+        </header>
+
+        <section class="card">
+            <h2><span class="icon-circle">🏢</span>Qui sommes-nous</h2>
+            <p><span class="highlight">Éditeur :</span> Inoov Software Engineering est une société d'ingénierie logicielle spécialisée dans les solutions mobiles, l'intelligence artificielle et les services numériques.</p>
+            <p><span class="highlight">Site officiel :</span> <a href="https://apps.inoov.com/yallanews/" class="mailto-link" target="_blank" rel="noopener noreferrer">https://apps.inoov.com/yallanews/</a></p>
+            <p><span class="highlight">E-mail :</span> <a href="mailto:info@inoov.com" class="mailto-link">info@inoov.com</a></p>
+            <p>L'application <span class="highlight">Yalla News</span> a été conçue, développée et hébergée par INOOV Software Engineering (identifiant de l'application : <code style="color:#FF6B6B;">inoov.app.yallanews</code>).</p>
+            <div class="dev-badge-box">
+                <a href="contact.html" target="_blank" rel="noopener noreferrer">Page de contact ↗</a>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📰</span>Yalla News — présentation</h2>
+            <p><span class="highlight">Objectif :</span> Yalla News est une application de lecture d'actualités qui permet de suivre, en français et en arabe, l'actualité nationale et internationale en temps réel, avec une expérience de lecture rapide, un mode hors connexion et une lecture vocale.</p>
+            <p><span class="highlight">Fonctionnement :</span> l'application rassemble des actualités provenant de médias et de sources tierces accessibles publiquement (flux RSS et liens externes), les classe par catégorie et les présente avec un résumé, la date de publication et l'attribution de la source d'origine.</p>
+        </section>
+
+        <section class="card alert-card">
+            <h2><span class="icon-circle">⚖️</span>Modèle d'agrégation et rôle des éditeurs d'origine</h2>
+            <p><span class="highlight">Yalla News n'est pas un média qui produit exclusivement ses propres articles :</span> son modèle repose principalement sur l'agrégation d'actualités provenant de sources tierces.</p>
+            <ul>
+                <li>Chaque article reste la propriété intellectuelle de son <span class="highlight">éditeur ou média d'origine</span>, qui en est le seul responsable légal et éditorial.</li>
+                <li>INOOV et Yalla News n'assument aucune responsabilité quant à l'exactitude, l'exhaustivité ou la pertinence des articles issus de sources tierces.</li>
+                <li>Les dates affichées sont les dates de publication originales des sources, et non des dates d'importation.</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📱</span>L'application Yalla News en images</h2>
+            <p>Yalla News est une application d'actualités complète disponible sur Android et iOS. Découvrez l'interface et les fonctionnalités principales :</p>
+            <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin-top:16px;">
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Accueil</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #E53935 0%, #FF6B6B 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Capture d'écran de la page d'accueil avec les dernières actualités
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Catégories</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Navigation par catégories : Politique, Sport, Technologie, Économie
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Article complet</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Lecture d'article avec mode hors ligne et synthèse vocale
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p style="margin-top:16px; text-align:center;">
+                Téléchargez Yalla News sur <a href="https://apps.inoov.com/yallanews/" class="mailto-link" target="_blank" rel="noopener noreferrer">https://apps.inoov.com/yallanews/</a>
+            </p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">✉️</span>Contact et politique de confidentialité</h2>
+            <p>Pour toute question concernant Yalla News ou INOOV Software Engineering, vous pouvez nous contacter :</p>
+            <p><span class="highlight">E-mail :</span> <a href="mailto:info@inoov.com" class="mailto-link">info@inoov.com</a></p>
+            <p><span class="highlight">Page de contact :</span> <a href="contact.html" style="color:#94A3B8; text-decoration:none;">contact.html</a></p>
+            <p><span class="highlight">Politique de confidentialité :</span> <a href="privacy.html" style="color:#94A3B8; text-decoration:none;">privacy.html</a></p>
+        </section>
+    </div>
+
+    <!-- ═══════════════════════ ENGLISH CONTENT ═══════════════════════ -->
+    <div id="sectionEn" class="en-section">
+        <header>
+            <div class="brand-badge">INOOV Software Engineering</div>
+            <h1>About</h1>
+            <p class="header-sub">INOOV Software Engineering and the Yalla News application.</p>
+        </header>
+
+        <section class="card">
+            <h2><span class="icon-circle">🏢</span>Who we are</h2>
+            <p><span class="highlight">Publisher :</span> Inoov Software Engineering is a software engineering company specialized in mobile solutions, artificial intelligence, and digital services.</p>
+            <p><span class="highlight">Official website :</span> <a href="https://apps.inoov.com/yallanews/" class="mailto-link" target="_blank" rel="noopener noreferrer">https://apps.inoov.com/yallanews/</a></p>
+            <p><span class="highlight">E-mail :</span> <a href="mailto:info@inoov.com" class="mailto-link">info@inoov.com</a></p>
+            <p>The <span class="highlight">Yalla News</span> application was designed, developed, and operated by INOOV Software Engineering (application ID: <code style="color:#FF6B6B;">inoov.app.yallanews</code>).</p>
+            <div class="dev-badge-box">
+                <a href="contact.html" target="_blank" rel="noopener noreferrer">Contact page ↗</a>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📰</span>Yalla News — presentation</h2>
+            <p><span class="highlight">Purpose :</span> Yalla News is a news reading application that lets you follow national and international news in real time, in French and Arabic, with a fast reading experience, offline mode, and text-to-speech.</p>
+            <p><span class="highlight">How it works :</span> the application gathers news from publicly accessible third-party media and sources (RSS feeds and external links), categorizes them, and presents them with a summary, the publication date, and attribution to the original source.</p>
+        </section>
+
+        <section class="card alert-card">
+            <h2><span class="icon-circle">⚖️</span>Aggregation model and role of original publishers</h2>
+            <p><span class="highlight">Yalla News is not a media outlet producing exclusively original articles :</span> its model is primarily the aggregation of news from third-party sources.</p>
+            <ul>
+                <li>Each article remains the intellectual property of its <span class="highlight">original publisher or media outlet</span>, which is solely legally and editorially responsible for it.</li>
+                <li>INOOV and Yalla News assume no responsibility for the accuracy, completeness, or relevance of articles from third-party sources.</li>
+                <li>The dates displayed are the original publication dates of the sources, not import dates.</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📱</span>Yalla News in Screenshots</h2>
+            <p>Yalla News is a comprehensive news application available on Android and iOS. Discover the interface and main features:</p>
+            <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin-top:16px;">
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Home</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #E53935 0%, #FF6B6B 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Home screen with latest news
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Categories</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Category navigation: Politics, Sports, Technology, Business
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Full Article</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Reading article with offline mode and text-to-speech
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p style="margin-top:16px; text-align:center;">
+                Download Yalla News from <a href="https://apps.inoov.com/yallanews/" class="mailto-link" target="_blank" rel="noopener noreferrer">https://apps.inoov.com/yallanews/</a>
+            </p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">✉️</span>Contact and privacy policy</h2>
+            <p>For any question regarding Yalla News or INOOV Software Engineering, you can contact us:</p>
+            <p><span class="highlight">E-mail :</span> <a href="mailto:info@inoov.com" class="mailto-link">info@inoov.com</a></p>
+            <p><span class="highlight">Contact page :</span> <a href="contact.html" style="color:#94A3B8; text-decoration:none;">contact.html</a></p>
+            <p><span class="highlight">Privacy Policy :</span> <a href="privacy.html" style="color:#94A3B8; text-decoration:none;">privacy.html</a></p>
+        </section>
+    </div>
+
+    <!-- ═══════════════════════ TURKISH CONTENT ═══════════════════════ -->
+    <div id="sectionTr" class="tr-section">
+        <header>
+            <div class="brand-badge">Yalla News | يلا نيوز</div>
+            <h1>Uygulama Hakkında</h1>
+            <p class="header-sub">Yalla News mobil uygulamasını keşfedin.</p>
+        </header>
+
+        <section class="card">
+            <h2><span class="icon-circle">🏢</span>Biz Kimiziyiz</h2>
+            <p><span class="highlight">Yayıncı :</span> INOOV Software Engineering, mobil çözümler, yapay zekâ ve dijital hizmetler için özel bir yazılım mühendisliği şirketidir.</p>
+            <p><span class="highlight">Resmi site :</span> <a href="https://apps.inoov.com/yallanews/" style="color:#FF6B6B; text-decoration:none;" target="_blank">https://apps.inoov.com/yallanews/</a></p>
+            <p><span class="highlight">E-posta :</span> <a href="mailto:info@inoov.com" style="color:#FF6B6B; text-decoration:none;">info@inoov.com</a></p>
+            <p><span class="highlight">Yalla News</span> mobil uygulaması INOOV Software Engineering tarafından tasarlandı, geliştirildi ve işletildi (uygulama kimliği: <code style="color:#FF6B6B;">inoov.app.yallanews</code>).</p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📰</span>Yalla News — Tanıtım</h2>
+            <p><span class="highlight">Amaç :</span> Yalla News, Fransızca ve Arapça olarak ulusal ve uluslararası haberleri gerçek zamanlı olarak takip etmenize, hızlı bir okuma deneyimi, çevrimdışı mod ve metinden ses halına izin veren bir haber okuma uygulamasıdır.</p>
+            <p><span class="highlight">Nasıl çalışır :</span> uygulama, halka açık üçüncü taraf medya kaynaklarından ve (RSS besleymeleri ve dış bağlantılar) haber toplar, kategorize eder ve özet, yayın tarihini ve orijinal kaynağa atribüasyonu gösterir.</p>
+        </section>
+
+        <section class="card alert-card">
+            <h2><span class="icon-circle">⚖️</span>Toplama modeli ve orijinal yayıncıların rolü</h2>
+            <p><span class="highlight">Yalla News, kendi makalelerini özgün olarak üreten bir medya kurulu yoktur :</span> modeli temel olarak üçüncü taraf kaynaklarından haber toplama üzerine kuruludur.</p>
+            <ul>
+                <li>Her makale, <span class="highlight">orijinal yayıncısı veya medya kuruluşunun</span> fikri mülkiyetidir ve yalnızca onun sorumluluğundadır.</li>
+                <li>INOOV ve Yalla News, üçüncü taraf kaynaklarından gelen makalelerin doğruluğu, eksikliği veya uygunluğu konusunda herhangi bir sorumluluk kabul etmez.</li>
+                <li>Gösterilen tarihler, kaynağın orijinal yayın tarihleridir, içe aktarma tarihleri değildir.</li>
+            </ul>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📱</span>Yalla News Ekran Görüntülerine Bakın</h2>
+            <p>Yalla News, Android ve iOS platformlarında bulunan kapsamlı bir haber uygulamasıdır. Arayüz ve önemli özellikleri keşfedin:</p>
+            <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin-top:16px;">
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Ana Sayfa</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #E53935 0%, #FF6B6B 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Son haberlerle birlikte ana sayfa ekran görüntüsü
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Kategoriler</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Politika, Spor, Teknoloji, Ekonomi gibi kategorilere göre gezinme
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="border:1px solid var(--border-color); border-radius:var(--radius-md); overflow:hidden; width:100%; max-width:320px;">
+                    <div style="background:#0F172A; padding:12px; text-align:center;">
+                        <h3 style="margin:0 0 8px; font-size:1rem; color:#FFFFFF;">Tam Makale</h3>
+                        <div style="height:200px; background:#1E293B; border-radius:12px; position:relative; overflow:hidden;">
+                            <div style="position:absolute; inset:0; background:linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%); opacity:0.15;"></div>
+                            <div style="position:relative; height:100%; display:flex; align-items:center; justify-content:center; color:#94A3B8; font-size:0.9rem; text-align:center; padding:20px;">
+                                Çevrimdışı mod ve metinden ses halına sahip tam makale okuma
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p style="margin-top:16px; text-align:center;">
+                Yalla News'u <a href="https://apps.inoov.com/yallanews/" style="color:#FF6B6B; text-decoration:none;" target="_blank">https://apps.inoov.com/yallanews/</a> üzerinden indirin
+            </p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">✉️</span>Bizimle iletişime geçin</h2>
+            <p>Yalla News veya INOOV Software Engineering hakkındaki herhangi bir sorunuz varsa, bize ulaşabilirsiniz:</p>
+            <p><span class="highlight">E-posta :</span> <a href="mailto:info@inoov.com" style="color:#FF6B6B; text-decoration:none;">info@inoov.com</a></p>
+            <p><span class="highlight">İletişim sayfası :</span> <a href="contact.html" style="color:#94A3B8; text-decoration:none;">contact.html</a></p>
+            <p><span class="highlight">Gizlilik politikası :</span> <a href="privacy.html" style="color:#94A3B8; text-decoration:none;">privacy.html</a></p>
+        </section>
+    </div>
+
+    <footer>
+        <p>© 2026 Yalla News. All rights reserved. | Developed by <a href="https://apps.inoov.com/yallanews/" target="_blank">INOOV Software Engineering</a></p>
+    </footer>
+
+</div>
+
+<script>
+    function initLang() {
+        const savedLang = localStorage.getItem('lang');
+        if (savedLang === 'fr' || savedLang === 'en' || savedLang === 'tr' || savedLang === 'ar') {
+            switchLang(savedLang);
+        } else {
+            switchLang('ar');
+        }
+    }
+
+    function switchLang(lang) {
+        localStorage.setItem('lang', lang);
+        const arSection = document.getElementById('sectionAr');
+        const frSection = document.getElementById('sectionFr');
+        const enSection = document.getElementById('sectionEn');
+        const trSection = document.getElementById('sectionTr');
+        const drawerAr = document.querySelector('.drawer-ar-section');
+        const drawerFr = document.querySelector('.drawer-fr-section');
+        const drawerEn = document.querySelector('.drawer-en-section');
+        const drawerTr = document.querySelector('.drawer-tr-section');
+        const btnAr = document.getElementById('btnAr');
+        const btnFr = document.getElementById('btnFr');
+        const btnEn = document.getElementById('btnEn');
+        const btnTr = document.getElementById('btnTr');
+
+        if (lang === 'en') {
+            arSection.style.display = 'none';
+            frSection.style.display = 'none';
+            enSection.style.display = 'block';
+            trSection.style.display = 'none';
+            drawerAr.style.display = 'none';
+            drawerFr.style.display = 'none';
+            drawerEn.style.display = 'block';
+            drawerTr.style.display = 'none';
+            document.documentElement.dir = 'ltr';
+            document.documentElement.lang = 'en';
+            btnAr.classList.remove('active');
+            btnFr.classList.remove('active');
+            btnEn.classList.add('active');
+            btnTr.classList.remove('active');
+        } else if (lang === 'tr') {
+            arSection.style.display = 'none';
+            frSection.style.display = 'none';
+            enSection.style.display = 'none';
+            trSection.style.display = 'block';
+            drawerAr.style.display = 'none';
+            drawerFr.style.display = 'none';
+            drawerEn.style.display = 'none';
+            drawerTr.style.display = 'block';
+            document.documentElement.dir = 'ltr';
+            document.documentElement.lang = 'tr';
+            btnAr.classList.remove('active');
+            btnFr.classList.remove('active');
+            btnEn.classList.remove('active');
+            btnTr.classList.add('active');
+        } else if (lang === 'fr') {
+            arSection.style.display = 'none';
+            frSection.style.display = 'block';
+            enSection.style.display = 'none';
+            trSection.style.display = 'none';
+            drawerAr.style.display = 'none';
+            drawerFr.style.display = 'block';
+            drawerEn.style.display = 'none';
+            drawerTr.style.display = 'none';
+            document.documentElement.dir = 'ltr';
+            document.documentElement.lang = 'fr';
+            btnAr.classList.remove('active');
+            btnFr.classList.add('active');
+            btnEn.classList.remove('active');
+            btnTr.classList.remove('active');
+        } else {
+            arSection.style.display = 'block';
+            frSection.style.display = 'none';
+            enSection.style.display = 'none';
+            trSection.style.display = 'none';
+            drawerAr.style.display = 'block';
+            drawerFr.style.display = 'none';
+            drawerEn.style.display = 'none';
+            drawerTr.style.display = 'none';
+            document.documentElement.dir = 'rtl';
+            document.documentElement.lang = 'ar';
+            btnAr.classList.add('active');
+            btnFr.classList.remove('active');
+            btnEn.classList.remove('active');
+            btnTr.classList.remove('active');
+        }
+    }
+</script>
+
+</body>
+</html>

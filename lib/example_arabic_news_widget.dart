@@ -51,7 +51,6 @@ class _ArabicNewsExampleState extends State<ArabicNewsExample> {
         
         // Subscribe to logs for processing logs
         _logSubscription = ArabicNewsProcessor.instance.logStream.listen((log) {
-          debugPrint(log);
         });
       }
     

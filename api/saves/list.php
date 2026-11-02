@@ -14,7 +14,7 @@ try {
     $stmt = $db->query($countSql, [$userId]);
     $total = intval($stmt->fetchColumn());
 
-    $sql = "SELECT n.id, n.title, n.summary, n.image_url, n.published_at, n.category
+    $sql = "SELECT n.id, n.title, n.summary, n.content, n.image_url, n.published_at, n.category, n.source_url_article, n.source_name
             FROM yn_user_saved_articles s
             JOIN yn_news n ON s.article_id = n.id
             WHERE s.user_id = ? AND n.status = 'published'
@@ -28,9 +28,12 @@ try {
             'id' => $a['id'],
             'title' => $a['title'],
             'summary' => $a['summary'],
+            'content' => $a['content'] ?? '',
             'imageUrl' => $a['image_url'],
+            'sourceUrl' => !empty($a['source_url_article']) ? $a['source_url_article'] : $a['id'],
             'publishedAt' => intval($a['published_at']),
-            'category' => $a['category']
+            'category' => $a['category'],
+            'source' => ['name' => $a['source_name'] ?? '']
         ];
     }, $articles);
 

@@ -188,6 +188,7 @@ class NewsBlenderService {
       intelligenceJson: primary.intelligenceJson,
       sourceCount: uniqueSourceDomains.length,
       sources: allSources,
+      isFresh: NewsModel.computeFreshness(latestDate.isNotEmpty ? latestDate : primary.publishDate),
     );
     blendedModel.relatedArticles = List<NewsModel>.from(articles);
     return blendedModel;
@@ -324,6 +325,7 @@ class NewsBlenderService {
       intelligenceJson: primary.intelligenceJson,
       sourceCount: uniqueSourceDomains.length,
       sources: allSources,
+      isFresh: NewsModel.computeFreshness(latestDate.isNotEmpty ? latestDate : primary.publishDate),
     );
 
     blendedModel.relatedArticles = List<NewsModel>.from(articles);
@@ -835,3 +837,4 @@ class NewsBlenderService {
     return domain.isNotEmpty ? domain : 'مصدر إخباري';
   }
 }
+

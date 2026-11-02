@@ -107,6 +107,16 @@ CREATE TABLE `yn_users` (
   KEY `idx_users_role` (`role`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Insert Default Admin User (Password: admin123)
+INSERT INTO `yn_users` (`id`, `email`, `display_name`, `password_hash`, `role`, `created_at`)
+VALUES ('admin_master_001', 'admin@yallanews.com', 'مدير النظام', '$2y$10$32rB21U4mR3lZkC9vK4k6exPjYxN2kE6nJ8u9vB8xZ8nZ9xM0p1qW', 'admin', NOW())
+ON DUPLICATE KEY UPDATE `role` = 'admin';
+
+INSERT INTO `yn_users` (`id`, `email`, `display_name`, `password_hash`, `role`, `created_at`)
+VALUES ('admin_master_002', 'admin@inoov.com', 'Inoov Admin', '$2y$10$32rB21U4mR3lZkC9vK4k6exPjYxN2kE6nJ8u9vB8xZ8nZ9xM0p1qW', 'admin', NOW())
+ON DUPLICATE KEY UPDATE `role` = 'admin';
+
+
 -- ------------------------------------------------------------
 -- 6. User Following (many-to-many)
 -- ------------------------------------------------------------
@@ -182,4 +192,57 @@ CREATE TABLE `yn_trending_searches` (
   KEY `idx_trending_searches_language` (`language`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ------------------------------------------------------------
+-- 11. Active App Sessions (Live Stats)
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `yn_active_sessions`;
+CREATE TABLE `yn_active_sessions` (
+  `session_id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) DEFAULT NULL,
+  `device_os` VARCHAR(32) DEFAULT 'unknown',
+  `app_version` VARCHAR(16) DEFAULT '1.0.0',
+  `ip_address` VARCHAR(45) DEFAULT NULL,
+  `country` VARCHAR(64) DEFAULT 'مصر',
+  `country_code` VARCHAR(8) DEFAULT 'EG',
+  `is_new_install` TINYINT(1) DEFAULT 0,
+  `last_ping` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`session_id`),
+  KEY `idx_active_sessions_ping` (`last_ping`),
+  KEY `idx_active_sessions_user` (`user_id`),
+  KEY `idx_active_sessions_country` (`country_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
+-- 12. In-App User Behavior Events (Real Analytics)
+--    Fed by the Flutter app via api/stats/event.php
+--    Event types: app_open, app_background, app_foreground, article_open,
+--    article_read, like, unlike, save, unsave, share, comment, search,
+--    category_view, screen_view, tts_play, error
+-- ------------------------------------------------------------
+DROP TABLE IF EXISTS `yn_analytics_events`;
+CREATE TABLE `yn_analytics_events` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `event_type` VARCHAR(32) NOT NULL,
+  `session_id` VARCHAR(64) NOT NULL,
+  `user_id` VARCHAR(64) DEFAULT NULL,
+  `device_os` VARCHAR(32) DEFAULT 'unknown',
+  `app_version` VARCHAR(16) DEFAULT '1.0.0',
+  `country_code` VARCHAR(8) DEFAULT 'EG',
+  `article_id` VARCHAR(255) DEFAULT NULL,
+  `article_title` VARCHAR(500) DEFAULT NULL,
+  `category` VARCHAR(64) DEFAULT NULL,
+  `duration_ms` INT UNSIGNED DEFAULT 0,
+  `metadata` JSON DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_events_type` (`event_type`),
+  KEY `idx_events_created` (`created_at`),
+  KEY `idx_events_session` (`session_id`),
+  KEY `idx_events_session_type` (`session_id`, `event_type`),
+  KEY `idx_events_article` (`article_id`(191)),
+  KEY `idx_events_category` (`category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
+

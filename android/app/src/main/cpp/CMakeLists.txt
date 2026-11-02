@@ -5,7 +5,6 @@ project(yalla_engine LANGUAGES CXX)
 
 # Android platform detection
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    set(CMAKE_ANDROID_STL_TYPE "gnustd")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fPIC")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 else()
@@ -39,3 +38,35 @@ target_include_directories(yalla_engine PRIVATE
 )
 
 target_link_libraries(yalla_engine PRIVATE android log)
+
+# ── newsBrain Native Engine for Android ──
+set(NEWS_BRAIN_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../windows/news_brain")
+
+set(NEWS_BRAIN_SOURCES
+    "${NEWS_BRAIN_ROOT}/src/page_skeleton.cpp"
+    "${NEWS_BRAIN_ROOT}/src/html_parser.cpp"
+    "${NEWS_BRAIN_ROOT}/src/http_fetcher.cpp"
+    "${NEWS_BRAIN_ROOT}/src/page_scanner.cpp"
+    "${NEWS_BRAIN_ROOT}/src/article_brain.cpp"
+    "${NEWS_BRAIN_ROOT}/src/article_rebuilder.cpp"
+    "${NEWS_BRAIN_ROOT}/src/news_brain.cpp"
+)
+
+add_library(newsBrain SHARED ${NEWS_BRAIN_SOURCES})
+
+set_target_properties(newsBrain PROPERTIES
+    OUTPUT_NAME "newsBrain"
+    SOVERSION "1"
+    POSITION_INDEPENDENT_CODE TRUE
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED TRUE
+    CXX_EXTENSIONS FALSE
+)
+
+target_include_directories(newsBrain PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${NEWS_BRAIN_ROOT}/include
+    ${YALLA_ENGINE_ROOT}
+)
+
+target_link_libraries(newsBrain PRIVATE android log yalla_engine)

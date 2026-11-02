@@ -16,6 +16,7 @@ import 'news_uri_parser.dart';
 import 'image_validator_service.dart';
 import 'engine_ffi.dart';
 import 'arabic_normalizer.dart';
+import 'msn_image_fetcher.dart';
 
 enum EngineMode {
   ffi, // Native Direct C++ DLL via Dart FFI
@@ -78,7 +79,6 @@ class YallaEngineService extends ChangeNotifier {
     _consoleLogs.add(log);
     _logStreamController.add(log);
     notifyListeners();
-    debugPrint(log);
     _writeLogToFile(log);
   }
 
@@ -197,28 +197,43 @@ class YallaEngineService extends ChangeNotifier {
     'crime', 'corruption', 'scandal', 'protest', 'tension', 'fear',
   };
 
-  static double _calculateSentiment(String text) {
+  static double analyzeSentiment(String text) {
     if (text.isEmpty) return 0.0;
     final normalizedText = ArabicTextNormalizer.normalize(text).toLowerCase();
     int positiveCount = 0;
     int negativeCount = 0;
     final words = normalizedText.split(RegExp(r'\s+'));
+    bool negated = false;
     for (final word in words) {
       final w = word.replaceAll(RegExp(r'[^\w\u0600-\u06FF]'), '');
       if (w.isEmpty) continue;
-      if (_positiveWords.contains(w)) positiveCount++;
-      if (_negativeWords.contains(w)) negativeCount++;
+      if ({'لا', 'ليس', 'ليست', 'لم', 'لن', 'ما', 'غير', 'بدون', 'لايزال'}.contains(w)) {
+        negated = true;
+        continue;
+      }
+      final isPositive = _positiveWords.contains(w) || _positiveWords.any((p) => w.startsWith(p) && p.length >= 4);
+      final isNegative = _negativeWords.contains(w) || _negativeWords.any((n) => w.startsWith(n) && n.length >= 4);
+      if (isPositive) {
+        if (negated) negativeCount++; else positiveCount++;
+        negated = false;
+      } else if (isNegative) {
+        if (negated) positiveCount++; else negativeCount++;
+        negated = false;
+      }
     }
     final total = positiveCount + negativeCount;
     if (total == 0) return 0.0;
     return ((positiveCount - negativeCount) / total).clamp(-1.0, 1.0);
   }
 
+  static double _calculateSentiment(String text) => analyzeSentiment(text);
+
   // ─── Title Cleaner ────────────────────────────────────────────────────────────
   static String cleanTitle(String title, String url) {
     if (title.isEmpty) return title;
 
     String cleaned = title;
+    cleaned = cleaned.replaceAll('\u00A0', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
     // Extract domain from URL for source-name removal
     final uri = Uri.tryParse(url);
@@ -227,20 +242,25 @@ class YallaEngineService extends ChangeNotifier {
     // Common separators between title and source/category
     final separators = [' - ', ' | ', ' :: ', ' — ', ' – ', ' : ', ' › ', ' « ', ' » '];
 
-    for (final sep in separators) {
-      if (cleaned.contains(sep)) {
-        final parts = cleaned.split(sep);
-        if (parts.length >= 2) {
-          final lastPart = parts.last.trim();
-          // If the last part looks like a source name or category (short, no sentence structure)
-          final words = lastPart.split(RegExp(r'\s+'));
-          if (words.length <= 5 && !lastPart.contains('.') && !lastPart.contains('?')) {
-            cleaned = parts.take(parts.length - 1).join(sep).trim();
-          }
+    // Publisher names are commonly chained after the real headline:
+    // "... | رياضة | الجزيرة نت". Remove all trailing source/category
+    // segments, not just the last one.
+    bool removedSuffix;
+    do {
+      removedSuffix = false;
+      for (final sep in separators) {
+        final index = cleaned.lastIndexOf(sep);
+        if (index < 0) continue;
+        final lastPart = cleaned.substring(index + sep.length).trim();
+        final words = lastPart.split(RegExp(r'\s+'));
+        if (words.length <= 8 && !lastPart.contains('.') && !lastPart.contains('?') &&
+            _looksLikePublisher(lastPart)) {
+          cleaned = cleaned.substring(0, index).trim();
+          removedSuffix = true;
+          break;
         }
-        break;
       }
-    }
+    } while (removedSuffix);
 
     // Remove domain-derived source name if present at end
     if (domain.isNotEmpty) {
@@ -250,6 +270,21 @@ class YallaEngineService extends ChangeNotifier {
         final escaped = RegExp.escape(sourceName);
         final regex = RegExp('\\s*[-|:]?\\s*$escaped\\s*\$', caseSensitive: false);
         cleaned = cleaned.replaceAll(regex, '').trim();
+      }
+      final aliases = <String, List<String>>{
+        'hesport': ['هسبورت', 'هيسبورت', 'hesport'],
+        'hespress': ['هسبريس', 'hespress'],
+        'arageek': ['أراجيك', 'اراجيك', 'arageek'],
+        'kooora': ['كووورة', 'kora', 'kooora'],
+        'alyaoum24': ['اليوم 24', 'اليوم24', 'alyaoum24'],
+        'le360': ['لي360', 'le360'],
+      };
+      for (final alias in aliases[domainParts.first] ?? const <String>[]) {
+        final pattern = '(?:\\s*(?:لـ|من|إلى|مع|عبر|بواسطة|في|عند)\\s+)?${RegExp.escape(alias)}\\s*' + r'$';
+        cleaned = cleaned.replaceFirst(
+          RegExp(pattern, caseSensitive: false),
+          '',
+        ).trim();
       }
     }
 
@@ -275,6 +310,23 @@ class YallaEngineService extends ChangeNotifier {
     return cleaned;
   }
 
+  static bool _looksLikePublisher(String text) {
+    final lower = text.toLowerCase();
+    const markers = <String>[
+      'جريدة', 'صحيفة', 'مجلة', 'موقع', 'وكالة', 'شبكة', 'قناة', 'إذاعة',
+      'نت', 'نيوز', 'news', 'times', 'post', 'press', 'daily', 'media',
+      'kooora', 'كووورة', 'المنتخب', 'الرياضية', 'الاقتصادية', 'الجزيرة',
+      'هسبريس', 'هبة بريس', 'اليوم', 'اليوم24', 'le360', 'رويترز', 'reuters',
+    ];
+    if (markers.any(lower.contains)) return true;
+    // A suffix after a headline separator with a short, title-like n-gram is
+    // usually a publisher name. Require at least one non-generic token so we
+    // do not remove ordinary one-word headline endings.
+    final words = lower.split(RegExp(r'\s+')).where((w) => w.length > 2).toList();
+    return words.length >= 2 && words.length <= 8 &&
+        !RegExp(r'[.!؟،؛]').hasMatch(text);
+  }
+
   static bool hasValidTitle(String? title) {
     if (title == null || title.isEmpty) return false;
     final words = title.trim().split(RegExp(r'\s+'));
@@ -287,7 +339,7 @@ class YallaEngineService extends ChangeNotifier {
     String summary,
     String content,
   ) {
-    final combined = '$title $summary $content'.toLowerCase();
+    final combined = ArabicTextNormalizer.normalize('$title $summary $content').toLowerCase();
 
     const stopWords = {
       'the',
@@ -442,6 +494,12 @@ class YallaEngineService extends ChangeNotifier {
       'further',
       'once',
       'until',
+      'من', 'في', 'على', 'إلى', 'عن', 'مع', 'هذا', 'هذه', 'ذلك', 'الذي',
+      'التي', 'الذين', 'أن', 'إن', 'كان', 'كانت', 'يكون', 'تكون', 'تم',
+      'تمت', 'قد', 'كل', 'أو', 'ثم', 'بعد', 'قبل', 'خلال', 'حيث', 'كما',
+      'بين', 'حول', 'لدى', 'لذلك', 'لكن', 'ليس', 'ليست', 'هو', 'هي', 'هم',
+      'هن', 'نحن', 'أنا', 'أنت', 'الخبر', 'الأخبار', 'قال', 'وقالت', 'وأضاف',
+      'اليوم', 'أمس', 'غدا', 'منذ', 'حتى', 'أيضا', 'أي', 'بشكل', 'نحو',
     };
 
     // Tokenize: allow Latin + Arabic characters
@@ -1054,7 +1112,9 @@ class YallaEngineService extends ChangeNotifier {
 
     if (hasGoodImage) {
       finalImageUrl = extractedImages[bestIndex];
-      for (int i = 1; i < validatedIndices.length && i <= 1; i++) {
+      // Keep the lead image separate; place up to three additional relevant
+      // images between story paragraphs to make long articles readable.
+      for (int i = 1; i < validatedIndices.length && i <= 3; i++) {
         final idx = validatedIndices[i];
         if (scores[idx] >= 2.0) {
           additionalImages.add(extractedImages[idx]);
@@ -1082,7 +1142,69 @@ class YallaEngineService extends ChangeNotifier {
       );
     }
 
+    // Add contextual MSN/Bing images after selected paragraphs. Each query
+    // gets a pool of five results and one result is chosen randomly, so the
+    // same article can have varied but still topic-related illustrations.
+    content = await _injectMsnImagesByParagraph(
+      content,
+      title: title,
+      maxImages: 3,
+    );
+
     return {'imageUrl': finalImageUrl, 'content': content};
+  }
+
+  Future<String> _injectMsnImagesByParagraph(
+    String content, {
+    required String title,
+    int maxImages = 3,
+  }) async {
+    final paragraphs = content
+        .split(RegExp(r'\n\s*\n'))
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (paragraphs.length < 2) return content;
+
+    final targets = <int>[];
+    for (int i = 1; i < paragraphs.length && targets.length < maxImages; i += 2) {
+      if (paragraphs[i].length >= 50 && !paragraphs[i].contains('<img')) {
+        targets.add(i);
+      }
+    }
+    final inserts = <int, String>{};
+    final random = Random();
+    for (final index in targets) {
+      final paragraph = paragraphs[index];
+      final sentence = paragraph
+          .split(RegExp(r'(?<=[.!؟])\s+'))
+          .where((s) => s.trim().length >= 20)
+          .take(1)
+          .join();
+      final query = '$title ${sentence.isEmpty ? paragraph : sentence}'
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      try {
+        final pool = await MsnImageFetcher.fetchImages(
+          query.length > 240 ? query.substring(0, 240) : query,
+          maxImages: 5,
+        );
+        if (pool.isNotEmpty) {
+          inserts[index] = pool[random.nextInt(pool.length.clamp(1, 5))];
+        }
+      } catch (_) {}
+    }
+    if (inserts.isEmpty) return content;
+
+    const style = 'width:100%;max-height:380px;object-fit:cover;border-radius:12px;margin:16px 0;display:block;';
+    final output = StringBuffer();
+    for (int i = 0; i < paragraphs.length; i++) {
+      output.write(paragraphs[i]);
+      final image = inserts[i];
+      if (image != null) output.write('\n\n<img src="$image" style="$style" loading="lazy" />');
+      if (i < paragraphs.length - 1) output.write('\n\n');
+    }
+    return output.toString();
   }
 
   static bool _isRejectedImage(String url, String alt, String titleText) {
@@ -1111,27 +1233,32 @@ class YallaEngineService extends ChangeNotifier {
     // Reject images with suspiciously short filenames or generic names
     final filename = url.split('/').last;
     if (filename.length < 5) return true;
-    if (filename.contains('?')) return true;
-
     return false;
   }
 
 // Helper to resolve relative image URLs to absolute URLs.
   String _resolveImageUrl(String imgUrl, Uri? pageUri, String origin) {
-    if (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
-      return imgUrl;
+    var value = imgUrl
+        .trim()
+        .replaceAll('&amp;', '&')
+        .replaceAll('&#x2F;', '/')
+        .replaceAll('&quot;', '"')
+        .replaceAll(r'\/', '/');
+    // Strip a possible url(...) CSS wrapper.
+    if (value.startsWith('url(') && value.endsWith(')')) {
+      value = value.substring(4, value.length - 1).trim();
+      if ((value.startsWith("'") && value.endsWith("'")) ||
+          (value.startsWith('"') && value.endsWith('"'))) {
+        value = value.substring(1, value.length - 1);
+      }
     }
-    if (imgUrl.startsWith('//')) {
-      return 'https:$imgUrl';
-    }
-    if (imgUrl.startsWith('/')) {
-      return '$origin$imgUrl';
-    }
-    // Relative to the page path
-    final String basePath = pageUri != null && pageUri.path.isNotEmpty
-        ? '${pageUri.origin}${pageUri.path}/'
-        : '$origin/';
-    return '$basePath$imgUrl';
+    if (value.startsWith('//')) value = 'https:$value';
+    final parsed = Uri.tryParse(value);
+    if (parsed != null && parsed.hasScheme && parsed.host.isNotEmpty) return value;
+    if (pageUri == null) return value;
+    // Uri.resolve handles root-relative, ../relative, query and fragment URLs.
+    final resolved = pageUri.resolve(value);
+    return resolved.hasScheme && resolved.host.isNotEmpty ? resolved.toString() : value;
   }
 
   // Business logic methods (restored with fixes)
@@ -1288,6 +1415,65 @@ class YallaEngineService extends ChangeNotifier {
   }
 
   /// Processes a news URL and returns a news model
+  static String _cleanStoryParagraphs(String text) {
+    final raw = text
+        .replaceAll('\u00a0', ' ')
+        .split(RegExp(r'\n+'))
+        .map((p) => p.replaceAll(RegExp(r'\s+'), ' ').trim())
+        .where((p) => p.length >= 35)
+        .where((p) => !_isPageMetadataLine(p))
+        .where((p) => !RegExp(
+          r'(?:self\.__next|__next_f|webpack|push\(\[|application/ld\+json|"@context"|"@type"|^\s*[\[{])',
+          caseSensitive: false,
+        ).hasMatch(p))
+        .toList();
+
+    final result = <String>[];
+    final signatures = <Set<String>>[];
+    for (final paragraph in raw) {
+      final words = paragraph
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^\w\u0600-\u06FF\s]'), ' ')
+          .split(RegExp(r'\s+'))
+          .where((w) => w.length >= 3)
+          .toSet();
+      if (words.isEmpty) continue;
+      final duplicate = signatures.any((previous) {
+        final union = previous.union(words).length;
+        final overlap = previous.intersection(words).length;
+        return union > 0 && overlap / union >= 0.78;
+      });
+      if (!duplicate) {
+        result.add(paragraph);
+        signatures.add(words);
+      }
+    }
+    return result.join('\n\n');
+  }
+
+  static bool _isPageMetadataLine(String paragraph) {
+    final value = paragraph.trim();
+    final lower = value.toLowerCase();
+    // Dates/times copied from article headers must not become story prose.
+    final hasDate = RegExp(
+      r'(?:الأحد|الإثنين|الثلاثاء|الأربعاء|الخميس|الجمعة|السبت)،?\s*\d{1,2}\s+(?:يناير|فبراير|مارس|أبريل|مايو|يونيو|يوليو|أغسطس|سبتمبر|أكتوبر|نوفمبر|ديسمبر)\s+\d{4}|\d{1,2}:\d{2}\s*[صم]',
+      caseSensitive: false,
+    ).hasMatch(value);
+    if (hasDate && value.length < 90) return true;
+    if (RegExp(r'^(?:كتب|بقلم|المصدر|محرر|تصوير|متابعة)\s*[:：]', caseSensitive: false).hasMatch(value)) return true;
+    if (lower.contains('copyright') || lower.contains('جميع الحقوق محفوظة')) return true;
+    // Header metadata often appears as isolated short labels (venue, team,
+    // competition, author). Require narrative punctuation/length for these.
+    if (value.length < 45 && !RegExp(r'[.!؟،؛:：]').hasMatch(value)) {
+      final metadataWords = <String>[
+        'فريق', 'ملعب', 'استاد', 'كأس', 'دوري', 'بطولة', 'الكاتب', 'كتب',
+        'المراسل', 'عاصمة', 'القاهرة', 'وادي', 'الزمالك', 'الأهلي',
+      ];
+      if (metadataWords.any(value.contains)) return true;
+    }
+    return false;
+  }
+
   Future<Map<String, dynamic>> processNewsUrl(
     String url,
     String localDbJson, {
@@ -1446,16 +1632,7 @@ final descMatch = RegExp(
       }
       
       // Remove duplicate paragraphs before TinyLLM cleaning
-      final paragraphs = decodedContent.split('\n').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
-      final seen = <String>{};
-      final unique = <String>[];
-      for (final p in paragraphs) {
-        final key = p.replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
-        if (seen.add(key)) {
-          unique.add(p);
-        }
-      }
-      decodedContent = unique.join('\n\n');
+      decodedContent = _cleanStoryParagraphs(decodedContent);
       
       // TinyLLM C++ Content Cleaning
       String tinyLlmCleanedContent = decodedContent;
@@ -1484,16 +1661,7 @@ final descMatch = RegExp(
       }
       
       // Remove duplicate paragraphs again after TinyLLM cleaning
-      final postParagraphs = tinyLlmCleanedContent.split('\n').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
-      final postSeen = <String>{};
-      final postUnique = <String>[];
-      for (final p in postParagraphs) {
-        final key = p.replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
-        if (postSeen.add(key)) {
-          postUnique.add(p);
-        }
-      }
-      tinyLlmCleanedContent = postUnique.join('\n\n');
+      tinyLlmCleanedContent = _cleanStoryParagraphs(tinyLlmCleanedContent);
       
       // Local Ollama rewrite: removed to preserve real article content
       // The app now uses extracted real content only, no LLM-generated news text
@@ -1516,18 +1684,37 @@ final descMatch = RegExp(
         imageUrl = 'https://placehold.co/800x500/1A1A2E/C62828?text=$categorySlug';
       }
       
-      // Optimized sentiment analysis
-      final optimizedSentiment = hasNativeEngine
-          ? optimizeSentiment('$cleanedTitle $tinyLlmCleanedContent')
-          : _calculateSentiment('$cleanedTitle $decodedSummary');
+      // Use the Arabic-aware Dart scorer as the source of truth. The native
+      // implementation only recognizes a few literal words and often returns
+      // 0.00 for Arabic stories.
+      final optimizedSentiment = analyzeSentiment(
+        '$cleanedTitle $decodedSummary $tinyLlmCleanedContent',
+      );
       
       // Build structured data from story elements
+      final extractedWords = extractKeywords(
+        cleanedTitle,
+        decodedSummary,
+        tinyLlmCleanedContent,
+      );
       final structuredData = <String, dynamic>{
         'persons': (storyElements['persons'] as List<dynamic>?) ?? [],
         'dates': (storyElements['dates'] as List<dynamic>?) ?? [],
         'events': (storyElements['events'] as List<dynamic>?) ?? [],
         'title_keywords': (storyElements['title_keywords'] as List<dynamic>?) ?? [],
+        // Always expose words extracted from the real story, even when the
+        // native LLM returns incomplete/empty story-elements JSON.
+        'keywords': extractedWords,
         'removed_segments': (storyElements['removed_segments'] as List<dynamic>?) ?? [],
+        'source_attributions': [
+          {
+            'name': '',
+            'domain': Uri.tryParse(url)?.host ?? '',
+            'url': url,
+            'title': cleanedTitle,
+            'publishDate': DateTime.now().toIso8601String(),
+          }
+        ],
       };
       
       // Build entities from story elements
@@ -1562,27 +1749,28 @@ final descMatch = RegExp(
              }
            }
          }
-         final newsModel = NewsModel(
-           url: url,
-           title: cleanedTitle,
-           shortTitle: generatedShortTitle,
-           summary: decodedSummary,
-          content: tinyLlmCleanedContent,
-          imageUrl: imageUrl,
-          category: 'general', // Would be determined from content analysis
-          sentiment: optimizedSentiment,
-          keywords: extractKeywords(cleanedTitle, decodedSummary, tinyLlmCleanedContent),
-          logs: '', // Could be populated with processing logs
-          author: '', // Could be extracted from meta tags
-          publishDate: DateTime.now().toIso8601String(),
-          eventType: eventType,
-          subcategory: 'general',
-          entities: entities,
-          structuredData: structuredData,
-          intelligenceJson: '',
-          sourceCount: 1,
-          sources: [url],
-        );
+final newsModel = NewsModel(
+            url: url,
+            title: cleanedTitle,
+            shortTitle: generatedShortTitle,
+            summary: decodedSummary,
+           content: tinyLlmCleanedContent,
+           imageUrl: imageUrl,
+           category: 'general', // Would be determined from content analysis
+           sentiment: optimizedSentiment,
+           keywords: extractedWords,
+           logs: '', // Could be populated with processing logs
+           author: '', // Could be extracted from meta tags
+           publishDate: DateTime.now().toIso8601String(),
+           eventType: eventType,
+           subcategory: 'general',
+           entities: entities,
+           structuredData: structuredData,
+           intelligenceJson: '',
+           sourceCount: 1,
+           sources: [url],
+           isFresh: true,
+         );
        
        if (!silent) {
          addLog('[SYSTEM] Successfully processed article: "${cleanedTitle}"');

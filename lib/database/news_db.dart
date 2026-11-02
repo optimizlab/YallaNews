@@ -213,6 +213,17 @@ class NewsDatabase {
             }
           },
         onOpen: (Database db) async {
+          // Older installations may already be at the current schema version
+          // but were created before url_blacklist was added. Do not rely only
+          // on the version callback; make this table self-healing on every
+          // open before any crawler query can use it.
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS url_blacklist (
+              url_hash TEXT PRIMARY KEY,
+              reason TEXT NOT NULL DEFAULT '',
+              added_at INTEGER NOT NULL
+            )
+          ''');
           // Verify the table has data; if not, seed it
           final count = Sqflite.firstIntValue(
             await db.rawQuery('SELECT COUNT(*) FROM sources'),
@@ -333,6 +344,14 @@ class NewsDatabase {
         confidence REAL NOT NULL DEFAULT 1.0,
         extracted_at INTEGER NOT NULL,
         FOREIGN KEY(article_url) REFERENCES crawled_articles(url) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS url_blacklist (
+        url_hash TEXT PRIMARY KEY,
+        reason TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL
       )
     ''');
   }
@@ -551,6 +570,11 @@ class NewsDatabase {
             .toList(),
       );
     }).toList();
+  }
+
+  Future<void> deleteArticleByUrl(String url) async {
+    final db = await database;
+    await db.delete('crawled_articles', where: 'url = ?', whereArgs: [url]);
   }
 
   Future<int> removeInvalidArticles() async {

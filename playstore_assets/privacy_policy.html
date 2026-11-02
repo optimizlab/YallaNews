@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سياسة الخصوصية | يلا نيوز - Privacy Policy</title>
+    <meta name="description" content="سياسة الخصوصية الرسمية لتطبيق يلا نيوز (Yalla News) - متجر جوجل بلاي. تطوير شركة INOOV">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0F172A;
+            --bg-secondary: #1E293B;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-red: #E53935;
+            --accent-red-hover: #C62828;
+            --accent-glow: rgba(229, 57, 53, 0.25);
+            --text-primary: #F8FAFC;
+            --text-secondary: #94A3B8;
+            --text-muted: #64748B;
+            --badge-bg: rgba(229, 57, 53, 0.15);
+            --radius-md: 16px;
+            --radius-lg: 24px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.8;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(229, 57, 53, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(59, 130, 246, 0.06) 0%, transparent 45%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 40px 20px 80px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 40px 24px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
+        }
+
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--badge-bg);
+            color: #FF6B6B;
+            border: 1px solid rgba(229, 57, 53, 0.3);
+            padding: 6px 18px;
+            border-radius: 999px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #FFFFFF;
+            margin-bottom: 12px;
+        }
+
+        .header-sub {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            max-width: 650px;
+            margin: 0 auto;
+        }
+
+        .meta-info {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 18px;
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            flex-wrap: wrap;
+        }
+
+        .lang-switch {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+
+        .lang-btn {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            padding: 8px 20px;
+            border-radius: 999px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .lang-btn.active, .lang-btn:hover {
+            background: var(--accent-red);
+            color: #FFFFFF;
+            border-color: var(--accent-red);
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 30px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+        }
+
+        .card.alert-card {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            position: relative;
+        }
+
+        .card.alert-card::before {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 5px;
+            background: var(--accent-red);
+            border-top-right-radius: var(--radius-md);
+            border-bottom-right-radius: var(--radius-md);
+        }
+
+        h2 {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #FFFFFF;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .icon-circle {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(229, 57, 53, 0.15);
+            color: var(--accent-red);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.15rem;
+            flex-shrink: 0;
+        }
+
+        p {
+            color: #E2E8F0;
+            margin-bottom: 12px;
+            font-size: 1rem;
+        }
+
+        p:last-child {
+            margin-bottom: 0;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 12px 0;
+        }
+
+        li {
+            position: relative;
+            padding-right: 24px;
+            margin-bottom: 10px;
+            color: #CBD5E1;
+        }
+
+        li::before {
+            content: '•';
+            position: absolute;
+            right: 8px;
+            color: var(--accent-red);
+            font-size: 1.3rem;
+            line-height: 1;
+        }
+
+        .highlight {
+            color: #FFFFFF;
+            font-weight: 700;
+        }
+
+        .dev-badge-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 18px;
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        .dev-badge-box a {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--accent-red);
+            color: #FFFFFF;
+            padding: 8px 18px;
+            border-radius: 999px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.92rem;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            padding-top: 25px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+
+        .en-section {
+            display: none;
+            direction: ltr;
+            text-align: left;
+            font-family: 'Outfit', system-ui, sans-serif;
+        }
+
+        .en-section li {
+            padding-right: 0;
+            padding-left: 24px;
+        }
+
+        .en-section li::before {
+            right: auto;
+            left: 8px;
+        }
+
+        .en-section .card.alert-card::before {
+            right: auto;
+            left: 0;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+            border-top-left-radius: var(--radius-md);
+            border-bottom-left-radius: var(--radius-md);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+
+    <div class="lang-switch">
+        <button class="lang-btn active" id="btnAr" onclick="switchLang('ar')">العربية</button>
+        <button class="lang-btn" id="btnEn" onclick="switchLang('en')">English</button>
+    </div>
+
+    <!-- ═══════════════════════ ARABIC CONTENT ═══════════════════════ -->
+    <div id="sectionAr">
+        <header>
+            <div class="brand-badge">يلا نيوز | Yalla News</div>
+            <h1>سياسة الخصوصية</h1>
+            <p class="header-sub">نلتزم بحماية خصوصيتك وبياناتك الشخصية عند استخدام تطبيق يلا نيوز على الهواتف والأجهزة الذكية</p>
+            <div class="meta-info">
+                <span>معرف التطبيق: inoov.app.yallanews</span>
+                <span>•</span>
+                <span>تاريخ السريان: أكتوبر 2026</span>
+            </div>
+        </header>
+
+        <!-- DEVELOPER ATTRIBUTION -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🏢</span>
+                الجهة المطورة للتطبيق
+            </h2>
+            <p>تطبيق <span class="highlight">يلا نيوز (Yalla News)</span> تم تطويره وتصميمه وهندسته بواسطة:</p>
+            <div class="dev-badge-box">
+                <div>
+                    <h3 style="color:#FFF; font-size:1.1rem; margin-bottom:4px;">INOOV Software Engineering</h3>
+                    <p style="color:var(--text-secondary); font-size:0.92rem; margin:0;">حلول البرمجيات والذكاء الاصطناعي وهندسة التطبيقات</p>
+                </div>
+                <a href="https://inoov.com/en" target="_blank" rel="noopener noreferrer">زيارة الموقع الرسمي ↗</a>
+            </div>
+        </section>
+
+        <!-- LEGAL DISCLAIMER -->
+        <section class="card alert-card">
+            <h2>
+                <span class="icon-circle">⚖️</span>
+                إخلاء مسؤولية المحتوى والتعليقات
+            </h2>
+            <p><span class="highlight">شركة INOOV هي الجهة المطورة هندسياً وتقنياً للتطبيق فقط:</span></p>
+            <ul>
+                <li><span class="highlight">الأخبار والمصادر:</span> تطبيق يلا نيوز يقوم بتجميع وعرض الأخبار المتاحة علناً من مصادرها الإخبارية المعتمدة عبر روابط خارجية وخلاصات الأخبار (RSS). المحتوى الإخباري والوسائط تعود مسؤوليتها الكاملة للناشرين الأصليين، ولا تتحمل شركة INOOV أي مسؤولية قانونية أو مدنية عن دقة تلك الأخبار.</li>
+                <li><span class="highlight">التعليقات والمشاركات:</span> التعليقات تعبر حصراً عن آراء مستخدميها. لا تتحمل شركة INOOV ولا إدارة التطبيق أي مسؤولية عن أي تعليقات أو آراء يطرحها القراء.</li>
+            </ul>
+        </section>
+
+        <!-- DATA COLLECTED -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">📊</span>
+                البيانات التي نقوم بجمعها
+            </h2>
+            <p>نحرص على جمع الحد الأدنى الضروري من البيانات لتقديم خدمة مستقرة وفعالة:</p>
+            <ul>
+                <li><span class="highlight">معلومات الحساب الاختيارية:</span> إذا قمت بإنشاء حساب، نطلب فقط (البريد الإلكتروني، الاسم المستعار، كلمة المرور المشفرة) لحفظ مفضلاتك وإمكانية التعليق.</li>
+                <li><span class="highlight">تفضيلات القراءة والمحفوظات:</span> يتم تخزين الأخبار المحفوظة والمفضلة محلياً على جهازك لسرعة الوصول والقراءة دون اتصال بالإنترنت.</li>
+                <li><span class="highlight">بيانات فنية مجهولة المصدر:</span> مثل نوع نظام التشغيل (Android)، إصدار التطبيق، ورمز الدولة الجغرافي العام لتقديم الأخبار ذات الصلة جغرافياً وإحصاءات الأداء المجهولة.</li>
+            </ul>
+        </section>
+
+        <!-- PERMISSIONS -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🔑</span>
+                أذونات التطبيق على أندرويد
+            </h2>
+            <ul>
+                <li><span class="highlight">INTERNET (الاتصال بالإنترنت):</span> ضروري لتحديث الأخبار وجلب المقالات والتعليقات في الوقت الفعلي.</li>
+                <li><span class="highlight">ACCESS_NETWORK_STATE (حالة الشبكة):</span> لفحص توفر الاتصال بالإنترنت وتقديم وضع القراءة دون اتصال (Offline Mode) بسلاسة.</li>
+            </ul>
+        </section>
+
+        <!-- THIRD PARTY SERVICES -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🔗</span>
+                الخدمات الخارجية والمكتبات
+            </h2>
+            <p>قد يستخدم التطبيق خدمات قياسية معتمدة لضمان الجودة ومتابعة استقرار التطبيق وحمايته من الأعطال:</p>
+            <ul>
+                <li><span class="highlight">Google Play Services & Firebase:</span> لتسجيل تقارير الأعطال البرمجية والتحليلات المجهولة لتحسين تجربة المستخدم.</li>
+            </ul>
+        </section>
+
+        <!-- DATA SECURITY -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🛡️</span>
+                أمان البيانات وحمايتها
+            </h2>
+            <p>تستخدم المنصة اتصالات مشفرة وفق معايير بروتوكول HTTPS / SSL الآمنة لنقل كافة البيانات بين التطبيق والخوادم. لا نقوم إطلاقاً ببيع أو تأجير أو مشاركة أي بيانات شخصية مع أطراف ثالثة لأغراض تجارية أو إعلانية.</p>
+        </section>
+
+        <!-- ACCOUNT DELETION -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🗑️</span>
+                حذف الحساب والبيانات (Google Play Requirement)
+            </h2>
+            <p>يحق لأي مستخدم حذف حسابه وبياناته بالكامل في أي وقت عبر التطبيق (من خلال قائمة الإعدادات > الملف الشخصي > حذف الحساب) أو بالتواصل المباشر مع فريق الدعم الفني، وسيتم حذف جميع البيانات المرتبطة بالحساب فوراً وبشكل نهائي.</p>
+        </section>
+
+        <!-- CHILDREN -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">👶</span>
+                خصوصية الأطفال
+            </h2>
+            <p>التطبيق مخصص للجمهور العام وللمهتمين بمتابعة الأخبار العامة، ولا يوجه خدماته للأطفال دون سن 13 عاماً، ولا يقوم بجمع أي معلومات من الأطفال عمداً.</p>
+        </section>
+
+        <!-- CONTACT -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">✉️</span>
+                التواصل والدعم الفني
+            </h2>
+            <p>لأي استفسارات حول سياسة الخصوصية أو طلبات حذف البيانات، يرجى التواصل عبر المنصة الرسمية لشركة INOOV:</p>
+            <p><span class="highlight">الموقع الرسمي:</span> <a href="https://inoov.com/en" style="color:#FF6B6B; text-decoration:none;" target="_blank">https://inoov.com/en</a></p>
+        </section>
+    </div>
+
+    <!-- ═══════════════════════ ENGLISH CONTENT ═══════════════════════ -->
+    <div id="sectionEn" class="en-section">
+        <header>
+            <div class="brand-badge">Yalla News | يلا نيوز</div>
+            <h1>Privacy Policy</h1>
+            <p class="header-sub">We are committed to safeguarding your privacy when you use the Yalla News mobile application.</p>
+            <div class="meta-info">
+                <span>Application ID: inoov.app.yallanews</span>
+                <span>•</span>
+                <span>Effective Date: October 2026</span>
+            </div>
+        </header>
+
+        <!-- DEVELOPER ATTRIBUTION -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🏢</span>
+                Application Developer
+            </h2>
+            <p>The <span class="highlight">Yalla News</span> mobile application was engineered and developed by:</p>
+            <div class="dev-badge-box">
+                <div>
+                    <h3 style="color:#FFF; font-size:1.1rem; margin-bottom:4px;">INOOV Software Engineering</h3>
+                    <p style="color:var(--text-secondary); font-size:0.92rem; margin:0;">AI, Enterprise Software & Mobile Solutions</p>
+                </div>
+                <a href="https://inoov.com/en" target="_blank" rel="noopener noreferrer">Visit Official Website ↗</a>
+            </div>
+        </section>
+
+        <!-- LEGAL DISCLAIMER -->
+        <section class="card alert-card">
+            <h2>
+                <span class="icon-circle">⚖️</span>
+                Content & Comments Legal Disclaimer
+            </h2>
+            <p><span class="highlight">INOOV is strictly the technical and software engineering developer of the application:</span></p>
+            <ul>
+                <li><span class="highlight">News Content:</span> Yalla News aggregates publicly available news feeds and journalistic publications from trusted third-party publishers with original attribution. Original publishers bear full legal and intellectual responsibility for their articles. INOOV and Yalla News disclaim any liability for third-party news accuracy.</li>
+                <li><span class="highlight">User Comments:</span> Comments and statements made in interactive areas belong solely to their respective authors. INOOV and Yalla News bear no civil or legal liability for user remarks.</li>
+            </ul>
+        </section>
+
+        <!-- DATA COLLECTED -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">📊</span>
+                Data We Collect
+            </h2>
+            <p>We believe in minimal data collection to provide a fast, safe, and tailored reading experience:</p>
+            <ul>
+                <li><span class="highlight">Account Information (Optional):</span> If you register an account, we collect your email, display name, and securely hashed credentials to synchronize your bookmarks and facilitate comments.</li>
+                <li><span class="highlight">Local Reading Preferences:</span> Saved news articles and bookmarks are stored directly on your device storage for offline reading.</li>
+                <li><span class="highlight">Technical Diagnostics:</span> Anonymous telemetry such as device operating system (Android), app version, and country locale for geographic news categorization.</li>
+            </ul>
+        </section>
+
+        <!-- PERMISSIONS -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🔑</span>
+                Android Device Permissions
+            </h2>
+            <ul>
+                <li><span class="highlight">INTERNET:</span> Required to stream and fetch the latest breaking news stories and updates.</li>
+                <li><span class="highlight">ACCESS_NETWORK_STATE:</span> Used to detect network availability and switch smoothly into offline mode.</li>
+            </ul>
+        </section>
+
+        <!-- THIRD PARTIES -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🔗</span>
+                Third-Party Analytics & Infrastructure
+            </h2>
+            <p>We utilize trusted mobile development services such as Google Play Services and Firebase for anonymous crash reporting and performance metrics to maintain high stability.</p>
+        </section>
+
+        <!-- SECURITY -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🛡️</span>
+                Data Protection & Encryption
+            </h2>
+            <p>All network communications between the application and servers are strictly encrypted using industry-standard HTTPS / SSL. We never sell, lease, or monetize personal user information.</p>
+        </section>
+
+        <!-- ACCOUNT DELETION -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">🗑️</span>
+                Account & Data Deletion (Google Play Compliance)
+            </h2>
+            <p>Users have the right to delete their account and associated data at any time from within the app (Settings > Account > Delete Account) or by reaching out to support. All account data will be permanently wiped upon request.</p>
+        </section>
+
+        <!-- CHILDREN -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">👶</span>
+                Children's Privacy
+            </h2>
+            <p>Yalla News is intended for general audiences and news readers. It is not targeted toward children under 13 years of age, and we do not knowingly collect information from children.</p>
+        </section>
+
+        <!-- CONTACT -->
+        <section class="card">
+            <h2>
+                <span class="icon-circle">✉️</span>
+                Contact Information
+            </h2>
+            <p>If you have questions or inquiries regarding our Privacy Policy or your data, please contact INOOV:</p>
+            <p><span class="highlight">Official Portal:</span> <a href="https://inoov.com/en" style="color:#FF6B6B; text-decoration:none;" target="_blank">https://inoov.com/en</a></p>
+        </section>
+    </div>
+
+    <footer>
+        <p>© 2026 Yalla News. All rights reserved. | Developed by <a href="https://inoov.com/en" target="_blank">INOOV Software Engineering</a></p>
+    </footer>
+
+</div>
+
+<script>
+    function switchLang(lang) {
+        const arSection = document.getElementById('sectionAr');
+        const enSection = document.getElementById('sectionEn');
+        const btnAr = document.getElementById('btnAr');
+        const btnEn = document.getElementById('btnEn');
+
+        if (lang === 'en') {
+            arSection.style.display = 'none';
+            enSection.style.display = 'block';
+            document.documentElement.dir = 'ltr';
+            document.documentElement.lang = 'en';
+            btnEn.classList.add('active');
+            btnAr.classList.remove('active');
+        } else {
+            arSection.style.display = 'block';
+            enSection.style.display = 'none';
+            document.documentElement.dir = 'rtl';
+            document.documentElement.lang = 'ar';
+            btnAr.classList.add('active');
+            btnEn.classList.remove('active');
+        }
+    }
+</script>
+
+</body>
+</html>

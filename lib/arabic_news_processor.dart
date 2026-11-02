@@ -321,6 +321,7 @@ class ArabicNewsProcessor {
           intelligenceJson: article.intelligenceJson,
           sourceCount: article.sourceCount,
           sources: article.sources,
+          isFresh: article.isFresh,
         );
         
         processed.add(processedArticle);
@@ -407,6 +408,7 @@ class ArabicNewsProcessor {
           intelligenceJson: article.intelligenceJson,
           sourceCount: article.sourceCount,
           sources: article.sources,
+          isFresh: article.isFresh,
         );
         
         classified.add(classifiedArticle);
@@ -528,20 +530,13 @@ NewsModel _arabicCreateRepresentative(List<NewsModel> articles) {
     intelligenceJson: base.intelligenceJson,
     sourceCount: sources.length,
     sources: sources,
+    isFresh: NewsModel.computeFreshness(latestPublishDate.isNotEmpty ? latestPublishDate : base.publishDate),
   );
 }
 
 double _arabicTitleSimilarity(NewsModel a, NewsModel b) {
-  final wordsA = a.title.toLowerCase()
-      .replaceAll(RegExp(r'[^\w\s]'), ' ')
-      .split(RegExp(r'\s+'))
-      .where((w) => w.length > 2)
-      .toSet();
-  final wordsB = b.title.toLowerCase()
-      .replaceAll(RegExp(r'[^\w\s]'), ' ')
-      .split(RegExp(r'\s+'))
-      .where((w) => w.length > 2)
-      .toSet();
+  final wordsA = ArabicTextNormalizer.extractSignificantWords(a.title);
+  final wordsB = ArabicTextNormalizer.extractSignificantWords(b.title);
   if (wordsA.isEmpty || wordsB.isEmpty) return 0.0;
   return wordsA.intersection(wordsB).length / wordsA.union(wordsB).length;
 }
@@ -559,7 +554,7 @@ List<NewsModel> _deduplicateIsolate(_DeduplicateInput input) {
       if (processedUrls.contains(other.url)) continue;
       if (other.url == article.url) continue;
       final similarity = _arabicTitleSimilarity(article, other);
-      if (similarity > 0.7) {
+      if (similarity >= 0.52) {
         similarArticles.add(other);
         processedUrls.add(other.url);
       }

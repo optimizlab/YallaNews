@@ -7,6 +7,11 @@ cache_headers(60);
 $userId = sanitize_string($_GET['user_id'] ?? '', 64);
 $articleId = sanitize_string($_GET['article_id'] ?? '', 64);
 
+// Fall back to the Bearer token (Flutter app) when no user_id is supplied.
+if (!$userId) {
+    $userId = get_authenticated_user_id();
+}
+
 if (!$userId || !$articleId) {
     json_response(['error' => 'Missing required parameters: user_id, article_id'], 400);
 }

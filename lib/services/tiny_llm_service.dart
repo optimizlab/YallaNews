@@ -28,6 +28,73 @@ class TinyLLMService {
   bool get isNotInstalled => !_loading && !_installed;
   String? get lastError => _error;
 
+  /// Deterministic editorial pass used even when the optional native model is
+  /// not installed. It formats real publisher text; it never invents facts.
+  Map<String, String> formatArticleFields({
+    required String title,
+    required String summary,
+    required String content,
+  }) {
+    final cleanTitle = _formatTitle(title);
+    final cleanSummary = _formatText(summary);
+    final cleanContent = _sanitizeMarkup(content);
+    return {
+      'title': cleanTitle,
+      'summary': cleanSummary,
+      'content': _formatStory(cleanContent),
+    };
+  }
+
+  /// Removes markup after every extraction/LLM pass. Some publishers encode
+  /// tags as &lt;p&gt; or return script/code fragments as article text.
+  static String _sanitizeMarkup(String value) {
+    var result = value
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&amp;', '&')
+        .replaceAll(r'\/', '/');
+    result = result
+        .replaceAll(RegExp(r'<script\b[^>]*>.*?</script>', dotAll: true, caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'<style\b[^>]*>.*?</style>', dotAll: true, caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'<noscript\b[^>]*>.*?</noscript>', dotAll: true, caseSensitive: false), ' ')
+        .replaceAll(RegExp(r'<[^>]+>'), ' ')
+        .replaceAll(RegExp(r'```[\s\S]*?```'), ' ')
+        .replaceAll(RegExp(r'\b(?:javascript|vbscript|data):[^\s]+', caseSensitive: false), ' ');
+    return result.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static String _formatText(String value) => _sanitizeMarkup(value)
+      .replaceAll('\u00a0', ' ')
+      .trim();
+
+  static String _formatTitle(String value) {
+    var result = _formatText(value);
+    final suffix = RegExp(r'\s*(?:\||—|–|::)\s*([^|—–]{1,70})\s*$', caseSensitive: false);
+    bool removed;
+    do {
+      final match = suffix.firstMatch(result);
+      final tail = match?.group(1)?.trim() ?? '';
+      removed = match != null && tail.split(RegExp(r'\s+')).length <= 8 &&
+          (RegExp(r'(صحيفة|جريدة|مجلة|وكالة|شبكة|قناة|نيوز|نت|news|press|media|times|kooora|الجزيرة|الرياضية|الاقتصادية|المنتخب)', caseSensitive: false).hasMatch(tail) ||
+           tail.split(RegExp(r'\s+')).length >= 2);
+      if (removed) result = result.substring(0, match!.start).trim();
+    } while (removed);
+    return result.replaceAll(RegExp(r'[|—–:]+\s*$'), '').trim();
+  }
+
+  static String _formatStory(String value) {
+    final paragraphs = value
+        .split(RegExp(r'\n\s*\n|(?<=[.!؟])\s+(?=[\u0600-\u06FFA-Za-z])'))
+        .map(_formatText)
+        .where((p) => p.length >= 20)
+        .toList();
+    final seen = <String>{};
+    return paragraphs.where((p) => seen.add(p)).join('\n\n');
+  }
+
   // ── Initialise: restore previously downloaded model ─────────────────────────
   Future<void> init() async {
     if (_loading || _installed || _failed) return;
@@ -150,6 +217,15 @@ class TinyLLMService {
         return fallback.copyWith(mainEvents: const <String>[]);
       }
 
+      // The native bridge can return analysis without story elements on some
+      // platforms. Always provide words from the actual article text so the
+      // UI and downstream services never receive an empty extraction.
+      final extractedWords = _extractStoryWords('$t $s $c');
+      if (mainEvents.isEmpty && extractedWords.isNotEmpty) {
+        mainEvents = extractedWords.take(3).toList();
+        llmSummary = mainEvents.first;
+      }
+
       return NewsLLMResult(
         category: category,
         subcategory: subcategory,
@@ -167,6 +243,25 @@ class TinyLLMService {
     } catch (e) {
       return NewsLLMResult.fallback('Inference error: $e', raw: e.toString());
     }
+  }
+
+  static List<String> _extractStoryWords(String text) {
+    final stopWords = <String>{
+      'هذا', 'هذه', 'ذلك', 'التي', 'الذي', 'على', 'إلى', 'من', 'في', 'عن',
+      'مع', 'بعد', 'قبل', 'كان', 'كانت', 'هو', 'هي', 'the', 'and', 'for',
+      'with', 'from', 'that', 'this', 'will', 'have', 'has', 'was', 'are',
+    };
+    final counts = <String, int>{};
+    for (final raw in text.split(RegExp(r'\s+'))) {
+      final word = raw
+          .replaceAll(RegExp(r'^[^\w\u0600-\u06FF]+|[^\w\u0600-\u06FF]+$'), '')
+          .toLowerCase();
+      if (word.length < 3 || stopWords.contains(word) || RegExp(r'^\d+$').hasMatch(word)) continue;
+      counts[word] = (counts[word] ?? 0) + 1;
+    }
+    final words = counts.keys.toList()
+      ..sort((a, b) => counts[b]!.compareTo(counts[a]!));
+    return words.take(20).toList();
   }
 
   /// Validate if an article is valid news (not spam, navigation, cookie disclaimer, or ad)

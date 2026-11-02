@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact | INOOV Software Engineering - Yalla News</title>
+    <meta name="description" content="Page de contact officielle d'INOOV Software Engineering, éditeur de l'application Yalla News. E-mail : info@inoov.com">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0F172A;
+            --bg-secondary: #1E293B;
+            --bg-card: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-red: #E53935;
+            --accent-red-hover: #C62828;
+            --accent-glow: rgba(229, 57, 53, 0.25);
+            --text-primary: #F8FAFC;
+            --text-secondary: #94A3B8;
+            --text-muted: #64748B;
+            --badge-bg: rgba(229, 57, 53, 0.15);
+            --radius-md: 16px;
+            --radius-lg: 24px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.8;
+            min-height: 100vh;
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(229, 57, 53, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(59, 130, 246, 0.06) 0%, transparent 45%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 40px 20px 80px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 40px 24px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
+        }
+
+        .brand-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--badge-bg);
+            color: #FF6B6B;
+            border: 1px solid rgba(229, 57, 53, 0.3);
+            padding: 6px 18px;
+            border-radius: 999px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #FFFFFF;
+            margin-bottom: 12px;
+        }
+
+        .header-sub {
+            color: var(--text-secondary);
+            font-size: 1.05rem;
+            max-width: 650px;
+            margin: 0 auto;
+        }
+
+        .lang-switch {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+
+        .lang-btn {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            padding: 8px 20px;
+            border-radius: 999px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+
+        .lang-btn.active, .lang-btn:hover {
+            background: var(--accent-red);
+            color: #FFFFFF;
+            border-color: var(--accent-red);
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 30px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+        }
+
+        h2 {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #FFFFFF;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .icon-circle {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(229, 57, 53, 0.15);
+            color: var(--accent-red);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.15rem;
+            flex-shrink: 0;
+        }
+
+        p {
+            color: #E2E8F0;
+            margin-bottom: 12px;
+            font-size: 1rem;
+        }
+
+        p:last-child {
+            margin-bottom: 0;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 12px 0;
+        }
+
+        li {
+            position: relative;
+            padding-left: 24px;
+            margin-bottom: 10px;
+            color: #CBD5E1;
+        }
+
+        li::before {
+            content: '•';
+            position: absolute;
+            left: 8px;
+            color: var(--accent-red);
+            font-size: 1.3rem;
+            line-height: 1;
+        }
+
+        .highlight {
+            color: #FFFFFF;
+            font-weight: 700;
+        }
+
+        .mailto-link {
+            color: #FF6B6B;
+            text-decoration: none;
+            font-weight: 700;
+            word-break: break-all;
+        }
+
+        .mailto-link:hover {
+            text-decoration: underline;
+        }
+
+        .dev-badge-box {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 18px;
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        .dev-badge-box a {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--accent-red);
+            color: #FFFFFF;
+            padding: 8px 18px;
+            border-radius: 999px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.92rem;
+        }
+
+        .no-phone {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            margin-top: 12px;
+            font-size: 0.95rem;
+            color: #FCA5A5;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 50px;
+            padding-top: 25px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+
+        .en-section, .ar-section, .fr-section, .tr-section {
+            display: none;
+        }
+
+        /* Contact Form Styles */
+        .contact-form-label {
+            display: block;
+            margin-top: 16px;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+        }
+
+        .contact-form-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+        }
+
+        .contact-form-input:focus {
+            outline: none;
+            border-color: var(--accent-red);
+            box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.15);
+        }
+
+        .contact-form-input::placeholder {
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+
+        .contact-form-textarea {
+            width: 100%;
+            min-height: 140px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            resize: vertical;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+        }
+
+        .contact-form-textarea:focus {
+            outline: none;
+            border-color: var(--accent-red);
+            box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.15);
+        }
+
+        .contact-form-submit {
+            margin-top: 24px;
+            width: 100%;
+            padding: 14px;
+            background: var(--accent-red);
+            border: none;
+            border-radius: var(--radius-md);
+            color: #FFFFFF;
+            font-family: inherit;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .contact-form-submit:hover {
+            background: var(--accent-red-hover);
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .contact-form-submit:active {
+            transform: scale(0.98);
+        }
+
+        .form-note {
+            margin-top: 16px;
+            font-size: 0.88rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        /* Drawer Menu Styles */
+        .drawer-toggle {
+            display: none;
+        }
+
+        .drawer-btn {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-primary);
+            transition: all 0.2s ease;
+            z-index: 1001;
+            width: 44px;
+            height: 44px;
+        }
+
+        .drawer-btn:hover {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            color: #FFFFFF;
+        }
+
+        .drawer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .drawer-toggle:checked ~ .drawer-overlay {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: -320px;
+            width: 320px;
+            height: 100vh;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+            z-index: 1001;
+            transition: right 0.3s ease;
+            padding: 80px 24px 24px;
+            overflow-y: auto;
+        }
+
+        .drawer-toggle:checked ~ .drawer {
+            right: 0;
+        }
+
+        .drawer-close {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: none;
+            border: none;
+            color: var(--text-primary);
+            font-size: 24px;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: var(--radius-md);
+            transition: all 0.2s ease;
+        }
+
+        .drawer-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .drawer-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .drawer-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .drawer-link:hover {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            transform: translateX(-4px);
+        }
+
+        .drawer-link.current {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+        }
+
+        /* Drawer language sections */
+        .drawer-ar-section, .drawer-fr-section, .drawer-en-section, .drawer-tr-section {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .drawer {
+                width: 280px;
+                right: -280px;
+            }
+        }
+
+        .en-section {
+            direction: ltr;
+            text-align: left;
+            font-family: 'Outfit', system-ui, sans-serif;
+        }
+
+        .ar-section {
+            direction: rtl;
+            text-align: right;
+            font-family: 'Cairo', system-ui, sans-serif;
+        }
+
+        .ar-section li {
+            padding-right: 26px;
+            padding-left: 0;
+        }
+
+        .ar-section li::before {
+            right: 8px;
+            left: auto;
+        }
+
+        .ar-section .alert-card::before {
+            right: 0;
+            left: auto;
+            border-top-right-radius: var(--radius-md);
+            border-bottom-right-radius: var(--radius-md);
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+        }
+
+        .tr-section {
+            direction: ltr;
+            text-align: left;
+            font-family: 'Outfit', system-ui, sans-serif;
+        }
+
+        .tr-section li {
+            padding-right: 0;
+            padding-left: 24px;
+        }
+
+        .tr-section li::before {
+            right: auto;
+            left: 8px;
+        }
+
+        .tr-section .alert-card::before {
+            right: auto;
+            left: 0;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+            border-top-left-radius: var(--radius-md);
+            border-bottom-left-radius: var(--radius-md);
+        }
+
+        @media (max-width: 640px) {
+            .container { padding: 24px 16px 60px; }
+            h1 { font-size: 1.6rem; }
+        }
+    </style>
+</head>
+<body onload="initLang()">
+
+    <div class="container">
+
+        <input type="checkbox" id="drawer-toggle" class="drawer-toggle">
+
+        <button class="drawer-btn" onclick="document.getElementById('drawer-toggle').checked = true;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+
+        <div class="drawer-overlay" onclick="document.getElementById('drawer-toggle').checked = false;"></div>
+
+        <div class="drawer">
+            <button class="drawer-close" onclick="document.getElementById('drawer-toggle').checked = false;">
+                ✕
+            </button>
+
+            <nav class="drawer-nav drawer-ar-section">
+                <a href="about.html" class="drawer-link">
+                    <span>📖</span>
+                    <span>حول</span>
+                </a>
+                <a href="contact.html" class="drawer-link current">
+                    <span>✉️</span>
+                    <span>اتصل بنا</span>
+                </a>
+                <a href="privacy.html" class="drawer-link">
+                    <span>🔒</span>
+                    <span>سياسة الخصوصية</span>
+                </a>
+                <a href="terms.html" class="drawer-link">
+                    <span>📜</span>
+                    <span>شروط الاستخدام</span>
+                </a>
+            </nav>
+
+            <nav class="drawer-nav drawer-fr-section">
+                <a href="about.html" class="drawer-link">
+                    <span>📖</span>
+                    <span>À propos</span>
+                </a>
+                <a href="contact.html" class="drawer-link current">
+                    <span>✉️</span>
+                    <span>Contact</span>
+                </a>
+                <a href="privacy.html" class="drawer-link">
+                    <span>🔒</span>
+                    <span>Politique de confidentialité</span>
+                </a>
+                <a href="terms.html" class="drawer-link">
+                    <span>📜</span>
+                    <span>Conditions d'utilisation</span>
+                </a>
+            </nav>
+
+            <nav class="drawer-nav drawer-en-section">
+                <a href="about.html" class="drawer-link">
+                    <span>📖</span>
+                    <span>About</span>
+                </a>
+                <a href="contact.html" class="drawer-link current">
+                    <span>✉️</span>
+                    <span>Contact</span>
+                </a>
+                <a href="privacy.html" class="drawer-link">
+                    <span>🔒</span>
+                    <span>Privacy Policy</span>
+                </a>
+                <a href="terms.html" class="drawer-link">
+                    <span>📜</span>
+                    <span>Terms of Service</span>
+                </a>
+            </nav>
+
+            <nav class="drawer-nav drawer-tr-section">
+                <a href="about.html" class="drawer-link">
+                    <span>📖</span>
+                    <span>Hakkında</span>
+                </a>
+                <a href="contact.html" class="drawer-link current">
+                    <span>✉️</span>
+                    <span>İletişim</span>
+                </a>
+                <a href="privacy.html" class="drawer-link">
+                    <span>🔒</span>
+                    <span>Gizlilik Politikası</span>
+                </a>
+                <a href="terms.html" class="drawer-link">
+                    <span>📜</span>
+                    <span>Hizmet Şartları</span>
+                </a>
+            </nav>
+        </div>
+
+    <div class="lang-switch">
+        <button class="lang-btn active" id="btnAr" onclick="switchLang('ar')">العربية</button>
+        <button class="lang-btn" id="btnFr" onclick="switchLang('fr')">Français</button>
+        <button class="lang-btn" id="btnEn" onclick="switchLang('en')">English</button>
+        <button class="lang-btn" id="btnTr" onclick="switchLang('tr')">Türkçe</button>
+    </div>
+
+    <!-- ═══════════════════════ ARABIC CONTENT ═══════════════════════ -->
+    <div id="sectionAr" class="ar-section">
+        <header>
+            <div class="brand-badge">يلا نيوز | Yalla News</div>
+            <h1>تواصل</h1>
+            <p class="header-sub">يمكنك التواصل معنا بسهولة للاستفسارات أو الملاحظات.</p>
+        </header>
+
+        <section class="card">
+            <h2><span class="icon-circle">🏢</span>من نحن</h2>
+            <p><span class="highlight">الناشر :</span> INOOV Software Engineering شركة مطوَّر برمجيات متخصصة في الحلول المحمولة والذكاء الاصطناعي والخدمات الرقمية.</p>
+            <p><span class="highlight">الموقع الرسمي :</span> <a href="https://apps.inoov.com/yallanews/" style="color:#FF6B6B; text-decoration:none;" target="_blank">https://apps.inoov.com/yallanews/</a></p>
+            <p><span class="highlight">البريد الإلكتروني :</span> <a href="mailto:info@inoov.com" style="color:#FF6B6B; text-decoration:none;">info@inoov.com</a></p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">✉️</span>نموذج الاتصال</h2>
+            <p>يمكنك استخدام النموذج أدناه لإرسال رسالة إلينا. سيتم إرسالها مباشرة إلى فريقنا عبر البريد الإلكتروني.</p>
+            <form action="mailto:info@inoov.com" method="post" enctype="text/plain" target="_blank">
+                <label for="ar-name" class="contact-form-label">اسمك</label>
+                <input type="text" id="ar-name" name="اسمك" placeholder="اسمك" class="contact-form-input" required>
+                <label for="ar-email" class="contact-form-label">بريدك الإلكتروني</label>
+                <input type="email" id="ar-email" name="بريدك الإلكتروني" placeholder="اسمك@example.com" class="contact-form-input" required>
+                <label for="ar-subject" class="contact-form-label">موضوع الرسالة</label>
+                <input type="text" id="ar-subject" name="موضوع الرسالة" placeholder="موضوع الرسالة" class="contact-form-input">
+                <label for="ar-message" class="contact-form-label">رسالتك</label>
+                <textarea id="ar-message" name="رسالتك" placeholder="اكتب رسالتك هنا..." class="contact-form-textarea" required></textarea>
+                <button type="submit" class="contact-form-submit">إرسال الرسالة</button>
+                <p class="form-note">سيتم فتح برنامج البريد الإلكتروني الافتراضي لديك. لا يلزم إنشاء حساب مستخدم.</p>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📎</span>روابط مفيدة</h2>
+            <ul>
+                <li><a href="about.html" style="color:#94A3B8; text-decoration:none;">عن INOOV ويلا نيوز</a></li>
+                <li><a href="privacy.html" style="color:#94A3B8; text-decoration:none;">سياسة الخصوصية</a></li>
+            </ul>
+        </section>
+
+        <div class="no-phone">
+            <strong>ملاحظة :</strong> لا يظهر رقم هاتف على هذه الصفحة. سيتم إضافة رقم هاتف بعد موافقة صريحة من فريق INOOV.
+        </div>
+    </div>
+
+    <!-- ═══════════════════════ FRENCH CONTENT ═══════════════════════ -->
+    <div id="sectionFr">
+        <header>
+            <div class="brand-badge">INOOV Software Engineering</div>
+            <h1>Contact</h1>
+            <p class="header-sub">Écrivez à l'équipe INOOV, éditeur de l'application Yalla News.</p>
+        </header>
+
+        <section class="card">
+            <h2><span class="icon-circle">🏢</span>Qui sommes-nous</h2>
+            <p><span class="highlight">Éditeur :</span> Inoov Software Engineering est une société d'ingénierie logicielle spécialisée dans les solutions mobiles, l'intelligence artificielle et les services numériques.</p>
+            <p><span class="highlight">Site officiel :</span> <a href="https://apps.inoov.com/yallanews/" class="mailto-link" target="_blank" rel="noopener noreferrer">https://apps.inoov.com/yallanews/</a></p>
+            <p><span class="highlight">E-mail :</span> <a href="mailto:info@inoov.com" class="mailto-link">info@inoov.com</a></p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">✉️</span>Formulaire de contact</h2>
+            <p>Utilisez le formulaire ci-dessous pour nous envoyer un message. Il sera transmis directement à notre équipe par e-mail.</p>
+            <form action="mailto:info@inoov.com" method="post" enctype="text/plain" target="_blank">
+                <label for="fr-name" class="contact-form-label">Nom</label>
+                <input type="text" id="fr-name" name="Nom" placeholder="Votre nom" class="contact-form-input" required>
+                <label for="fr-email" class="contact-form-label">E-mail</label>
+                <input type="email" id="fr-email" name="E-mail" placeholder="vous@example.com" class="contact-form-input" required>
+                <label for="fr-subject" class="contact-form-label">Sujet</label>
+                <input type="text" id="fr-subject" name="Sujet" placeholder="Objet de votre message" class="contact-form-input">
+                <label for="fr-message" class="contact-form-label">Message</label>
+                <textarea id="fr-message" name="Message" placeholder="Écrivez votre message ici..." class="contact-form-textarea" required></textarea>
+                <button type="submit" class="contact-form-submit">Envoyer le message</button>
+                <p class="form-note">L'envoi ouvre votre logiciel de messagerie par défaut. Aucun compte utilisateur n'est requis.</p>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📎</span>Liens utiles</h2>
+            <ul>
+                <li><a href="about.html" style="color:#94A3B8; text-decoration:none;">À propos d'INOOV et Yalla News</a></li>
+                <li><a href="privacy.html" style="color:#94A3B8; text-decoration:none;">Politique de confidentialité</a></li>
+            </ul>
+        </section>
+
+        <div class="no-phone">
+            <strong>Note :</strong> aucun numéro de téléphone n'est affiché sur cette page. Un numéro ne sera ajouté qu'après confirmation expresse de l'équipe INOOV.
+        </div>
+    </div>
+
+    <!-- ═══════════════════════ ENGLISH CONTENT ═══════════════════════ -->
+    <div id="sectionEn" class="en-section">
+        <header>
+            <div class="brand-badge">INOOV Software Engineering</div>
+            <h1>Contact</h1>
+            <p class="header-sub">Write to the INOOV team, publisher of the Yalla News application.</p>
+        </header>
+
+        <section class="card">
+            <h2><span class="icon-circle">🏢</span>Publisher</h2>
+            <p><span class="highlight">Company :</span> Inoov Software Engineering</p>
+            <p><span class="highlight">Official website :</span> <a href="https://apps.inoov.com/yallanews/" class="mailto-link" target="_blank" rel="noopener noreferrer">https://apps.inoov.com/yallanews/</a></p>
+            <p><span class="highlight">E-mail :</span> <a href="mailto:info@inoov.com" class="mailto-link">info@inoov.com</a></p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">✉️</span>Contact form</h2>
+            <p>Use the form below to send us a message. It will be forwarded directly to our team by e-mail.</p>
+            <form action="mailto:info@inoov.com" method="post" enctype="text/plain" target="_blank">
+                <label for="en-name" class="contact-form-label">Name</label>
+                <input type="text" id="en-name" name="Nom" placeholder="Your name" class="contact-form-input" required>
+                <label for="en-email" class="contact-form-label">E-mail</label>
+                <input type="email" id="en-email" name="E-mail" placeholder="you@example.com" class="contact-form-input" required>
+                <label for="en-subject" class="contact-form-label">Subject</label>
+                <input type="text" id="en-subject" name="Sujet" placeholder="Subject of your message" class="contact-form-input">
+                <label for="en-message" class="contact-form-label">Message</label>
+                <textarea id="en-message" name="Message" placeholder="Write your message here..." class="contact-form-textarea" required></textarea>
+                <button type="submit" class="contact-form-submit">Send message</button>
+                <p class="form-note">Sending opens your default email client. No user account is required.</p>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📎</span>Useful links</h2>
+            <ul>
+                <li><a href="about.html" style="color:#94A3B8; text-decoration:none;">About INOOV and Yalla News</a></li>
+                <li><a href="privacy.html" style="color:#94A3B8; text-decoration:none;">Privacy Policy</a></li>
+            </ul>
+        </section>
+
+        <div class="no-phone">
+            <strong>Note :</strong> no phone number is displayed on this page. A phone number will be added only upon explicit confirmation from the INOOV team.
+        </div>
+    </div>
+
+    <!-- ═══════════════════════ TURKISH CONTENT ═══════════════════════ -->
+    <div id="sectionTr" class="tr-section">
+        <header>
+            <div class="brand-badge">Yalla News | يلا نيوز</div>
+            <h1>İletişim</h1>
+            <p class="header-sub">Yalla News mobil uygulamasını keşfedin.</p>
+        </header>
+
+        <section class="card">
+            <h2><span class="icon-circle">🏢</span>Kimleriz</h2>
+            <p><span class="highlight">Yayıncı :</span> INOOV Software Engineering, mobil çözümler, yapay zekâ ve dijital hizmetler için özel bir yazılım mühendisliği şirketidir.</p>
+            <p><span class="highlight">Resmi site :</span> <a href="https://apps.inoov.com/yallanews/" style="color:#FF6B6B; text-decoration:none;" target="_blank">https://apps.inoov.com/yallanews/</a></p>
+            <p><span class="highlight">E-posta :</span> <a href="mailto:info@inoov.com" style="color:#FF6B6B; text-decoration:none;">info@inoov.com</a></p>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">✉️</span>İletişim formu</h2>
+            <p>Aşağıdaki formu kullanarak bize bir mensaje gönderin. Direkt olarak teamimize e-posta olarak iletilir.</p>
+            <form action="mailto:info@inoov.com" method="post" enctype="text/plain" target="_blank">
+                <label for="tr-name" class="contact-form-label">İsim</label>
+                <input type="text" id="tr-name" name="İsim" placeholder="İsiminiz" class="contact-form-input" required>
+                <label for="tr-email" class="contact-form-label">E-posta</label>
+                <input type="email" id="tr-email" name="E-posta" placeholder="isminiz@example.com" class="contact-form-input" required>
+                <label for="tr-subject" class="contact-form-label">Konu</label>
+                <input type="text" id="tr-subject" name="Konu" placeholder="Konu başlığı" class="contact-form-input">
+                <label for="tr-message" class="contact-form-label">Mesaj</label>
+                <textarea id="tr-message" name="Mesaj" placeholder="Mesajınızı yazın..." class="contact-form-textarea" required></textarea>
+                <button type="submit" class="contact-form-submit">Gönder</button>
+                <p class="form-note">Gönderi varsayılan e-posta istemcinizi açar. Kullanıcı hesabı gerekmez.</p>
+            </form>
+        </section>
+
+        <section class="card">
+            <h2><span class="icon-circle">📎</span>Kullanışlı bağlantılar</h2>
+            <ul>
+                <li><a href="about.html" style="color:#94A3B8; text-decoration:none;">INOOV ve Yalla News hakkında</a></li>
+                <li><a href="privacy.html" style="color:#94A3B8; text-decoration:none;">Gizlilik politikası</a></li>
+            </ul>
+        </section>
+
+        <div class="no-phone">
+            <strong>Not :</strong> Bu sayfada telefon numarası gösterilmemiştir. Telefon numarası ek team onayından sonra eklenir.
+        </div>
+    </div>
+
+    <footer>
+        <p>© 2026 Yalla News. All rights reserved. | Developed by <a href="https://apps.inoov.com/yallanews/" target="_blank">INOOV Software Engineering</a></p>
+    </footer>
+
+</div>
+
+<script>
+    function initLang() {
+        const savedLang = localStorage.getItem('lang');
+        if (savedLang === 'fr' || savedLang === 'en' || savedLang === 'tr' || savedLang === 'ar') {
+            switchLang(savedLang);
+        } else {
+            switchLang('ar');
+        }
+    }
+
+    function switchLang(lang) {
+        localStorage.setItem('lang', lang);
+        const arSection = document.getElementById('sectionAr');
+        const frSection = document.getElementById('sectionFr');
+        const enSection = document.getElementById('sectionEn');
+        const trSection = document.getElementById('sectionTr');
+        const drawerAr = document.querySelector('.drawer-ar-section');
+        const drawerFr = document.querySelector('.drawer-fr-section');
+        const drawerEn = document.querySelector('.drawer-en-section');
+        const drawerTr = document.querySelector('.drawer-tr-section');
+        const btnAr = document.getElementById('btnAr');
+        const btnFr = document.getElementById('btnFr');
+        const btnEn = document.getElementById('btnEn');
+        const btnTr = document.getElementById('btnTr');
+
+        if (lang === 'en') {
+            arSection.style.display = 'none';
+            frSection.style.display = 'none';
+            enSection.style.display = 'block';
+            trSection.style.display = 'none';
+            drawerAr.style.display = 'none';
+            drawerFr.style.display = 'none';
+            drawerEn.style.display = 'block';
+            drawerTr.style.display = 'none';
+            document.documentElement.dir = 'ltr';
+            document.documentElement.lang = 'en';
+            btnAr.classList.remove('active');
+            btnFr.classList.remove('active');
+            btnEn.classList.add('active');
+            btnTr.classList.remove('active');
+        } else if (lang === 'tr') {
+            arSection.style.display = 'none';
+            frSection.style.display = 'none';
+            enSection.style.display = 'none';
+            trSection.style.display = 'block';
+            drawerAr.style.display = 'none';
+            drawerFr.style.display = 'none';
+            drawerEn.style.display = 'none';
+            drawerTr.style.display = 'block';
+            document.documentElement.dir = 'ltr';
+            document.documentElement.lang = 'tr';
+            btnAr.classList.remove('active');
+            btnFr.classList.remove('active');
+            btnEn.classList.remove('active');
+            btnTr.classList.add('active');
+        } else if (lang === 'fr') {
+            arSection.style.display = 'none';
+            frSection.style.display = 'block';
+            enSection.style.display = 'none';
+            trSection.style.display = 'none';
+            drawerAr.style.display = 'none';
+            drawerFr.style.display = 'block';
+            drawerEn.style.display = 'none';
+            drawerTr.style.display = 'none';
+            document.documentElement.dir = 'ltr';
+            document.documentElement.lang = 'fr';
+            btnAr.classList.remove('active');
+            btnFr.classList.add('active');
+            btnEn.classList.remove('active');
+            btnTr.classList.remove('active');
+        } else {
+            arSection.style.display = 'block';
+            frSection.style.display = 'none';
+            enSection.style.display = 'none';
+            trSection.style.display = 'none';
+            drawerAr.style.display = 'block';
+            drawerFr.style.display = 'none';
+            drawerEn.style.display = 'none';
+            drawerTr.style.display = 'none';
+            document.documentElement.dir = 'rtl';
+            document.documentElement.lang = 'ar';
+            btnAr.classList.add('active');
+            btnFr.classList.remove('active');
+            btnEn.classList.remove('active');
+            btnTr.classList.remove('active');
+        }
+    }
+</script>
+
+</body>
+</html>

@@ -26,8 +26,30 @@ try {
         json_response(['error' => 'Invalid JSON'], 400);
     }
 
+    // Detect existing columns in yn_news
+    $colsStmt = $db->query("SHOW COLUMNS FROM yn_news");
+    $existingCols = [];
+    while ($colRow = $colsStmt->fetch(PDO::FETCH_ASSOC)) {
+        $existingCols[] = $colRow['Field'];
+    }
+
+    $allowedFields = ['title', 'summary', 'content', 'language', 'category', 'source_id', 'source_name', 'source_url', 'source_score', 'source_url_article', 'image_url', 'published_at', 'status'];
+
+    if (isset($data['source_id']) && !isset($data['source_name'])) {
+        $data['source_name'] = $data['source_id'];
+    }
+    if (isset($data['source_name']) && !isset($data['source_id'])) {
+        $data['source_id'] = $data['source_name'];
+    }
+    if (isset($data['sourceUrl']) && !isset($data['source_url_article'])) {
+        $data['source_url_article'] = $data['sourceUrl'];
+    }
+    if (isset($data['imageUrl']) && !isset($data['image_url'])) {
+        $data['image_url'] = $data['imageUrl'];
+    }
+
     foreach ($allowedFields as $field) {
-        if (isset($data[$field])) {
+        if (isset($data[$field]) && in_array($field, $existingCols)) {
             $updates[] = "$field = ?";
             $params[] = $data[$field];
         }

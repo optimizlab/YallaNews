@@ -33,10 +33,22 @@ try {
 
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
     $userId = generate_secure_id('user_');
+    $authToken = bin2hex(random_bytes(32));
 
-    $sql = "INSERT INTO yn_users (id, email, display_name, photo_url, phone_number, password_hash, role, created_at) 
-            VALUES (?, ?, ?, ?, ?, ?, 'user', NOW())";
-    $db->query($sql, [$userId, $email, $displayName, $photoUrl, $phoneNumber, $passwordHash]);
+    // Insert user with token (auth_token column added via login migration or existing)
+    try {
+        $sql = "INSERT INTO yn_users (id, email, display_name, photo_url, phone_number, password_hash, role, auth_token, created_at) 
+                VALUES (?, ?, ?, ?, ?, ?, 'user', ?, NOW())";
+        $db->query($sql, [$userId, $email, $displayName, $photoUrl, $phoneNumber, $passwordHash, $authToken]);
+    } catch (Exception $colErr) {
+        // auth_token column may not exist yet — insert without it, then update
+        $sql = "INSERT INTO yn_users (id, email, display_name, photo_url, phone_number, password_hash, role, created_at) 
+                VALUES (?, ?, ?, ?, ?, ?, 'user', NOW())";
+        $db->query($sql, [$userId, $email, $displayName, $photoUrl, $phoneNumber, $passwordHash]);
+        try {
+            $db->query("UPDATE yn_users SET auth_token = ? WHERE id = ?", [$authToken, $userId]);
+        } catch (Exception $e2) { $authToken = null; }
+    }
 
     session_regenerate_id(true);
     $_SESSION['user_id'] = $userId;
@@ -44,6 +56,7 @@ try {
 
     json_response([
         'success' => true,
+        'token'   => $authToken,
         'user' => [
             'id' => $userId,
             'email' => $email,

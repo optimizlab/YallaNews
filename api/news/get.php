@@ -2,7 +2,7 @@
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 
-cache_headers(120);
+no_cache_headers();
 
 $id = sanitize_string($_GET['id'] ?? '', 64);
 
@@ -13,13 +13,11 @@ if (!$id) {
 try {
     $db = Database::getInstance();
 
-    $sql = "SELECT n.id, n.title, n.summary, n.content, n.language, n.category, 
-                   n.source_name, n.source_url, n.source_score, n.source_url_article, 
-                   n.image_url, n.published_at, n.status,
+    $sql = "SELECT n.*,
                    c.name as category_name, c.name_en as category_name_en
             FROM yn_news n
             LEFT JOIN yn_categories c ON n.category = c.id
-            WHERE n.id = ? AND n.status = 'published'
+            WHERE n.id = ?
             LIMIT 1";
     $stmt = $db->query($sql, [$id]);
     $article = $stmt->fetch();
@@ -28,6 +26,10 @@ try {
         json_response(['error' => 'Article not found'], 404);
     }
 
+    $sourceName = $article['source_name'] ?? $article['source_id'] ?? '';
+    $sourceUrl = $article['source_url'] ?? '';
+    $sourceUrlArticle = $article['source_url_article'] ?? $article['source_url'] ?? '';
+
     json_response([
         'success' => true,
         'article' => [
@@ -35,19 +37,21 @@ try {
             'title' => $article['title'],
             'summary' => $article['summary'],
             'content' => $article['content'],
-            'language' => $article['language'],
+            'language' => $article['language'] ?? 'ar',
             'category' => $article['category'],
-            'categoryName' => $article['category_name'],
-            'categoryNameEn' => $article['category_name_en'],
+            'categoryName' => $article['category_name'] ?? $article['category'],
+            'categoryNameEn' => $article['category_name_en'] ?? '',
             'source' => [
-                'name' => $article['source_name'],
-                'url' => $article['source_url'],
-                'score' => floatval($article['source_score'])
+                'name' => $sourceName,
+                'url' => $sourceUrl,
+                'score' => floatval($article['source_score'] ?? 0.0)
             ],
-            'sourceUrl' => $article['source_url_article'],
+            'sourceName' => $sourceName,
+            'sourceUrl' => $sourceUrlArticle,
+            'sourceUrlArticle' => $sourceUrlArticle,
             'imageUrl' => $article['image_url'],
             'publishedAt' => intval($article['published_at']),
-            'status' => $article['status']
+            'status' => $article['status'] ?? 'published'
         ]
     ]);
 

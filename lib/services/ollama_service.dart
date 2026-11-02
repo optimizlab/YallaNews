@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class OllamaService {
@@ -8,6 +10,9 @@ class OllamaService {
   static const String _defaultApiUrl = 'http://localhost:11434';
   static const String _defaultEmbedModel = 'nomic-embed-text';
   static const String _defaultGenModel = 'gemma:2b';
+
+  DateTime? _lastOllamaCheck;
+  bool _cachedOllamaAvailable = false;
 
   Future<List<double>?> getEmbedding(String text) async {
     try {
@@ -94,13 +99,23 @@ $rawContent
   }
 
   Future<bool> isOllamaAvailable() async {
+    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+      // Desktop Ollama server is not hosted on localhost of mobile device
+      return false;
+    }
+    final now = DateTime.now();
+    if (_lastOllamaCheck != null && now.difference(_lastOllamaCheck!).inMinutes < 5) {
+      return _cachedOllamaAvailable;
+    }
     try {
       final apiUrl = _defaultApiUrl.endsWith('/') ? _defaultApiUrl.substring(0, _defaultApiUrl.length - 1) : _defaultApiUrl;
       final uri = Uri.parse('$apiUrl/api/tags');
-      final response = await http.get(uri, headers: {'Accept': 'application/json'}).timeout(const Duration(seconds: 1));
-      return response.statusCode == 200;
+      final response = await http.get(uri, headers: {'Accept': 'application/json'}).timeout(const Duration(milliseconds: 500));
+      _cachedOllamaAvailable = response.statusCode == 200;
     } catch (_) {
-      return false;
+      _cachedOllamaAvailable = false;
     }
+    _lastOllamaCheck = now;
+    return _cachedOllamaAvailable;
   }
 }

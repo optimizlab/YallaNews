@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand colours (flat fallbacks of the icon gradient). -->
+    <color name="yalla_navy">#0B1322</color>
+    <color name="yalla_navy_light">#1D2D4D</color>
+    <color name="yalla_red">#FF4D55</color>
+    <!-- Notification accent colour: set with setColor() / com.google.firebase.messaging.default_notification_color -->
+    <color name="notification_accent">#FF4D55</color>
+</resources>

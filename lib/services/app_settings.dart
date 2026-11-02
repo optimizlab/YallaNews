@@ -16,8 +16,16 @@ class AppSettings extends ChangeNotifier {
   static const String _keyFirstRunCompleted = 'first_run_completed';
   static const String _keyBackgroundCrawlerEnabled = 'background_crawler_enabled';
 
-  static const ThemeMode defaultThemeMode = ThemeMode.system;
-  static const Locale defaultLocale = Locale('ar');
+  /// News & Magazines freshness configuration.
+  /// Current-events (breaking/urgent) articles must be no older than this many days.
+  static const String _keyFreshnessCurrentEventsDays = 'freshness_current_events_days';
+  /// Other news and magazine content must be no older than this many months.
+  static const String _keyFreshnessGeneralMonths = 'freshness_general_months';
+
+  static const int defaultFreshnessCurrentEventsDays = 30;
+  static const int defaultFreshnessGeneralMonths = 3;
+
+  static const ThemeMode defaultThemeMode = ThemeMode.system;  static const Locale defaultLocale = Locale('ar');
 
   static const int defaultTopSourcesCount = 5;
   static const int defaultMaxUrlsPerSource = 30;
@@ -115,5 +123,31 @@ class AppSettings extends ChangeNotifier {
   Future<void> completeFirstRun() async {
     final prefs = await _prefs;
     await prefs.setBool(_keyFirstRunCompleted, true);
+  }
+
+  // ─── News & Magazines freshness thresholds ──────────────────────────
+  // Current-events (breaking/urgent) articles: max 30 days old.
+  // Other news/magazine content: max 3 months old.
+  // Values are stored in SharedPreferences so the publisher can tune them
+  // without a release; never use the import/crawler date as publication date.
+
+  Future<int> getFreshnessCurrentEventsDays() async {
+    final prefs = await _prefs;
+    return prefs.getInt(_keyFreshnessCurrentEventsDays) ?? defaultFreshnessCurrentEventsDays;
+  }
+
+  Future<void> setFreshnessCurrentEventsDays(int value) async {
+    final prefs = await _prefs;
+    await prefs.setInt(_keyFreshnessCurrentEventsDays, value);
+  }
+
+  Future<int> getFreshnessGeneralMonths() async {
+    final prefs = await _prefs;
+    return prefs.getInt(_keyFreshnessGeneralMonths) ?? defaultFreshnessGeneralMonths;
+  }
+
+  Future<void> setFreshnessGeneralMonths(int value) async {
+    final prefs = await _prefs;
+    await prefs.setInt(_keyFreshnessGeneralMonths, value);
   }
 }

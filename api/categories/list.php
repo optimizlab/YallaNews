@@ -2,12 +2,16 @@
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 
-cache_headers(3600);
+no_cache_headers();
 
 try {
     $db = Database::getInstance();
 
-    $sql = "SELECT id, name, name_en, sort_order, active FROM yn_categories WHERE active = 1 ORDER BY sort_order ASC";
+    $all = isset($_GET['all']) && $_GET['all'] == '1';
+    $sql = $all 
+        ? "SELECT id, name, name_en, sort_order, active FROM yn_categories ORDER BY sort_order ASC, name ASC"
+        : "SELECT id, name, name_en, sort_order, active FROM yn_categories WHERE active = 1 ORDER BY sort_order ASC, name ASC";
+
     $stmt = $db->query($sql);
     $categories = $stmt->fetchAll();
 
@@ -15,15 +19,16 @@ try {
         return [
             'id' => $c['id'],
             'name' => $c['name'],
-            'nameEn' => $c['name_en'],
-            'sortOrder' => intval($c['sort_order']),
+            'nameEn' => $c['name_en'] ?? $c['name'],
+            'sortOrder' => intval($c['sort_order'] ?? 0),
             'active' => (bool) $c['active']
         ];
     }, $categories);
 
     json_response([
         'success' => true,
-        'categories' => $formatted
+        'categories' => $formatted,
+        'count' => count($formatted)
     ]);
 
 } catch (Exception $e) {
