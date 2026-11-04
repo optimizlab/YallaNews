@@ -202,7 +202,7 @@ class _SettingsPageState extends State<SettingsPage> {
     switch (languageCode) {
       case 'ar':
         title = 'العربية';
-        subtitle = 'اللغة الاماراتية للتطبيق';
+        subtitle = l10n.translate('arabicLanguage');
         break;
       case 'en':
         title = 'English';

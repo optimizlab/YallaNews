@@ -16,6 +16,7 @@ import '../services/comment_service.dart';
 import '../services/user_service.dart';
 import '../services/connectivity_service.dart';
 import '../widgets/cached_news_image.dart';
+import '../widgets/reward_ad.dart';
 import '../services/server_api_service.dart';
 import '../services/knowledge_extraction_service.dart';
 import '../services/category_service.dart';
@@ -183,11 +184,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     setState(() => _isLoadingRelated = true);
     try {
       final all = await NewsDatabase.instance.getAllArticles(limit: 200);
-      final related = all
-          .where((a) => a.url != article.url)
-          .where((a) => a.category.toLowerCase() == article.category.toLowerCase())
-          .take(6)
-          .toList();
+      debugPrint('[RELATED] article category="${article.category}" keywords=${article.keywords.length} candidates=${all.length}');
+      final related = _pickRelatedArticles(article, all, limit: 6);
+      debugPrint('[RELATED] picked=${related.length} relatedArticles=${article.relatedArticles.length}');
       if (mounted) {
         setState(() {
           _relatedArticles = related;
@@ -211,9 +210,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     final uri = Uri.parse('mailto:support@inoov.com?subject=$subject&body=$body');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
-      if (mounted) _showActionMessage('Report opened');
+      if (mounted) _showActionMessage(AppLocalizations.of(context).translate('reportOpened'));
     } else if (mounted) {
-      _showActionMessage('No email app available');
+      _showActionMessage(AppLocalizations.of(context).translate('noEmailApp'));
     }
   }
 
@@ -244,12 +243,12 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('No internet connection'),
-        content: const Text('You appear to be offline. Please connect to the internet and try again.'),
+        title: Text(AppLocalizations.of(context).translate('noInternetConnection')),
+        content: Text(AppLocalizations.of(context).translate('noInternetDesc')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            child: Text(AppLocalizations.of(context).translate('ok')),
           ),
         ],
       ),
@@ -329,6 +328,62 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       seen.add(normalized);
       return true;
     }).toList();
+  }
+
+  /// Picks genuinely similar "more like this" articles.
+  ///
+  /// Prefers the article's pre-computed `.relatedArticles` (cluster/blend
+  /// members), then falls back to same-category articles from the local cache,
+  /// then keyword-overlap matches, then the most recent articles. Never returns
+  /// the source article itself and de-duplicates by URL.
+  static List<NewsModel> _pickRelatedArticles(
+    NewsModel article, List<NewsModel> candidates, {
+    required int limit,
+  }) {
+    final seen = <String>{article.url};
+    final picked = <NewsModel>[];
+
+    for (final a in article.relatedArticles) {
+      if (a.url.isEmpty || seen.contains(a.url)) continue;
+      seen.add(a.url);
+      picked.add(a);
+      if (picked.length >= limit) return picked;
+    }
+
+    final cat = article.category.toLowerCase();
+    for (final a in candidates) {
+      if (a.url.isEmpty || seen.contains(a.url)) continue;
+      if (a.category.toLowerCase() != cat) continue;
+      seen.add(a.url);
+      picked.add(a);
+      if (picked.length >= limit) break;
+    }
+    if (picked.length >= limit) return picked;
+
+    final keywords = article.keywords
+        .where((k) => k.isNotEmpty)
+        .map((k) => k.toLowerCase())
+        .toSet();
+    if (keywords.isNotEmpty) {
+      for (final a in candidates) {
+        if (a.url.isEmpty || seen.contains(a.url)) continue;
+        final hits = a.keywords.where((k) => keywords.contains(k.toLowerCase())).length;
+        if (hits > 0) {
+          seen.add(a.url);
+          picked.add(a);
+          if (picked.length >= limit) break;
+        }
+      }
+    }
+    if (picked.length >= limit) return picked;
+
+    for (final a in candidates) {
+      if (a.url.isEmpty || seen.contains(a.url)) continue;
+      seen.add(a.url);
+      picked.add(a);
+      if (picked.length >= limit) break;
+    }
+    return picked;
   }
 
   static bool _isGroundedInStory(String value, String story, {int minMatches = 1}) {
@@ -745,7 +800,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             foregroundColor: Theme.of(context).colorScheme.onPrimary,
             icon: const Icon(Icons.public_rounded, size: 19),
             label: Text(
-                    'قراءة من المصدر',
+                    l10n.translate('readFromSource'),
               style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
             ),
           ),
@@ -831,7 +886,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                           style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface),
                         ),
                         SelectableText(
-                          'محرر رياضي',
+                          l10n.translate('editor'),
                           style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ),
                       ],
@@ -849,7 +904,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: SelectableText(
-                  "الموجز: ${article.shortTitle}",
+                  "${l10n.translate('brief')}: ${article.shortTitle}",
                   style: GoogleFonts.outfit(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -875,7 +930,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                         Icon(Icons.auto_awesome, size: 16, color: Theme.of(context).colorScheme.primary),
                         const SizedBox(width: 8),
                         Text(
-                          "ملخص تنفيذي",
+                          l10n.translate('executiveSummary'),
                           style: GoogleFonts.outfit(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -977,7 +1032,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                   Row(
                     children: [
                       Text(
-                        "مؤشرات محرك C++ العميق",
+                        l10n.translate('deepEngineIndicators'),
                         style: GoogleFonts.outfit(
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
@@ -1200,8 +1255,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             ),
             const Divider(height: 14),
              ..._buildRichContent(context, effectiveContent),
-            const SizedBox(height: 30),
-            const SizedBox(height: 30),
+             const SizedBox(height: 20),
+             const DetailNativeAdWidget(),
+             const SizedBox(height: 30),
             _buildBlendedSourcesSection(context),
             const SizedBox(height: 20),
             _buildReadAlsoSection(context),
@@ -1223,7 +1279,6 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   Widget _buildReadAlsoSection(BuildContext context) {
-    if (_relatedArticles.isEmpty) return const SizedBox();
     final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1242,7 +1297,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             TextButton(
               onPressed: () => _showAllRelated(context),
               child: Text(
-                'عرض الكل',
+                l10n.translate('seeAll'),
                 style: GoogleFonts.outfit(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
@@ -1404,7 +1459,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           ),
           _buildActionChip(
             _isOfflineSaved ? Icons.download_done_rounded : Icons.download_outlined,
-            _isOfflineSaved ? 'Offline' : 'Offline',
+            l10n.translate('offline'),
             null,
             () => _toggleOfflineSave(),
             active: _isOfflineSaved,
@@ -1415,7 +1470,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             null,
             () => _openCommentsForUser(context),
           ),
-          _buildActionChip(Icons.flag_outlined, 'Report', null, _reportArticle),
+          _buildActionChip(Icons.flag_outlined, l10n.translate('report'), null, _reportArticle),
         ],
       ),
     );
@@ -1468,10 +1523,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Knowledge', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface)),
+              Text(l10n.translate('knowledge'), style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface)),
               const SizedBox(height: 12),
               if (_knowledgeEntities.isNotEmpty) ...[
-                Text('Entities', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
+                Text(l10n.translate('entities'), style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -1486,7 +1541,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 const SizedBox(height: 16),
               ],
               if (_knowledgeEvents.isNotEmpty) ...[
-                Text('Events', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
+                Text(l10n.translate('events'), style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
                 const SizedBox(height: 8),
                 ..._knowledgeEvents.map((e) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1495,7 +1550,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 const SizedBox(height: 16),
               ],
               if (_knowledgeTopics.isNotEmpty) ...[
-                Text('Topics', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
+                Text(l10n.translate('topics'), style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -1510,7 +1565,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 const SizedBox(height: 16),
               ],
               if (_knowledgeClaims.isNotEmpty) ...[
-                Text('Claims', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
+                Text(l10n.translate('claims'), style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary)),
                 const SizedBox(height: 8),
                 ..._knowledgeClaims.map((c) => Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1658,7 +1713,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       }
     } catch (_) {
       // Revert optimistic update on error
-      if (mounted) _showActionMessage('Like could not be updated');
+      if (mounted) _showActionMessage(AppLocalizations.of(context).translate('likeUpdateFailed'));
       await _loadLikeState();
     } finally {
       if (mounted) setState(() => _likeLoading = false);
@@ -1742,7 +1797,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     if (widgets.isEmpty) {
       debugPrint('No widgets generated, adding fallback text');
       widgets.add(Text(
-        text.isEmpty ? 'No content available' : text,
+        text.isEmpty ? AppLocalizations.of(context).translate('noContentAvailable') : text,
         style: GoogleFonts.outfit(fontSize: 16, color: Theme.of(context).colorScheme.onSurface, height: 1.7),
       ));
     }
@@ -2096,11 +2151,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               ],
               if (sportsData != null) ...[
                 if (sportsData['goals'] != null && (sportsData['goals'] as List).isNotEmpty)
-                  _buildSportsItem("Goals / Scorers", (sportsData['goals'] as List).join(', ')),
+                  _buildSportsItem(l10n.translate('goalsScorers'), (sportsData['goals'] as List).join(', ')),
                 if (sportsData['players'] != null && (sportsData['players'] as List).isNotEmpty)
-                  _buildSportsItem("Key Players", (sportsData['players'] as List).join(', ')),
+                  _buildSportsItem(l10n.translate('keyPlayers'), (sportsData['players'] as List).join(', ')),
                 if (sportsData['cards'] != null && (sportsData['cards'] as List).isNotEmpty)
-                  _buildSportsItem("Cards", (sportsData['cards'] as List).join(', ')),
+                  _buildSportsItem(l10n.translate('matchCards'), (sportsData['cards'] as List).join(', ')),
               ],
             ],
           ),
@@ -2402,7 +2457,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                             Icon(Icons.menu_book_rounded, size: 15, color: Theme.of(context).colorScheme.primary),
                             const SizedBox(width: 5),
                             Text(
-                              'قراءة المقال من المصدر',
+                              l10n.translate('readFromSource'),
                               style: GoogleFonts.outfit(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -2425,6 +2480,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   Widget _buildSingleSourceRow(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final publisher = article.displaySourceName;
     final author = article.authorName.isNotEmpty
         ? article.authorName
@@ -2470,7 +2526,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     Icon(Icons.menu_book_rounded, size: 15, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 5),
                     Text(
-                      'قراءة المقال من المصدر',
+                      l10n.translate('readFromSource'),
                       style: GoogleFonts.outfit(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -2676,7 +2732,7 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
           : _related.isEmpty
               ? Center(
                   child: Text(
-                    'لا توجد مقالات ذات صلة',
+                    l10n.translate('noRelatedArticles'),
                     style: GoogleFonts.outfit(
                       fontSize: 16,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,

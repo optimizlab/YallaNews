@@ -16,14 +16,14 @@ class CategoryService extends ChangeNotifier {
 
   static const List<Map<String, dynamic>> defaultCategories = [
     {'id': 'general', 'name': 'أخبار عامة', 'nameEn': 'General News', 'sortOrder': 1, 'active': true, 'newsCount': 0},
-    {'id': 'politics', 'name': 'سياسة', 'nameEn': 'Politics', 'sortOrder': 2, 'active': true, 'newsCount': 0},
-    {'id': 'sports', 'name': 'رياضة', 'nameEn': 'Sports', 'sortOrder': 3, 'active': true, 'newsCount': 0},
-    {'id': 'economy', 'name': 'اقتصاد', 'nameEn': 'Economy', 'sortOrder': 4, 'active': true, 'newsCount': 0},
-    {'id': 'technology', 'name': 'تكنولوجيا', 'nameEn': 'Technology', 'sortOrder': 5, 'active': true, 'newsCount': 0},
-    {'id': 'health', 'name': 'صحة', 'nameEn': 'Health', 'sortOrder': 6, 'active': true, 'newsCount': 0},
+    {'id': 'politics', 'name': 'سياسة', 'nameEn': 'سياسة', 'sortOrder': 2, 'active': true, 'newsCount': 0},
+    {'id': 'sports', 'name': 'رياضة', 'nameEn': 'رياضة', 'sortOrder': 3, 'active': true, 'newsCount': 0},
+    {'id': 'business', 'name': 'أعمال', 'nameEn': 'أعمال', 'sortOrder': 4, 'active': true, 'newsCount': 0},
+    {'id': 'technology', 'name': 'تكنولوجيا', 'nameEn': 'تكنولوجيا', 'sortOrder': 5, 'active': true, 'newsCount': 0},
+    {'id': 'health', 'name': 'صحة', 'nameEn': 'صحة', 'sortOrder': 6, 'active': true, 'newsCount': 0},
     {'id': 'culture', 'name': 'ثقافة', 'nameEn': 'Culture', 'sortOrder': 7, 'active': true, 'newsCount': 0},
-    {'id': 'entertainment', 'name': 'فن وترفيه', 'nameEn': 'Entertainment', 'sortOrder': 8, 'active': true, 'newsCount': 0},
-    {'id': 'science', 'name': 'علوم', 'nameEn': 'Science', 'sortOrder': 9, 'active': true, 'newsCount': 0},
+    {'id': 'entertainment', 'name': 'ترفيه', 'nameEn': 'ترفيه', 'sortOrder': 8, 'active': true, 'newsCount': 0},
+    {'id': 'science', 'name': 'علوم', 'nameEn': 'علوم', 'sortOrder': 9, 'active': true, 'newsCount': 0},
   ];
 
   Future<void> loadCategories({bool forceRefresh = false}) async {
@@ -234,15 +234,16 @@ class CategoryService extends ChangeNotifier {
   }
 
   static String getCategoryLabel(String category, BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final cat = category.toLowerCase().trim();
-    if (matchesCategory(cat, 'sports')) return l10n.translate('sports');
-    if (matchesCategory(cat, 'politics')) return l10n.translate('politics');
-    if (matchesCategory(cat, 'business')) return l10n.translate('business');
-    if (matchesCategory(cat, 'technology')) return l10n.translate('technology');
-    if (matchesCategory(cat, 'health')) return l10n.translate('health');
-    if (matchesCategory(cat, 'science')) return l10n.translate('science');
-    if (matchesCategory(cat, 'entertainment')) return l10n.translate('entertainment');
+    if (matchesCategory(cat, 'all') || cat == 'all' || cat == 'الكل') return 'الكل';
+    if (matchesCategory(cat, 'politics') || cat == 'سياسة') return 'سياسة';
+    if (matchesCategory(cat, 'sports') || cat == 'رياضة') return 'رياضة';
+    if (matchesCategory(cat, 'technology') || cat == 'تكنولوجيا') return 'تكنولوجيا';
+    if (matchesCategory(cat, 'health') || cat == 'صحة') return 'صحة';
+    if (matchesCategory(cat, 'entertainment') || cat == 'ترفيه') return 'ترفيه';
+    if (matchesCategory(cat, 'business') || matchesCategory(cat, 'economy') || cat == 'أعمال' || cat == 'اقتصاد') return 'أعمال';
+    if (matchesCategory(cat, 'science') || cat == 'علوم') return 'علوم';
+    final l10n = AppLocalizations.of(context);
     if (matchesCategory(cat, 'world')) return l10n.translate('world');
     if (matchesCategory(cat, 'local')) return l10n.translate('local');
     return category.isNotEmpty ? category : l10n.translate('generalNews');
@@ -309,6 +310,16 @@ class CategoryService extends ChangeNotifier {
   }
 
   static String getCategoryDisplayName(Map<String, dynamic> category, BuildContext context) {
+    final id = (category['id']?.toString() ?? '').toLowerCase().trim();
+    if (matchesCategory(id, 'all') || id == 'all' || id == 'الكل') return 'الكل';
+    if (matchesCategory(id, 'politics') || id == 'politics' || id == 'سياسة') return 'سياسة';
+    if (matchesCategory(id, 'sports') || id == 'sports' || id == 'رياضة') return 'رياضة';
+    if (matchesCategory(id, 'technology') || id == 'technology' || id == 'tech' || id == 'تكنولوجيا') return 'تكنولوجيا';
+    if (matchesCategory(id, 'health') || id == 'health' || id == 'صحة') return 'صحة';
+    if (matchesCategory(id, 'entertainment') || id == 'entertainment' || id == 'ترفيه') return 'ترفيه';
+    if (matchesCategory(id, 'business') || matchesCategory(id, 'economy') || id == 'business' || id == 'economy' || id == 'أعمال' || id == 'اقتصاد') return 'أعمال';
+    if (matchesCategory(id, 'science') || id == 'science' || id == 'علوم') return 'علوم';
+
     final isArabic = (AppLocalizations.of(context)?.locale?.languageCode ?? 'ar') == 'ar';
     final name = category['name']?.toString() ?? '';
     final nameEn = category['nameEn']?.toString() ?? '';

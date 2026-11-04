@@ -472,7 +472,121 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
               ],
             ),
           ),
-          AdWidget(ad: ad),
+          SizedBox(
+            height: 400,
+            width: double.infinity,
+            child: AdWidget(ad: ad),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Native ad shown on the news detail page.
+///
+/// Loads its own ad directly (no engagement gating) so the detail placement
+/// reliably renders an AdMob native ad when one loads. Renders nothing while
+/// the ad is loading or failed, keeping the page layout tight.
+class DetailNativeAdWidget extends StatefulWidget {
+  const DetailNativeAdWidget({super.key});
+
+  @override
+  State<DetailNativeAdWidget> createState() => _DetailNativeAdWidgetState();
+}
+
+class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
+  NativeAd? _ad;
+  bool _loading = false;
+
+  static const String _adUnitId = 'ca-app-pub-2951683509728611/1778840232';
+  static const String _factoryId = 'yallanewsNativeAd';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAd();
+  }
+
+  void _loadAd() {
+    if (_loading || _ad != null) return;
+    _loading = true;
+    NativeAd(
+      adUnitId: _adUnitId,
+      factoryId: _factoryId,
+      request: const AdRequest(),
+      listener: NativeAdListener(
+        onAdLoaded: (Ad ad) {
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
+          setState(() {
+            _ad = ad as NativeAd;
+            _loading = false;
+          });
+        },
+        onAdFailedToLoad: (Ad ad, LoadAdError error) {
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
+          setState(() {
+            _loading = false;
+          });
+          ad.dispose();
+        },
+      ),
+    )..load();
+  }
+
+  @override
+  void dispose() {
+    _ad?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ad == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.campaign_rounded,
+                  size: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  AppLocalizations.of(context).translate('sponsoredLabel') ?? 'Sponsored',
+                  style: GoogleFonts.outfit(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 400,
+            width: double.infinity,
+            child: AdWidget(ad: _ad!),
+          ),
         ],
       ),
     );

@@ -13,6 +13,7 @@ import '../services/category_service.dart';
 import '../database/news_db.dart';
 import '../widgets/shimmer_loading.dart';
 import 'news_detail_page.dart';
+import '../l10n/app_localizations.dart';
 
 class SourceArticlesPage extends StatefulWidget {
   final NewsSource source;
@@ -306,7 +307,7 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'إعادة جلب المصدر',
+            tooltip: AppLocalizations.of(context).translate('sourceArticlesRefreshTooltip'),
             onPressed: _isLoading ? null : _recrawlSource,
           ),
         ],
@@ -389,10 +390,10 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
                                                   ),
                                                   child: Text(
                                                     sentimentScore > 0.3
-                                                        ? "إيجابي"
+                                                        ? AppLocalizations.of(context).translate('positive')
                                                         : sentimentScore < -0.3
-                                                            ? "سلبي"
-                                                            : "محايد",
+                                                            ? AppLocalizations.of(context).translate('negative')
+                                                            : AppLocalizations.of(context).translate('neutral'),
                                                     style: GoogleFonts.outfit(
                                                       fontSize: 8,
                                                       fontWeight: FontWeight.w800,
@@ -489,12 +490,12 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
             Icon(Icons.cloud_download_outlined, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 16),
             Text(
-              "لم يتم العثور على مقالات محفوظة.",
+              AppLocalizations.of(context).translate('noSavedSources'),
               style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurface),
             ),
             const SizedBox(height: 8),
             Text(
-              "اضغط على تحديث في الأعلى أو أعد المحاولة لجلب البيانات من محرك C++.",
+              AppLocalizations.of(context).translate('refreshPrompt'),
               textAlign: TextAlign.center,
               style: GoogleFonts.outfit(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
@@ -523,7 +524,7 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
                     const Icon(Icons.developer_board, size: 14, color: Color(0xFF4CAF50)),
                     const SizedBox(width: 6),
                     Text(
-                      "سجلات تشغيل محرك C++ في الوقت الفعلي",
+                      AppLocalizations.of(context).translate('realtimeEngineLogs'),
                       style: GoogleFonts.robotoMono(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
@@ -550,7 +551,7 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
               child: widget.engineService.consoleLogs.isEmpty
                   ? Center(
                       child: Text(
-                        "شاشة التحكم فارغة. اضغط على تحديث لبدء المعالجة والاطلاع على السجلات.",
+                        AppLocalizations.of(context).translate('consoleEmpty'),
                         style: GoogleFonts.robotoMono(color: Colors.grey, fontSize: 11),
                       ),
                     )

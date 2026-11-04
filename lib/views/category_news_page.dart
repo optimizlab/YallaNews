@@ -194,7 +194,7 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
                   child: TextField(
                     onChanged: (val) => setState(() => _searchQuery = val),
                     decoration: InputDecoration(
-                      hintText: l10n.translate('searchHint') ?? 'بحث في هذا القسم...',
+                      hintText: l10n.translate('searchInThisSection'),
                       hintStyle: GoogleFonts.outfit(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       prefixIcon: Icon(Icons.search_rounded, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       filled: true,
@@ -257,6 +257,7 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
   }
 
   Widget _buildCategoryBanner(BuildContext context, String name, IconData icon, Color color) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
@@ -305,7 +306,7 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'أحدث التغطيات والأخبار الحصرية',
+                  l10n.translate('latestCoverage'),
                   style: GoogleFonts.outfit(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -472,7 +473,7 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              'اسحب لأسفل لتحديث الأخبار',
+              l10n.translate('pullToRefresh'),
               style: GoogleFonts.outfit(
                 fontSize: 13,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,

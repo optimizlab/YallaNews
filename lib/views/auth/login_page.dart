@@ -30,6 +30,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    final l10n = AppLocalizations.of(context);
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -44,11 +45,11 @@ class _LoginPageState extends State<LoginPage> {
         if (result['success'] == true && mounted) {
           Navigator.of(context).pop();
         } else {
-          setState(() => _errorMessage = result['error'] ?? 'Login failed');
+          setState(() => _errorMessage = result['error'] ?? l10n.translate('loginFailed'));
         }
       } else {
         if (_passwordController.text != _confirmPasswordController.text) {
-          throw Exception('Passwords do not match');
+          throw Exception(l10n.translate('passwordsDoNotMatch'));
         }
         final result = await ServerApiService.signup({
           'email': _emailController.text.trim(),
@@ -58,7 +59,7 @@ class _LoginPageState extends State<LoginPage> {
         if (result['success'] == true && mounted) {
           Navigator.of(context).pop();
         } else {
-          setState(() => _errorMessage = result['error'] ?? 'Signup failed');
+          setState(() => _errorMessage = result['error'] ?? l10n.translate('signupFailed'));
         }
       }
     } catch (e) {
@@ -132,7 +133,7 @@ class _LoginPageState extends State<LoginPage> {
                       fillColor: colors.surfaceContainerHighest,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     ),
-                    validator: (v) => v != null && v.contains('@') ? null : 'Enter a valid email',
+                    validator: (v) => v != null && v.contains('@') ? null : l10n.translate('enterValidEmail'),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -147,7 +148,7 @@ class _LoginPageState extends State<LoginPage> {
                       fillColor: colors.surfaceContainerHighest,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     ),
-                    validator: (v) => v != null && v.length >= 6 ? null : 'Password must be at least 6 characters',
+                    validator: (v) => v != null && v.length >= 6 ? null : l10n.translate('passwordMinLength'),
                   ),
                   if (!_isLogin) ...[
                     const SizedBox(height: 12),
@@ -163,7 +164,7 @@ class _LoginPageState extends State<LoginPage> {
                         fillColor: colors.surfaceContainerHighest,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                       ),
-                      validator: (v) => v == _passwordController.text ? null : 'Passwords do not match',
+                      validator: (v) => v == _passwordController.text ? null : l10n.translate('passwordsDoNotMatch'),
                     ),
                   ],
                   const SizedBox(height: 20),

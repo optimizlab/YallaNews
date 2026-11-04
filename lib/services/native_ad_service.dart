@@ -15,7 +15,6 @@ class NativeAdService {
 
   // ── Ad unit ids ─────────────────────────────────────────────────────────
   static const String _adUnitId = 'ca-app-pub-2951683509728611/1778840232';
-  static const String _testAdUnitId = 'ca-app-pub-3940256099942544/2247696110';
 
   // ── Native factory id registered in MainActivity.kt ─────────────────────
   static const String _factoryId = 'yallanewsNativeAd';
@@ -142,7 +141,7 @@ class NativeAdService {
   void _loadOne() {
     if (_disposed || !canServeMore()) return;
 
-    final adUnitId = kReleaseMode ? _adUnitId : _testAdUnitId;
+    final adUnitId = _adUnitId;
 
     NativeAd(
       adUnitId: adUnitId,

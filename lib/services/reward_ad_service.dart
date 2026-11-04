@@ -9,7 +9,6 @@ class RewardAdService {
   static final RewardAdService instance = RewardAdService._internal();
 
   static const String _adUnitId = 'ca-app-pub-2951683509728611/3219485811';
-  static const String _testAdUnitId = 'ca-app-pub-3940256099942544/5224354917';
 
   static const String _prefsKeyLastAdTime = 'reward_ad_last_show_time';
   static const String _prefsKeyAdsShownToday = 'reward_ads_shown_today';
@@ -145,7 +144,7 @@ class RewardAdService {
     _isAdLoading = true;
 
     try {
-      final adUnitId = kReleaseMode ? _adUnitId : _testAdUnitId;
+      final adUnitId = _adUnitId;
 
       await RewardedAd.load(
         adUnitId: adUnitId,

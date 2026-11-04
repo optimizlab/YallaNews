@@ -124,7 +124,7 @@ class _ExplorePageState extends State<ExplorePage> {
                 final count = category['newsCount']?.toString() ?? '0';
                 final icon = _categoryIcon(id);
                 final color = _categoryColor(id);
-                final displayKey = (AppLocalizations.of(context)?.locale?.languageCode ?? 'ar') == 'ar' ? name : nameEn;
+                final displayKey = CategoryService.getCategoryDisplayName(category, context);
                 return _buildCategoryCard(context, category, id, displayKey, count, icon, color);
               }).toList(),
                 );

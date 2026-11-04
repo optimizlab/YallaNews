@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../database/news_db.dart';
+import '../services/category_service.dart';
 import 'news_detail_page.dart';
 
 class BookmarksPage extends StatefulWidget {
@@ -207,27 +208,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
   }
 
   String _getCategoryLabel(String category, BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    switch (category.toLowerCase()) {
-      case 'technology':
-        return l10n.translate('technology');
-      case 'sports':
-        return l10n.translate('sports');
-      case 'politics':
-        return l10n.translate('politics');
-      case 'business':
-        return l10n.translate('business');
-      case 'health':
-        return l10n.translate('health');
-      case 'science':
-        return l10n.translate('science');
-      case 'entertainment':
-        return l10n.translate('entertainment');
-      case 'world':
-        return l10n.translate('world');
-      default:
-        return l10n.translate('generalNews');
-    }
+    return CategoryService.getCategoryLabel(category, context);
   }
 
   String _getReadTime(NewsModel article, BuildContext context) {

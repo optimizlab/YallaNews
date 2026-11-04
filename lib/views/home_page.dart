@@ -33,10 +33,10 @@ import '../arabic_news_processor.dart';
 import '../services/news_blender_service.dart';
 import '../services/arabic_normalizer.dart';
 
-String _getSentimentLabel(double sentiment) {
-  if (sentiment >= 0.3) return 'إيجابي';
-  if (sentiment <= -0.3) return 'سلبي';
-  return 'محايد';
+String _getSentimentLabel(double sentiment, AppLocalizations l10n) {
+  if (sentiment >= 0.3) return l10n.translate('positive');
+  if (sentiment <= -0.3) return l10n.translate('negative');
+  return l10n.translate('neutral');
 }
 
 bool _isValidArticle(NewsModel article) {
@@ -852,7 +852,7 @@ class _HomePageState extends State<HomePage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'User',
+                              l10n.translate('profile'),
                               style: GoogleFonts.outfit(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
@@ -1083,7 +1083,7 @@ class _HomePageState extends State<HomePage> {
                             const SizedBox(width: 8),
                             Text(
                               _selectedCategory == 'all'
-                                  ? l10n.translate('all')
+                                  ? 'الكل'
                                   : _getCategoryLabel(
                                       _selectedCategory,
                                       context,
@@ -1153,7 +1153,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildCategoryChips(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final allCats = <Map<String, dynamic>>[
-      {'id': 'all', 'name': l10n.translate('all'), 'nameEn': 'All'},
+      {'id': 'all', 'name': 'الكل', 'nameEn': 'الكل'},
     ];
     if (_blendedCount > 0) {
       allCats.add({
@@ -1547,7 +1547,7 @@ class _HomePageState extends State<HomePage> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${l10n.translate('blendedBadge')} • ${article.sourceCount} مصادر',
+                                  '${l10n.translate('blendedBadge')} • ${article.sourceCount} ${l10n.translate('sources')}',
                                   style: GoogleFonts.outfit(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
@@ -1651,7 +1651,7 @@ class _HomePageState extends State<HomePage> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _getSentimentLabel(article.sentiment),
+                            _getSentimentLabel(article.sentiment, l10n),
                             style: GoogleFonts.outfit(
                               fontSize: 11,
                               color: Theme.of(
@@ -1888,7 +1888,7 @@ class _HomePageState extends State<HomePage> {
       ),
       children: [
         Text(
-          'تطبيق إخباري ذكي مدعوم بمحرك C++ ونموذج LLM مدمج',
+          l10n.translate('appDescription'),
           style: GoogleFonts.outfit(
             fontSize: 14,
             color: Theme.of(context).colorScheme.onSurfaceVariant,

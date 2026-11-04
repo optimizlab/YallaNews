@@ -22,7 +22,7 @@ class YallaNewsNativeAdFactory(private val context: Context) : NativeAdFactory {
 
     override fun createNativeAd(
         nativeAd: NativeAd,
-        customOptions: Map<String, Any>,
+        customOptions: Map<String, Any>?,
     ): NativeAdView {
         val adView = LayoutInflater.from(context)
             .inflate(R.layout.native_ad_layout, null) as NativeAdView
