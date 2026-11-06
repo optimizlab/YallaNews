@@ -19,14 +19,22 @@ import 'views/splash_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final brightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
-  SystemChrome.setSystemUIOverlayStyle(_systemUiStyle(
-    brightness == Brightness.dark
-        ? const Color(0xFF1E293B)
-        : Colors.white,
-    brightness == Brightness.dark
-        ? const Color(0xFFF8FAFC)
-        : const Color(0xFF1A1A1A),
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    _systemUiStyle(
+      navigationBarColor: brightness == Brightness.dark
+          ? const Color(0xFF0F172A)
+          : const Color(0xFFF4F5F7),
+      statusBarColor: brightness == Brightness.dark
+          ? const Color(0xFF1E293B)
+          : Colors.white,
+      navigationBarIconColor: brightness == Brightness.dark
+          ? const Color(0xFFF8FAFC)
+          : const Color(0xFF1A1A1A),
+      statusBarIconColor: brightness == Brightness.dark
+          ? const Color(0xFFF8FAFC)
+          : const Color(0xFF1A1A1A),
+    ),
+  );
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     sqfliteFfiInit();
   }
@@ -46,20 +54,23 @@ Future<void> main() async {
 /// Keeps Android's system navigation controls readable against the active
 /// application theme. The contrast flag prevents Android 10+ from replacing
 /// the requested navigation bar treatment with its own scrim.
-SystemUiOverlayStyle _systemUiStyle(
-  Color navigationBarColor,
-  Color iconColor,
-) {
-  // Android supports only light or dark system-navigation glyphs. Derive the
-  // supported value from the same color used by the app's icons.
-  final iconBrightness = ThemeData.estimateBrightnessForColor(iconColor);
+SystemUiOverlayStyle _systemUiStyle({
+  required Color navigationBarColor,
+  required Color statusBarColor,
+  required Color navigationBarIconColor,
+  required Color statusBarIconColor,
+}) {
   return SystemUiOverlayStyle(
     systemNavigationBarColor: navigationBarColor,
     systemNavigationBarDividerColor: navigationBarColor,
-    systemNavigationBarIconBrightness: iconBrightness,
+    systemNavigationBarIconBrightness: ThemeData.estimateBrightnessForColor(
+      navigationBarIconColor,
+    ),
     systemNavigationBarContrastEnforced: false,
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: iconBrightness,
+    statusBarColor: statusBarColor,
+    statusBarIconBrightness: ThemeData.estimateBrightnessForColor(
+      statusBarIconColor,
+    ),
   );
 }
 
@@ -130,9 +141,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFFF4F5F7),
-        appBarTheme: const AppBarTheme(
+        appBarTheme: AppBarTheme(
           backgroundColor: Colors.white,
           foregroundColor: Color(0xFF1A1A1A),
+          systemOverlayStyle: _systemUiStyle(
+            navigationBarColor: const Color(0xFFF4F5F7),
+            statusBarColor: Colors.white,
+            navigationBarIconColor: const Color(0xFF1A1A1A),
+            statusBarIconColor: const Color(0xFF1A1A1A),
+          ),
           elevation: 0,
           surfaceTintColor: Colors.transparent,
         ),
@@ -180,9 +197,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       darkTheme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFF0F172A),
-        appBarTheme: const AppBarTheme(
+        appBarTheme: AppBarTheme(
           backgroundColor: Color(0xFF1E293B),
           foregroundColor: Color(0xFFF8FAFC),
+          systemOverlayStyle: _systemUiStyle(
+            navigationBarColor: const Color(0xFF0F172A),
+            statusBarColor: const Color(0xFF1E293B),
+            navigationBarIconColor: const Color(0xFFF8FAFC),
+            statusBarIconColor: const Color(0xFFF8FAFC),
+          ),
           elevation: 0,
           surfaceTintColor: Colors.transparent,
         ),
@@ -232,9 +255,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       locale: locale,
       builder: (context, child) {
         final theme = Theme.of(context);
-        final iconColor = theme.iconTheme.color ?? theme.colorScheme.onSurface;
+        final appBarColor =
+            theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
+        final iconColor =
+            theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
         return AnnotatedRegion<SystemUiOverlayStyle>(
-          value: _systemUiStyle(theme.colorScheme.surface, iconColor),
+          value: _systemUiStyle(
+            navigationBarColor: theme.scaffoldBackgroundColor,
+            statusBarColor: appBarColor,
+            navigationBarIconColor: iconColor,
+            statusBarIconColor: iconColor,
+          ),
           child: Directionality(
             textDirection: textDirection,
             child: child ?? const SizedBox.shrink(),

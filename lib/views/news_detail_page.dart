@@ -1029,20 +1029,6 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        l10n.translate('deepEngineIndicators'),
-                        style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const Icon(Icons.analytics_outlined, size: 18, color: Colors.grey),
-                    ],
-                  ),
-                  const Divider(height: 20),
                    Row(
                      children: [
                        Container(

@@ -1,0 +1,86 @@
+name: Android release bundle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Restore Android upload key
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          def required(name):
+              value = os.environ.get(name)
+              if not value:
+                  raise SystemExit(f"Required GitHub Actions secret is missing: {name}")
+              return value
+
+          def escape_property(value):
+              escaped = []
+              for index, character in enumerate(value):
+                  if character == "\\":
+                      escaped.append("\\\\")
+                  elif character in "\t\n\r\f":
+                      escaped.append({"\t": "\\t", "\n": "\\n", "\r": "\\r", "\f": "\\f"}[character])
+                  elif character in "=:" or (character in " #!" and (character != " " or index == 0)):
+                      escaped.append("\\" + character)
+                  elif ord(character) < 32 or ord(character) > 126:
+                      escaped.append(f"\\u{ord(character):04x}")
+                  else:
+                      escaped.append(character)
+              return "".join(escaped)
+
+          keystore_data = base64.b64decode(required("ANDROID_UPLOAD_KEYSTORE_BASE64"), validate=True)
+          keystore_path = Path("android/app/upload-keystore.jks")
+          keystore_path.parent.mkdir(parents=True, exist_ok=True)
+          keystore_path.write_bytes(keystore_data)
+
+          properties = {
+              "storeFile": "app/upload-keystore.jks",
+              "storePassword": required("ANDROID_UPLOAD_STORE_PASSWORD"),
+              "keyAlias": required("ANDROID_UPLOAD_KEY_ALIAS"),
+              "keyPassword": required("ANDROID_UPLOAD_KEY_PASSWORD"),
+          }
+          Path("android/key.properties").write_text(
+              "".join(f"{key}={escape_property(value)}\n" for key, value in properties.items()),
+              encoding="ISO-8859-1",
+          )
+          PY
+
+      - name: Build signed Android App Bundle
+        run: flutter build appbundle --release
+
+      - name: Upload Android App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: yalla-news-release
+          path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
