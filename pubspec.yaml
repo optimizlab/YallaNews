@@ -16,10 +16,11 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.4+711261135
+version: 8.11.26+6
 
 environment:
-  sdk: ^3.8.1
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package com.example.yallanews to the latest versions
@@ -37,23 +38,24 @@ dependencies:
   google_fonts: ^6.2.1
   http: ^1.2.1
   ffi: ^2.1.2
-  webview_flutter: ^4.7.0
+  webview_flutter: ^4.14.1
   webview_flutter_windows: ^1.1.1
   flutter_svg: ^2.0.10
   lottie: ^3.3.1
   sqflite: ^2.3.0
   sqflite_common_ffi: ^2.3.0
   path_provider: ^2.1.0
-  shared_preferences: ^2.5.3
+  shared_preferences: ^2.5.6
   path: ^1.9.1
   html: ^0.15.0
   vector_math: ^2.1.4
   connectivity_plus: ^7.1.1
-  flutter_tts: ^4.0.0
+  flutter_tts:
+    path: third_party/flutter_tts
   google_mobile_ads: ^9.0.0
   url_launcher: ^6.3.1
-  package_info_plus: ^8.2.0
-  share_plus: ^9.0.0
+  package_info_plus: ^10.2.2
+  share_plus: ^13.3.1
   flutter_localizations:
     sdk: flutter
   intl: any
