@@ -82,6 +82,7 @@ kotlin {
 dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.8.0"))
     implementation("com.google.firebase:firebase-analytics")
+    implementation("androidx.work:work-runtime:2.12.0")
 }
 
 flutter {
