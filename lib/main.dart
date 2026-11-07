@@ -9,7 +9,6 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'l10n/app_localizations.dart';
 import 'services/analytics_service.dart';
 import 'services/app_settings.dart';
-import 'services/category_service.dart';
 import 'services/server_api_service.dart';
 import 'services/reward_ad_service.dart';
 import 'services/native_ad_service.dart';
@@ -18,12 +17,13 @@ import 'views/splash_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final brightness = WidgetsBinding.instance.platformDispatcher.platformBrightness;
+  final brightness =
+      WidgetsBinding.instance.platformDispatcher.platformBrightness;
   SystemChrome.setSystemUIOverlayStyle(
     _systemUiStyle(
       navigationBarColor: brightness == Brightness.dark
-          ? const Color(0xFF0F172A)
-          : const Color(0xFFF4F5F7),
+          ? const Color(0xFF1E293B)
+          : Colors.white,
       statusBarColor: brightness == Brightness.dark
           ? const Color(0xFF1E293B)
           : Colors.white,
@@ -124,7 +124,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     final isFirstRun = await AppSettings.instance.isFirstRun();
     if (!mounted) return;
     setState(() {
-      _initialPage = (!kIsWeb && isFirstRun) ? const WelcomePage() : const SplashPage();
+      _initialPage = (!kIsWeb && isFirstRun)
+          ? const WelcomePage()
+          : const SplashPage();
     });
   }
 
@@ -132,11 +134,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final settings = AppSettings.instance;
     final locale = settings.locale;
-    final textDirection =
-        (locale?.languageCode == 'ar') ? TextDirection.rtl : TextDirection.ltr;
+    final textDirection = (locale?.languageCode == 'ar')
+        ? TextDirection.rtl
+        : TextDirection.ltr;
 
     return MaterialApp(
-      title: AppLocalizations(locale ?? const Locale('ar')).translate('appName'),
+      title: AppLocalizations(
+        locale ?? const Locale('ar'),
+      ).translate('appName'),
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -145,7 +150,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           backgroundColor: Colors.white,
           foregroundColor: Color(0xFF1A1A1A),
           systemOverlayStyle: _systemUiStyle(
-            navigationBarColor: const Color(0xFFF4F5F7),
+            navigationBarColor: Colors.white,
             statusBarColor: Colors.white,
             navigationBarIconColor: const Color(0xFF1A1A1A),
             statusBarIconColor: const Color(0xFF1A1A1A),
@@ -201,7 +206,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           backgroundColor: Color(0xFF1E293B),
           foregroundColor: Color(0xFFF8FAFC),
           systemOverlayStyle: _systemUiStyle(
-            navigationBarColor: const Color(0xFF0F172A),
+            navigationBarColor: const Color(0xFF1E293B),
             statusBarColor: const Color(0xFF1E293B),
             navigationBarIconColor: const Color(0xFFF8FAFC),
             statusBarIconColor: const Color(0xFFF8FAFC),
@@ -259,9 +264,13 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
         final iconColor =
             theme.appBarTheme.foregroundColor ?? theme.colorScheme.onSurface;
+        final navigationBarColor =
+            theme.bottomNavigationBarTheme.backgroundColor ??
+            theme.appBarTheme.backgroundColor ??
+            theme.colorScheme.surface;
         return AnnotatedRegion<SystemUiOverlayStyle>(
           value: _systemUiStyle(
-            navigationBarColor: theme.scaffoldBackgroundColor,
+            navigationBarColor: navigationBarColor,
             statusBarColor: appBarColor,
             navigationBarIconColor: iconColor,
             statusBarIconColor: iconColor,

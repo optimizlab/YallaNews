@@ -59,8 +59,10 @@ class NewsUriParser {
     'program', 'programcategory', 'sportcategory', 'almaraatv', 'aljarida',
     'video', 'videos', 'multimedia', 'gallery', 'photos', 'opinion', 'opinions',
     'livestream', 'live-tv', 'tv', 'radio', 'podcast',
-    'writer', 'admin', 'mondial', 'pollsarchive', 'details',
+    'writer', 'admin', 'mondial', 'pollsarchive', 'details', 'cdn-cgi',
     'newsletter', 'latest-news', 'most-read', 'trending', 'popular',
+    'team', 'teams', 'staff', 'فريق-العمل', 'فريق-التحرير',
+    'مواقيت-الصلاة', 'اوقات-الصلاة', 'أوقات-الصلاة',
     'home', 'index', 'archive', 'archives', 'page', 'pages'
   ];
 
@@ -113,6 +115,7 @@ class NewsUriParser {
 
     // 3. Extension Check
     final path = uri.path.toLowerCase();
+    final decodedPath = uri.pathSegments.join('/').toLowerCase();
     for (final ext in blacklistedExtensions) {
       if (path.endsWith(ext)) return false;
     }
@@ -121,7 +124,12 @@ class NewsUriParser {
 
     // 4. Blacklisted Path Segments Check
     for (final segment in blacklistedPathSegments) {
-      if (path.contains('/$segment/') || path.contains('/$segment') || path.endsWith(segment)) {
+      if (path.contains('/$segment/') ||
+          path.contains('/$segment') ||
+          path.endsWith(segment) ||
+          decodedPath.contains('/$segment/') ||
+          decodedPath.contains('/$segment') ||
+          decodedPath.endsWith(segment)) {
         return false;
       }
     }

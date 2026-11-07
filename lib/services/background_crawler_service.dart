@@ -44,6 +44,7 @@ void _crawlerIsolateEntry(Map<String, dynamic> init) async {
           sendPort.send({'type': 'result', 'requestId': requestId, 'result': result});
         }
       } catch (e) {
+        debugPrint('[CRAWLER ISOLATE] Request failed: $e');
         if (requestId != null) {
           sendPort.send({'type': 'error', 'requestId': requestId, 'error': e.toString()});
         }
@@ -118,6 +119,7 @@ Future<Map<String, dynamic>> _crawlSourceInIsolate(Map<String, dynamic> task) as
         if (lastSegment.length < 5 && !RegExp(r'^\d+$').hasMatch(lastSegment)) continue;
         
         final normalized = absolute.toString();
+        if (!NewsUriParser.isValidArticleUrl(normalized)) continue;
         if (!articleUrls.add(normalized)) {
           continue;
         }
@@ -306,7 +308,7 @@ Future<Map<String, dynamic>> _crawlSourceInIsolate(Map<String, dynamic> task) as
       'category': detectedCategory,
       'language': sourceLanguage.contains('ar') ? 'ar' : 'en',
       'image_url': articleImage ?? '',
-      'publishDate': DateTime.now().toIso8601String(),
+      'publishDate': '',
       'status': 'published',
     };
   } catch (e) {
@@ -590,7 +592,7 @@ class BackgroundCrawlerService {
 
   Timer? _memoryWatchdog;
   static const int _memoryWarningThresholdMb = 500;
-  static const int _memoryCriticalThresholdMb = 700;
+  static const int _memoryCriticalThresholdMb = 900;
 
   StreamSubscription? _connectivitySubscription;
 
@@ -877,7 +879,11 @@ class BackgroundCrawlerService {
     _memoryWatchdog = null;
   }
 
-  Future<Map<String, dynamic>?> _processArticleUrl(String url, {String? sourceLanguage}) async {
+  Future<Map<String, dynamic>?> _processArticleUrl(
+    String url, {
+    String? sourceLanguage,
+    String? sourceName,
+  }) async {
     if (_crawlerSendPort == null) return null;
 
     final requestId = _nextRequestId++;
@@ -888,6 +894,8 @@ class BackgroundCrawlerService {
       'action': 'crawl',
       'requestId': requestId,
       'sourceUrl': url,
+      'sourceName': sourceName,
+      'maxUrls': 1,
       'sourceLanguage': sourceLanguage,
     });
 
@@ -895,7 +903,12 @@ class BackgroundCrawlerService {
       final result = await completer.future.timeout(const Duration(seconds: 15));
       return result;
     } catch (e) {
-      return null;
+      debugPrint('[CRAWLER] Article parser request failed: $e');
+      return <String, dynamic>{
+        'success': false,
+        'url': url,
+        'reason': e.toString(),
+      };
     } finally {
       _pendingRequests.remove(requestId);
     }
@@ -949,6 +962,14 @@ class BackgroundCrawlerService {
       } else {
         article = NewsModel.fromJson(result, source.url);
       }
+      article = article.copyWith(
+        sourceName: article.sourceName.isEmpty
+            ? source.name
+            : article.sourceName,
+        sourceUrl: article.sourceUrl.isEmpty
+            ? source.url
+            : article.sourceUrl,
+      );
       if (hasNativeEngine && scoreArticleQuality(article.title, article.content, article.summary) < 0.45) {
         engineService.addLog('[QUALITY GATE] Rejected non-news page: ${article.url}');
         return 0.0;
@@ -1061,9 +1082,17 @@ class BackgroundCrawlerService {
           if (usedNewsBrain) {
             engineService.addLog('[NEWSBRAIN] Article failed validation, falling back to isolate parser for: $url');
           }
-          final result = await _processArticleUrl(url, sourceLanguage: source.language);
+          final result = await _processArticleUrl(
+            url,
+            sourceLanguage: source.language,
+            sourceName: source.name,
+          );
           if (result == null || result['success'] != true || result['is_source'] == true) {
             failureCount++;
+            engineService.addLog(
+              '[CRAWL PASS 2] Failed to extract $url: '
+              '${result?['reason'] ?? 'unknown error'}',
+            );
             continue;
           }
           article = NewsModel.fromJson(result, url);
@@ -1094,12 +1123,20 @@ class BackgroundCrawlerService {
           } catch (_) {}
         }
 
-        final currentArticle = article ?? validArticle;
+        final articleToEmit = article ?? validArticle;
+        var currentArticle = articleToEmit.copyWith(
+          sourceName: articleToEmit.sourceName.isEmpty
+              ? source.name
+              : articleToEmit.sourceName,
+          sourceUrl: articleToEmit.sourceUrl.isEmpty
+              ? source.url
+              : articleToEmit.sourceUrl,
+        );
 
         if (currentArticle.imageUrl.isEmpty) {
           final categorySlug = currentArticle.category.toLowerCase();
           final seed = Uri.parse(url).path.hashCode.abs() % 1000;
-          article = currentArticle.copyWith(
+          currentArticle = currentArticle.copyWith(
             imageUrl: 'https://placehold.co/600x400/EEE/31343C?text=$categorySlug+$seed',
           );
         }
@@ -1344,9 +1381,9 @@ class BackgroundCrawlerService {
       networkProfile: const NetworkProfile(connectionType: ConnectionType.none, isWifi: false),
       tier: DeviceTier.medium,
       limits: const CrawlLimits(
-        sourcesToCrawl: 3,
+        sourcesToCrawl: 5,
         urlsPerSource: 3,
-        perSourceLimit: 2,
+        perSourceLimit: 3,
         pauseBetweenArticles: Duration(milliseconds: 800),
         pauseBetweenSources: Duration(milliseconds: 1000),
         maxConcurrentRequests: 1,
@@ -1371,7 +1408,11 @@ class BackgroundCrawlerService {
     final sw = Stopwatch()..start();
     Map<String, dynamic>? result;
     try {
-      result = await _processArticleUrl(articleUrl, sourceLanguage: source.language);
+      result = await _processArticleUrl(
+        articleUrl,
+        sourceLanguage: source.language,
+        sourceName: source.name,
+      );
     } catch (_) {
       result = null;
     }

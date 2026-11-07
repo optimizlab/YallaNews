@@ -31,6 +31,27 @@ void main() {
       expect(NewsUriParser.isValidArticleUrl('https://example.com/terms'), isFalse);
     });
 
+    test('isValidArticleUrl rejects publisher utility pages', () {
+      expect(
+        NewsUriParser.isValidArticleUrl(
+          'https://www.chouftv.ma/%D9%81%D8%B1%D9%8A%D9%82-%D8%A7%D9%84%D8%B9%D9%85%D9%84',
+        ),
+        isFalse,
+      );
+      expect(
+        NewsUriParser.isValidArticleUrl(
+          'https://al3omk.com/%D9%85%D9%88%D8%A7%D9%82%D9%8A%D8%AA-%D8%A7%D9%84%D8%B5%D9%84%D8%A7%D8%A9?city=Casablanca',
+        ),
+        isFalse,
+      );
+      expect(
+        NewsUriParser.isValidArticleUrl(
+          'https://www.hibapress.com/cdn-cgi/content?id=challenge',
+        ),
+        isFalse,
+      );
+    });
+
     test('parseUri extracts host and category', () {
       final parsed = NewsUriParser.parseUri('https://hespress.com/politics/2024/01/15/article-title');
       expect(parsed.host, 'hespress.com');
