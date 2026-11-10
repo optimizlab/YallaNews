@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../news/news_schema.php';
 
 no_cache_headers();
 $userId = require_auth();
@@ -9,14 +10,19 @@ list($page, $limit, $offset) = get_pagination_params();
 
 try {
     $db = Database::getInstance();
+    $newsColumns = news_table_columns($db);
+    $sourceNameExpression = news_source_name_expression($newsColumns);
+    $sourceJoin = news_source_join($newsColumns);
 
     $countSql = "SELECT COUNT(*) FROM yn_user_saved_articles WHERE user_id = ?";
     $stmt = $db->query($countSql, [$userId]);
     $total = intval($stmt->fetchColumn());
 
-    $sql = "SELECT n.id, n.title, n.summary, n.content, n.image_url, n.published_at, n.category, n.source_url_article, n.source_name
+    $sql = "SELECT n.id, n.title, n.summary, n.content, n.image_url, n.published_at, n.category, n.source_url_article,
+                   $sourceNameExpression AS source_name
             FROM yn_user_saved_articles s
             JOIN yn_news n ON s.article_id = n.id
+            $sourceJoin
             WHERE s.user_id = ? AND n.status = 'published'
             ORDER BY s.created_at DESC
             LIMIT ? OFFSET ?";

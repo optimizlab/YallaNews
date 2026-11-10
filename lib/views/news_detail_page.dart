@@ -15,12 +15,14 @@ import 'package:webview_flutter_windows/webview_flutter_windows.dart'
     as windows_webview;
 import '../services/comment_service.dart';
 import '../services/user_service.dart';
+import '../services/auth_service.dart';
 import '../services/connectivity_service.dart';
 import '../widgets/cached_news_image.dart';
 import '../widgets/reward_ad.dart';
 import '../services/server_api_service.dart';
 import '../services/knowledge_extraction_service.dart';
 import '../services/category_service.dart';
+import '../services/app_settings.dart';
 import '../database/news_db.dart';
 import 'auth/login_page.dart';
 
@@ -183,7 +185,6 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   bool _isLiked = false;
   int _likeCount = 0;
   bool _likeLoading = false;
-  bool _isLoggedIn = false;
   bool _isSaved = false;
   bool _saveLoading = false;
   bool _isOfflineSaved = false;
@@ -206,6 +207,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     _loadLikeState();
     _loadOfflineSavedState();
     _loadRelatedArticles();
+    AuthService.instance.addListener(_onAuthChanged);
+  }
+
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadOfflineSavedState() async {
@@ -219,6 +225,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   Future<void> _loadRelatedArticles() async {
+    final language = _relatedLanguage(article);
     setState(() {
       _relatedArticles = _pickRelatedArticles(
         article,
@@ -228,11 +235,27 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       _isLoadingRelated = true;
     });
     try {
-      final all = await NewsDatabase.instance.getAllArticles(limit: 200);
-      debugPrint(
-        '[RELATED] article category="${article.category}" keywords=${article.keywords.length} candidates=${all.length}',
+      if (article.category.trim().isEmpty || language.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _relatedArticles = [];
+            _isLoadingRelated = false;
+          });
+        }
+        return;
+      }
+
+      final candidates = await ServerApiService.getNews(
+        limit: 100,
+        category: article.category,
+        language: language,
+        relatedOnly: true,
+        excludeUrl: article.url,
       );
-      final related = _pickRelatedArticles(article, all, limit: 6);
+      debugPrint(
+        '[RELATED] article category="${article.category}" language=$language candidates=${candidates.length}',
+      );
+      final related = _pickRelatedArticles(article, candidates, limit: 6);
       debugPrint(
         '[RELATED] picked=${related.length} relatedArticles=${article.relatedArticles.length}',
       );
@@ -326,6 +349,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
 
   @override
   void dispose() {
+    AuthService.instance.removeListener(_onAuthChanged);
     _scrollController.removeListener(_scrollListener);
     _scrollController.dispose();
     TTSService.instance.stop();
@@ -420,62 +444,37 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   /// Picks genuinely similar "more like this" articles.
-  ///
-  /// Prefers the article's pre-computed `.relatedArticles` (cluster/blend
-  /// members), then falls back to same-category articles from the local cache,
-  /// then keyword-overlap matches, then the most recent articles. Never returns
-  /// the source article itself and de-duplicates by URL.
+  /// Category and language must match exactly; no cross-category or recent-news
+  /// fallback is allowed.
   static List<NewsModel> _pickRelatedArticles(
     NewsModel article,
     List<NewsModel> candidates, {
     required int limit,
   }) {
+    final category = article.category.trim().toLowerCase();
+    final language = _relatedLanguage(article).toLowerCase();
+    if (category.isEmpty || language.isEmpty) return [];
+
     final seen = <String>{article.url};
     final picked = <NewsModel>[];
-
-    for (final a in article.relatedArticles) {
-      if (a.url.isEmpty || seen.contains(a.url)) continue;
-      seen.add(a.url);
-      picked.add(a);
-      if (picked.length >= limit) return picked;
-    }
-
-    final cat = article.category.toLowerCase();
-    for (final a in candidates) {
-      if (a.url.isEmpty || seen.contains(a.url)) continue;
-      if (a.category.toLowerCase() != cat) continue;
-      seen.add(a.url);
-      picked.add(a);
-      if (picked.length >= limit) break;
-    }
-    if (picked.length >= limit) return picked;
-
-    final keywords = article.keywords
-        .where((k) => k.isNotEmpty)
-        .map((k) => k.toLowerCase())
-        .toSet();
-    if (keywords.isNotEmpty) {
-      for (final a in candidates) {
-        if (a.url.isEmpty || seen.contains(a.url)) continue;
-        final hits = a.keywords
-            .where((k) => keywords.contains(k.toLowerCase()))
-            .length;
-        if (hits > 0) {
-          seen.add(a.url);
-          picked.add(a);
-          if (picked.length >= limit) break;
-        }
+    for (final candidate in [...article.relatedArticles, ...candidates]) {
+      if (candidate.url.isEmpty ||
+          seen.contains(candidate.url) ||
+          candidate.category.trim().toLowerCase() != category ||
+          candidate.language.trim().toLowerCase() != language) {
+        continue;
       }
-    }
-    if (picked.length >= limit) return picked;
-
-    for (final a in candidates) {
-      if (a.url.isEmpty || seen.contains(a.url)) continue;
-      seen.add(a.url);
-      picked.add(a);
+      seen.add(candidate.url);
+      picked.add(candidate);
       if (picked.length >= limit) break;
     }
     return picked;
+  }
+
+  static String _relatedLanguage(NewsModel article) {
+    final language = article.language.trim();
+    if (language.isNotEmpty) return language;
+    return AppSettings.instance.locale?.languageCode ?? '';
   }
 
   static bool _isGroundedInStory(
@@ -625,7 +624,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   /// Load like status and count from API.
   Future<void> _loadLikeState() async {
     try {
-      final loggedIn = await ServerApiService.isLoggedIn();
+      final loggedIn = AuthService.instance.isLoggedIn;
       final count = await ServerApiService.getLikeCount(article.url);
       bool liked = false;
       bool saved = false;
@@ -635,7 +634,6 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       }
       if (mounted) {
         setState(() {
-          _isLoggedIn = loggedIn;
           _isLiked = liked;
           _isSaved = saved;
           _likeCount = count;
@@ -1102,8 +1100,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             onPressed: article.url.trim().isEmpty
                 ? null
                 : () => _openSourceUrl(context, article.url),
-            backgroundColor: Theme.of(context).colorScheme.primary,
-            foregroundColor: Theme.of(context).colorScheme.onPrimary,
+            backgroundColor: Theme.of(context).colorScheme.surface,
+            foregroundColor: Theme.of(context).colorScheme.onSurface,
             icon: const Icon(Icons.public_rounded, size: 19),
             label: Text(
               l10n.translate('readFromSource'),
@@ -1147,7 +1145,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Text(
-                    CategoryService.getCategoryLabel(article.category, context),
+                    CategoryService.instance.getCategoryName(
+                      article.category,
+                      context,
+                    ),
                     style: GoogleFonts.outfit(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -1964,9 +1965,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   /// before the user scrolls to the form.
   Future<void> _openCommentsForUser(BuildContext context) async {
     if (!(await _requireInternet())) return;
-    final loggedIn = await ServerApiService.isLoggedIn();
-    if (!mounted) return;
-    if (!loggedIn) {
+    if (!AuthService.instance.isLoggedIn) {
+      if (!mounted) return;
       await Navigator.of(
         context,
       ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
@@ -2242,10 +2242,16 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ),
         const SizedBox(height: 16),
         // ── Add comment button — login required ───────────────────────────────
-        if (!_isLoggedIn)
+        if (!AuthService.instance.isLoggedIn)
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              ),
               onPressed: () => _openCommentsForUser(context),
               icon: const Icon(Icons.login_rounded, size: 18),
               label: Text(
@@ -2258,6 +2264,12 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.primary,
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
               onPressed: () async {
                 await _showCommentDialog(context);
                 if (mounted) setState(() => _commentRefreshKey++);
@@ -2275,8 +2287,22 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
 
   Future<void> _showCommentDialog(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
-    final nameController = TextEditingController();
     final commentController = TextEditingController();
+    UserProfile? user = AuthService.instance.currentUser;
+    if (user == null) {
+      try {
+        user = await UserService.getCurrentUser();
+      } catch (_) {
+        user = null;
+      }
+    }
+    final commentUserId = user?.uid ?? '';
+    final commentUserName = (user != null && user.displayName.isNotEmpty)
+        ? user.displayName
+        : ((user != null && user.email.isNotEmpty)
+            ? user.email.split('@').first
+            : 'مستخدم');
+    final hasUser = user != null || AuthService.instance.isLoggedIn;
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -2284,18 +2310,26 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: nameController,
-              decoration: InputDecoration(hintText: l10n.translate('email')),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: commentController,
-              maxLines: 4,
-              decoration: InputDecoration(
-                hintText: l10n.translate('writeComment'),
+            if (!hasUser)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  l10n.translate('sessionExpired'),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 13,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else
+              TextField(
+                controller: commentController,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: l10n.translate('writeComment'),
+                ),
               ),
-            ),
           ],
         ),
         actions: [
@@ -2303,25 +2337,46 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             onPressed: () => Navigator.pop(context),
             child: Text(l10n.translate('cancel')),
           ),
-          ElevatedButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final text = commentController.text.trim();
-              if (text.isEmpty || name.isEmpty) return;
-              await CommentService.addComment(
-                Comment(
-                  id: '',
-                  articleId: article.url,
-                  userId: name,
-                  userName: name,
-                  text: text,
-                  createdAt: DateTime.now(),
-                ),
-              );
-              if (mounted) Navigator.pop(context);
-            },
-            child: Text(l10n.translate('send')),
-          ),
+          if (hasUser)
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              ),
+              onPressed: () async {
+                final text = commentController.text.trim();
+                if (text.isEmpty) return;
+                try {
+                  await CommentService.addComment(
+                    Comment(
+                      id: '',
+                      articleId: article.url,
+                      userId: commentUserId,
+                      userName: commentUserName,
+                      text: text,
+                      createdAt: DateTime.now(),
+                    ),
+                  );
+                  if (mounted) Navigator.pop(context);
+                  if (mounted) setState(() => _commentRefreshKey++);
+                } catch (e) {
+                  if (mounted) {
+                    final msg = e.toString();
+                    if (msg.contains('401') || msg.contains('Unauthorized')) {
+                      Navigator.pop(context);
+                      _showActionMessage(
+                        l10n.translate('sessionExpired'),
+                      );
+                    } else {
+                      _showActionMessage(
+                        '${l10n.translate('commentFailed')}: $e',
+                      );
+                    }
+                  }
+                }
+              },
+              child: Text(l10n.translate('send')),
+            ),
         ],
       ),
     );
@@ -3450,16 +3505,22 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
 
   Future<void> _loadRelated() async {
     try {
-      final all = await NewsDatabase.instance.getAllArticles(limit: 300);
-      final seenUrls = <String>{widget.article.url};
-      final category = widget.article.category.toLowerCase();
-      final related = [...widget.related, ...all]
-          .where((article) => article.category.toLowerCase() == category)
-          .where(
-            (article) => article.url.isNotEmpty && seenUrls.add(article.url),
-          )
-          .take(20)
-          .toList();
+      final language = _NewsDetailPageState._relatedLanguage(widget.article);
+      final candidates =
+          widget.article.category.trim().isEmpty || language.isEmpty
+          ? <NewsModel>[]
+          : await ServerApiService.getNews(
+              limit: 100,
+              category: widget.article.category,
+              language: language,
+              relatedOnly: true,
+              excludeUrl: widget.article.url,
+            );
+      final related = _NewsDetailPageState._pickRelatedArticles(
+        widget.article,
+        [...widget.related, ...candidates],
+        limit: 20,
+      );
       if (mounted) {
         setState(() {
           _related = related;
@@ -3472,14 +3533,11 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
       );
       if (mounted) {
         setState(() {
-          _related = widget.related
-              .where(
-                (article) =>
-                    article.url != widget.article.url &&
-                    article.category.toLowerCase() ==
-                        widget.article.category.toLowerCase(),
-              )
-              .toList();
+          _related = _NewsDetailPageState._pickRelatedArticles(
+            widget.article,
+            widget.related,
+            limit: 20,
+          );
           _isLoading = false;
         });
       }

@@ -14,6 +14,8 @@ CREATE TABLE `yn_categories` (
   `id` VARCHAR(64) NOT NULL,
   `name` VARCHAR(128) NOT NULL,
   `name_en` VARCHAR(128) NOT NULL,
+  `name_fr` VARCHAR(128) NOT NULL DEFAULT '',
+  `name_tr` VARCHAR(128) NOT NULL DEFAULT '',
   `sort_order` INT DEFAULT 0,
   `active` TINYINT(1) DEFAULT 1,
   PRIMARY KEY (`id`),
@@ -245,4 +247,3 @@ CREATE TABLE `yn_analytics_events` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
-

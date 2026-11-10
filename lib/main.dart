@@ -9,9 +9,12 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'l10n/app_localizations.dart';
 import 'services/analytics_service.dart';
 import 'services/app_settings.dart';
+import 'services/auth_service.dart';
 import 'services/server_api_service.dart';
 import 'services/reward_ad_service.dart';
 import 'services/native_ad_service.dart';
+import 'services/yalla_engine_service.dart';
+import 'views/home_page.dart';
 import 'views/welcome_page.dart';
 import 'views/splash_page.dart';
 
@@ -48,6 +51,9 @@ Future<void> main() async {
     } on MissingPluginException catch (_) {
     } catch (_) {}
   }
+  // Restore the user's login session before the UI is built so a connected
+  // user stays logged in across app restarts.
+  await AuthService.instance.init();
   runApp(const MyApp());
 }
 
@@ -89,10 +95,15 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     AppSettings.instance.addListener(_onSettingsChanged);
+    AuthService.instance.addListener(_onAuthChanged);
     ServerApiService.startHeartbeat();
     // Real user-behavior analytics (local queue + batched delivery)
     AnalyticsService.instance.init();
     _resolveInitialPage();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -122,11 +133,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _resolveInitialPage() async {
     final isFirstRun = await AppSettings.instance.isFirstRun();
+    final isLoggedIn = AuthService.instance.isLoggedIn;
     if (!mounted) return;
     setState(() {
-      _initialPage = (!kIsWeb && isFirstRun)
-          ? const WelcomePage()
-          : const SplashPage();
+      _initialPage = isLoggedIn
+          ? HomePage(engineService: YallaEngineService())
+          : (!kIsWeb && isFirstRun)
+              ? const WelcomePage()
+              : const SplashPage();
     });
   }
 
@@ -169,6 +183,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           secondary: const Color(0xFF8E8E8E),
           surface: Colors.white,
           surfaceContainer: const Color(0xFFF4F5F7),
+          surfaceContainerHighest: const Color(0xFFE8E8E8),
           onSurface: const Color(0xFF1A1A1A),
           onSurfaceVariant: const Color(0xFF555555),
         ),

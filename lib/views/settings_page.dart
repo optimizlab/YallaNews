@@ -336,7 +336,7 @@ class _SettingsPageState extends State<SettingsPage> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               hintText: TTSService.instance.selectedVoiceName ?? AppLocalizations.of(context).translate('voiceSelection'),
-              hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
+              hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14),
             ),
             value: _selectedVoice,
             selectedItemBuilder: (context) => sorted.map((voice) {

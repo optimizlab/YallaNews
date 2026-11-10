@@ -119,8 +119,6 @@ class _ExplorePageState extends State<ExplorePage> {
                   crossAxisSpacing: 16,
                   children: categories.map((category) {
                 final id = category['id']?.toString() ?? 'general';
-                final name = category['name']?.toString() ?? id;
-                final nameEn = category['nameEn']?.toString() ?? id;
                 final count = category['newsCount']?.toString() ?? '0';
                 final icon = _categoryIcon(id);
                 final color = _categoryColor(id);
@@ -208,11 +206,15 @@ class _ExplorePageState extends State<ExplorePage> {
               const SizedBox(height: 16),
               Text(
                 title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
               ),
               const SizedBox(height: 4),
               Text(
                 l10n.translate('newsCount').replaceAll('{count}', count),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ],

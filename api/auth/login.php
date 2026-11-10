@@ -67,9 +67,17 @@ try {
         } catch (Exception $ignoreMigration) {}
 
         $db->query("UPDATE yn_users SET auth_token = ? WHERE id = ?", [$authToken, $user['id']]);
+
+        // Verify the token was actually persisted
+        $verify = $db->query("SELECT auth_token FROM yn_users WHERE id = ? LIMIT 1", [$user['id']]);
+        $saved = $verify->fetch();
+        if (!$saved || $saved['auth_token'] !== $authToken) {
+            throw new Exception('Failed to persist auth token to database');
+        }
     } catch (Exception $e) {
         error_log('Token save error: ' . $e->getMessage());
-        $authToken = null; // Fall back to session only
+        json_response(['error' => 'Authentication setup failed'], 500);
+        return;
     }
 
     session_regenerate_id(true);

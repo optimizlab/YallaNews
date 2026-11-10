@@ -2,7 +2,67 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:yallanews/models/news_model.dart';
 
 void main() {
+  group('NewsModel image URL resolution', () {
+    test('resolves a relative image path against the article URL', () {
+      expect(
+        NewsModel.resolveImageUrl(
+          '../images/story.jpg',
+          'https://news.example.com/world/story',
+        ),
+        'https://news.example.com/images/story.jpg',
+      );
+    });
+
+    test('resolves root-relative and protocol-relative image URLs', () {
+      expect(
+        NewsModel.resolveImageUrl(
+          '/media/story.jpg',
+          'https://news.example.com/world/story',
+        ),
+        'https://news.example.com/media/story.jpg',
+      );
+      expect(
+        NewsModel.resolveImageUrl(
+          '//cdn.example.com/story.jpg',
+          'http://news.example.com/world/story',
+        ),
+        'http://cdn.example.com/story.jpg',
+      );
+    });
+
+    test('keeps absolute image URLs and rejects non-web URLs', () {
+      expect(
+        NewsModel.resolveImageUrl(
+          'https://cdn.example.com/story.jpg',
+          'https://news.example.com/story',
+        ),
+        'https://cdn.example.com/story.jpg',
+      );
+      expect(
+        NewsModel.resolveImageUrl(
+          'data:image/png;base64,abc',
+          'https://news.example.com/story',
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('NewsModel source attribution (Fix 3)', () {
+    test('preserves API language through serialization and copyWith', () {
+      final article = NewsModel.fromJson({
+        'title': 'A headline',
+        'summary': '',
+        'content': '',
+        'category': 'politics',
+        'language': 'en',
+      }, 'https://example.com/article');
+
+      expect(article.language, 'en');
+      expect(article.copyWith(language: 'fr').language, 'fr');
+      expect(article.toJson()['language'], 'en');
+    });
+
     test('fromJson maps complete source metadata', () {
       final json = {
         'id': 'art_1',
@@ -34,6 +94,20 @@ void main() {
       expect(article.updatedAt, '1700001000000');
       expect(article.imageCredit, '© Al Example News');
       expect(article.imageSourceUrl, 'https://example.com/img.jpg');
+    });
+
+    test('fromJson reads the nested source returned by the news API', () {
+      final article = NewsModel.fromJson({
+        'title': 'A headline',
+        'summary': '',
+        'content': '',
+        'category': 'sports',
+        'source': {'name': 'Example News', 'url': 'https://example.com/'},
+      }, 'https://example.com/news/article');
+
+      expect(article.sourceName, 'Example News');
+      expect(article.sourceUrl, 'https://example.com/');
+      expect(article.displaySourceName, 'Example News');
     });
 
     test('fromJson with missing metadata stays safe and empty', () {
@@ -146,27 +220,57 @@ void main() {
   group('NewsModel publication date parsing', () {
     test('parses epoch milliseconds string', () {
       final a = NewsModel(
-        url: 'u', title: 't', summary: 's', content: 'c', imageUrl: '',
-        category: 'g', sentiment: 0.0, keywords: [], logs: '', author: '',
-        publishDate: '', publishedAt: '1700000000000',
+        url: 'u',
+        title: 't',
+        summary: 's',
+        content: 'c',
+        imageUrl: '',
+        category: 'g',
+        sentiment: 0.0,
+        keywords: [],
+        logs: '',
+        author: '',
+        publishDate: '',
+        publishedAt: '1700000000000',
       );
-      expect(a.publicationDate, DateTime.fromMillisecondsSinceEpoch(1700000000000));
+      expect(
+        a.publicationDate,
+        DateTime.fromMillisecondsSinceEpoch(1700000000000),
+      );
     });
 
     test('returns null for missing date', () {
       final a = NewsModel(
-        url: 'u', title: 't', summary: 's', content: 'c', imageUrl: '',
-        category: 'g', sentiment: 0.0, keywords: [], logs: '', author: '',
-        publishDate: '', publishedAt: '',
+        url: 'u',
+        title: 't',
+        summary: 's',
+        content: 'c',
+        imageUrl: '',
+        category: 'g',
+        sentiment: 0.0,
+        keywords: [],
+        logs: '',
+        author: '',
+        publishDate: '',
+        publishedAt: '',
       );
       expect(a.publicationDate, isNull);
     });
 
     test('returns null for malformed date', () {
       final a = NewsModel(
-        url: 'u', title: 't', summary: 's', content: 'c', imageUrl: '',
-        category: 'g', sentiment: 0.0, keywords: [], logs: '', author: '',
-        publishDate: 'not-a-date', publishedAt: '',
+        url: 'u',
+        title: 't',
+        summary: 's',
+        content: 'c',
+        imageUrl: '',
+        category: 'g',
+        sentiment: 0.0,
+        keywords: [],
+        logs: '',
+        author: '',
+        publishDate: 'not-a-date',
+        publishedAt: '',
       );
       expect(a.publicationDate, isNull);
     });
@@ -178,20 +282,34 @@ void main() {
     NewsModel freshArticle({required int daysAgo, bool currentEvent = false}) {
       final d = now.subtract(Duration(days: daysAgo));
       return NewsModel(
-        url: 'u', title: 't', summary: 's', content: 'c', imageUrl: '',
+        url: 'u',
+        title: 't',
+        summary: 's',
+        content: 'c',
+        imageUrl: '',
         category: currentEvent ? 'breaking' : 'general',
-        sentiment: 0.0, keywords: [], logs: '', author: '',
-        publishDate: '', publishedAt: d.millisecondsSinceEpoch.toString(),
+        sentiment: 0.0,
+        keywords: [],
+        logs: '',
+        author: '',
+        publishDate: '',
+        publishedAt: d.millisecondsSinceEpoch.toString(),
         eventType: currentEvent ? 'breaking' : 'general',
       );
     }
 
     test('current-events article within 30 days is fresh', () {
-      expect(freshArticle(daysAgo: 10, currentEvent: true).isFreshForFeed(), isTrue);
+      expect(
+        freshArticle(daysAgo: 10, currentEvent: true).isFreshForFeed(),
+        isTrue,
+      );
     });
 
     test('current-events article older than 30 days is stale', () {
-      expect(freshArticle(daysAgo: 45, currentEvent: true).isFreshForFeed(), isFalse);
+      expect(
+        freshArticle(daysAgo: 45, currentEvent: true).isFreshForFeed(),
+        isFalse,
+      );
     });
 
     test('general article within 3 months is fresh', () {
@@ -204,9 +322,19 @@ void main() {
 
     test('article with missing date is kept (not fabricated)', () {
       final a = NewsModel(
-        url: 'u', title: 't', summary: 's', content: 'c', imageUrl: '',
-        category: 'breaking', sentiment: 0.0, keywords: [], logs: '', author: '',
-        publishDate: '', publishedAt: '', eventType: 'breaking',
+        url: 'u',
+        title: 't',
+        summary: 's',
+        content: 'c',
+        imageUrl: '',
+        category: 'breaking',
+        sentiment: 0.0,
+        keywords: [],
+        logs: '',
+        author: '',
+        publishDate: '',
+        publishedAt: '',
+        eventType: 'breaking',
       );
       expect(a.isFreshForFeed(currentEventsMaxAgeDays: 30), isTrue);
     });
@@ -214,9 +342,18 @@ void main() {
     test('future date is kept and not adjusted', () {
       final d = now.add(const Duration(days: 5));
       final a = NewsModel(
-        url: 'u', title: 't', summary: 's', content: 'c', imageUrl: '',
-        category: 'breaking', sentiment: 0.0, keywords: [], logs: '', author: '',
-        publishDate: '', publishedAt: d.millisecondsSinceEpoch.toString(),
+        url: 'u',
+        title: 't',
+        summary: 's',
+        content: 'c',
+        imageUrl: '',
+        category: 'breaking',
+        sentiment: 0.0,
+        keywords: [],
+        logs: '',
+        author: '',
+        publishDate: '',
+        publishedAt: d.millisecondsSinceEpoch.toString(),
         eventType: 'breaking',
       );
       expect(a.isFreshForFeed(currentEventsMaxAgeDays: 30), isTrue);

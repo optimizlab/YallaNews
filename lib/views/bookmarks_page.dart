@@ -166,7 +166,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            _getCategoryLabel(article.category, context),
+                            _getCategoryName(article.category, context),
                             style: GoogleFonts.outfit(fontSize: 10, fontWeight: FontWeight.w600, color: Theme.of(context).colorScheme.onSurfaceVariant),
                           ),
                         ),
@@ -207,8 +207,8 @@ class _BookmarksPageState extends State<BookmarksPage> {
     );
   }
 
-  String _getCategoryLabel(String category, BuildContext context) {
-    return CategoryService.getCategoryLabel(category, context);
+  String _getCategoryName(String category, BuildContext context) {
+    return CategoryService.instance.getCategoryName(category, context);
   }
 
   String _getReadTime(NewsModel article, BuildContext context) {

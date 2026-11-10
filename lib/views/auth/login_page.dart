@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../l10n/app_localizations.dart';
 import '../../widgets/custom_logo.dart';
-import '../../services/server_api_service.dart';
+import '../../services/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({Key? key}) : super(key: key);
@@ -38,12 +38,12 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       if (_isLogin) {
-        final result = await ServerApiService.login(
+        final result = await AuthService.instance.login(
           _emailController.text.trim(),
           _passwordController.text.trim(),
         );
         if (result['success'] == true && mounted) {
-          Navigator.of(context).pop();
+          Navigator.of(context).pop(true);
         } else {
           setState(() => _errorMessage = result['error'] ?? l10n.translate('loginFailed'));
         }
@@ -51,13 +51,13 @@ class _LoginPageState extends State<LoginPage> {
         if (_passwordController.text != _confirmPasswordController.text) {
           throw Exception(l10n.translate('passwordsDoNotMatch'));
         }
-        final result = await ServerApiService.signup({
+        final result = await AuthService.instance.signup({
           'email': _emailController.text.trim(),
           'password': _passwordController.text.trim(),
           'displayName': _emailController.text.trim().split('@').first,
         });
         if (result['success'] == true && mounted) {
-          Navigator.of(context).pop();
+          Navigator.of(context).pop(true);
         } else {
           setState(() => _errorMessage = result['error'] ?? l10n.translate('signupFailed'));
         }

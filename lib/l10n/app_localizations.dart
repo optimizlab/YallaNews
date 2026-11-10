@@ -263,6 +263,8 @@ class AppLocalizations {
       'signupFailed': 'فشل إنشاء الحساب',
       'noContentAvailable': 'لا يوجد محتوى متاح',
       'noCategoriesAvailable': 'لا توجد أقسام متاحة',
+      'commentFailed': 'فشل إضافة التعليق',
+      'sessionExpired': 'انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى',
     },
     'en': {
       'appName': 'Yalla News',
@@ -279,11 +281,9 @@ class AppLocalizations {
       'about': 'About',
       'privacyPolicy': 'Privacy Policy',
       'terms': 'Terms of Use',
-      'all': 'الكل',
+      'all': 'All',
       'breakingNews': 'Breaking News',
-      'sports': 'رياضة',
-      'technology': 'تكنولوجيا',
-      'culture': 'Culture',
+
       'trendingSearches': 'Trending Searches',
       'searchHint': 'Search...',
       'noArticles': 'No articles available',
@@ -517,6 +517,8 @@ class AppLocalizations {
       'signupFailed': 'Signup failed',
       'noContentAvailable': 'No content available',
       'noCategoriesAvailable': 'No categories available',
+      'commentFailed': 'Failed to add comment',
+      'sessionExpired': 'Session expired, please login again',
     },
     'fr': {
       'appName': 'Yalla News',
@@ -533,7 +535,7 @@ class AppLocalizations {
       'about': 'À propos',
       'privacyPolicy': 'Politique de confidentialité',
       'terms': 'Conditions d\'utilisation',
-      'all': 'الكل',
+      'all': 'Tout',
       'breakingNews': 'Dernières nouvelles',
       'sports': 'رياضة',
       'technology': 'تكنولوجيا',
@@ -771,6 +773,8 @@ class AppLocalizations {
       'signupFailed': 'Échec de l\'inscription',
       'noContentAvailable': 'Aucun contenu disponible',
       'noCategoriesAvailable': 'Aucune catégorie disponible',
+      'commentFailed': 'Échec de l\'ajout du commentaire',
+      'sessionExpired': 'Session expirée, veuillez vous reconnecter',
     },
     'tr': {
       'appName': 'Yalla News',
@@ -787,7 +791,7 @@ class AppLocalizations {
       'about': 'Hakkında',
       'privacyPolicy': 'Gizlilik Politikası',
       'terms': 'Kullanım Koşulları',
-      'all': 'الكل',
+      'all': 'Tümü',
       'breakingNews': 'Son Dakika',
       'sports': 'رياضة',
       'technology': 'تكنولوجيا',
@@ -1024,6 +1028,8 @@ class AppLocalizations {
       'signupFailed': 'Kayıt başarısız',
       'noContentAvailable': 'İçerik bulunamadı',
       'noCategoriesAvailable': 'Kategori bulunamadı',
+      'commentFailed': 'Yorum eklenemedi',
+      'sessionExpired': 'Oturum süresi doldu, lütfen tekrar giriş yapın',
     },
   };
 

@@ -8,7 +8,7 @@ import 'cached_news_image.dart';
 class TopNewsCarousel extends StatefulWidget {
   final List<NewsModel> articles;
   final ValueChanged<NewsModel> onArticleTap;
-  final String Function(String category) getCategoryLabel;
+  final String Function(String category) getCategoryName;
   final String Function(NewsModel article) getReadTime;
   final String Function(NewsModel article) getSourceName;
 
@@ -16,7 +16,7 @@ class TopNewsCarousel extends StatefulWidget {
     super.key,
     required this.articles,
     required this.onArticleTap,
-    required this.getCategoryLabel,
+    required this.getCategoryName,
     required this.getReadTime,
     required this.getSourceName,
   });
@@ -111,59 +111,44 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text(
-                            l10n.translate('urgent'),
-                            style: GoogleFonts.outfit(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          l10n.translate('urgent'),
+                          style: GoogleFonts.outfit(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '•',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.outlineVariant,
-                              fontSize: 14,
-                            ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '•',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            l10n.translate('all'),
-                            style: GoogleFonts.outfit(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          l10n.translate('all'),
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
-                        ],
-                      ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
+                    const Spacer(),
                     const SizedBox(width: 16),
                     if (totalPages > 1) ...[
-                                            _buildNavigationButton(
-                        icon: isRtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
-                        onPressed: activePage < totalPages - 1
-                            ? () {
-                                _pageController.nextPage(
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOutCubic,
-                                );
-                              }
-                            : null,
-                      ),
-                    ],
-                                          const SizedBox(width: 6),
-                      // Next Page Arrow (Left arrow in RTL)
-                      // Previous Page Arrow (Right arrow in RTL)
+                      // Previous Page Arrow (Left arrow in LTR, Right arrow in RTL)
                       _buildNavigationButton(
                         icon: isRtl ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
                         onPressed: activePage > 0
@@ -175,9 +160,20 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                               }
                             : null,
                       ),
-
-
-                    const Spacer(),
+                      const SizedBox(width: 6),
+                      // Next Page Arrow (Right arrow in LTR, Left arrow in RTL)
+                      _buildNavigationButton(
+                        icon: isRtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+                        onPressed: activePage < totalPages - 1
+                            ? () {
+                                _pageController.nextPage(
+                                  duration: const Duration(milliseconds: 400),
+                                  curve: Curves.easeInOutCubic,
+                                );
+                              }
+                            : null,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -265,10 +261,15 @@ decoration: BoxDecoration(
     required VoidCallback? onPressed,
   }) {
     final isEnabled = onPressed != null;
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Material(
       color: isEnabled
-          ? Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6)
-          : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
+          ? (isDark 
+              ? colorScheme.surface 
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.6))
+          : colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         onTap: onPressed,
@@ -281,8 +282,8 @@ decoration: BoxDecoration(
             icon,
             size: 20,
             color: isEnabled
-                ? Theme.of(context).colorScheme.onSurface
-                : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                ? colorScheme.onSurface
+                : colorScheme.onSurface.withValues(alpha: 0.3),
           ),
         ),
       ),
@@ -290,7 +291,7 @@ decoration: BoxDecoration(
   }
 
   Widget _buildTopCard(NewsModel article, {required bool isSingle}) {
-    final categoryLabel = widget.getCategoryLabel(article.category);
+    final categoryLabel = widget.getCategoryName(article.category);
     final readTime = widget.getReadTime(article);
     final sourceName = widget.getSourceName(article);
 

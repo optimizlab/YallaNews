@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-import 'server_api_service.dart';
 import '../services/server_api_service.dart';
 
 class Comment {
@@ -69,7 +67,11 @@ class CommentService {
   static Future<void> addComment(Comment comment) async {
     await ServerApiService.postJson('comments/create.php', {
       'articleId': comment.articleId,
+      'article_id': comment.articleId,
       'userName': comment.userName,
+      'user_name': comment.userName,
+      'userId': comment.userId,
+      'user_id': comment.userId,
       'text': comment.text,
       'parentId': comment.parentId,
     });

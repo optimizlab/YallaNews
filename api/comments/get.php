@@ -4,7 +4,7 @@ require_once __DIR__ . '/../db.php';
 
 cache_headers(120);
 
-$articleId = sanitize_string($_GET['article_id'] ?? '', 64);
+$articleId = sanitize_string($_GET['article_id'] ?? $_GET['articleId'] ?? '', 512);
 
 if (!$articleId) {
     json_response(['error' => 'Missing article_id parameter'], 400);
@@ -13,11 +13,20 @@ if (!$articleId) {
 try {
     $db = Database::getInstance();
 
+    // Support both direct article ID and article URL
+    $resolvedId = $articleId;
+    if (str_starts_with($articleId, 'http://') || str_starts_with($articleId, 'https://')) {
+        $found = $db->query("SELECT id FROM yn_news WHERE source_url_article = ? LIMIT 1", [$articleId])->fetch();
+        if ($found) {
+            $resolvedId = $found['id'];
+        }
+    }
+
     $sql = "SELECT id, article_id, user_id, user_name, text, parent_id, created_at 
             FROM yn_comments 
-            WHERE article_id = ? 
+            WHERE article_id = ? OR article_id = ?
             ORDER BY created_at ASC";
-    $stmt = $db->query($sql, [$articleId]);
+    $stmt = $db->query($sql, [$articleId, $resolvedId]);
     $comments = $stmt->fetchAll();
 
     $formatted = array_map(function($c) {

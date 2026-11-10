@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/news_schema.php';
 
 no_cache_headers();
 
@@ -13,7 +14,6 @@ if (!$id) {
 try {
     $db = Database::getInstance();
 
-    $allowedFields = ['title', 'summary', 'content', 'language', 'category', 'source_name', 'source_url', 'source_score', 'source_url_article', 'image_url', 'published_at', 'status'];
     $updates = [];
     $params = [];
 
@@ -33,13 +33,23 @@ try {
         $existingCols[] = $colRow['Field'];
     }
 
-    $allowedFields = ['title', 'summary', 'content', 'language', 'category', 'source_id', 'source_name', 'source_url', 'source_score', 'source_url_article', 'image_url', 'published_at', 'status'];
-
-    if (isset($data['source_id']) && !isset($data['source_name'])) {
-        $data['source_name'] = $data['source_id'];
-    }
-    if (isset($data['source_name']) && !isset($data['source_id'])) {
-        $data['source_id'] = $data['source_name'];
+    $newsColumns = array_fill_keys($existingCols, true);
+    if (isset($data['source_name']) || isset($data['source_id'])) {
+        $sourceName = sanitize_string($data['source_name'] ?? $data['source_id'], 255);
+        $sourceUrl = filter_var(
+            sanitize_string($data['source_url'] ?? '', 512),
+            FILTER_SANITIZE_URL
+        );
+        [$sourceColumn, $sourceValue] = news_source_write_value(
+            $db,
+            $newsColumns,
+            $sourceName,
+            $sourceUrl
+        );
+        if ($sourceColumn !== null) {
+            unset($data['source_name'], $data['source_id']);
+            $data[$sourceColumn] = $sourceValue;
+        }
     }
     if (isset($data['sourceUrl']) && !isset($data['source_url_article'])) {
         $data['source_url_article'] = $data['sourceUrl'];
@@ -48,6 +58,23 @@ try {
         $data['image_url'] = $data['imageUrl'];
     }
 
+    if (isset($data['category'])) {
+        $category = sanitize_string($data['category'], 64);
+        $categoryExists = $db->query(
+            'SELECT id FROM yn_categories WHERE id = ? LIMIT 1',
+            [$category]
+        )->fetch();
+        if (!$categoryExists) {
+            json_response(['error' => 'Category does not exist'], 400);
+        }
+        $data['category'] = $category;
+    }
+
+    $allowedFields = [
+        'title', 'summary', 'content', 'language', 'category',
+        'source_id', 'source_name', 'source_url', 'source_score',
+        'source_url_article', 'image_url', 'published_at', 'status',
+    ];
     foreach ($allowedFields as $field) {
         if (isset($data[$field]) && in_array($field, $existingCols)) {
             $updates[] = "$field = ?";
@@ -60,7 +87,8 @@ try {
     }
 
     $params[] = $id;
-    $sql = "UPDATE yn_news SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE id = ?";
+    $updatedAt = in_array('updated_at', $existingCols) ? ', updated_at = NOW()' : '';
+    $sql = "UPDATE yn_news SET " . implode(', ', $updates) . $updatedAt . " WHERE id = ?";
     $db->query($sql, $params);
 
     json_response([

@@ -368,7 +368,7 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
                                                      borderRadius: BorderRadius.circular(8),
                                                    ),
                                                     child: Text(
-                                                      CategoryService.getCategoryLabel(article.category, context),
+                                                      CategoryService.instance.getCategoryName(article.category, context),
                                                       style: GoogleFonts.outfit(
                                                         fontSize: 9,
                                                         fontWeight: FontWeight.bold,

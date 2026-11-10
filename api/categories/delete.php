@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 
+require_admin();
 no_cache_headers();
 
 $id = sanitize_string($_GET['id'] ?? $_POST['id'] ?? '', 64);
@@ -17,16 +18,21 @@ if (empty($id)) {
 try {
     $db = Database::getInstance();
 
-    // Check if category has articles
-    $countStmt = $db->query("SELECT COUNT(*) as count FROM yn_news WHERE category = ?", [$id]);
-    $newsCount = intval($countStmt->fetch()['count'] ?? 0);
+    $countStmt = $db->query(
+        'SELECT
+            (SELECT COUNT(*) FROM yn_news WHERE category = ?) AS news_count,
+            (SELECT COUNT(*) FROM yn_sources WHERE category = ?) AS source_count',
+        [$id, $id]
+    );
+    $usage = $countStmt->fetch();
+    $newsCount = intval($usage['news_count'] ?? 0);
+    $sourceCount = intval($usage['source_count'] ?? 0);
 
-    if ($newsCount > 0) {
-        // Soft delete / mark inactive if articles exist
+    if ($newsCount > 0 || $sourceCount > 0) {
         $db->query("UPDATE yn_categories SET active = 0 WHERE id = ?", [$id]);
         json_response([
             'success' => true,
-            'message' => "Category has $newsCount articles; marked as inactive instead of permanent deletion",
+            'message' => "Category is used by $newsCount articles and $sourceCount sources; marked inactive",
             'softDeleted' => true
         ]);
         return;
@@ -40,6 +46,6 @@ try {
     ]);
 } catch (Exception $e) {
     error_log('Delete category error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to delete category', 'details' => $e->getMessage()], 500);
+    json_response(['error' => 'Failed to delete category'], 500);
 }
 ?>

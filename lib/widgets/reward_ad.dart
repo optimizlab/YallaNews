@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -61,7 +62,9 @@ class _RewardAdWidgetState extends State<RewardAdWidget> {
   void _checkAdReady() {
     if (mounted) {
       setState(() {
-        _showAdButton = RewardAdService.instance.isAdReady && !RewardAdService.instance.isLoading;
+        _showAdButton =
+            RewardAdService.instance.isAdReady &&
+            !RewardAdService.instance.isLoading;
       });
     }
   }
@@ -84,13 +87,20 @@ class _RewardAdWidgetState extends State<RewardAdWidget> {
                 color: Colors.amber.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.card_giftcard_rounded, color: Colors.amber, size: 24),
+              child: const Icon(
+                Icons.card_giftcard_rounded,
+                color: Colors.amber,
+                size: 24,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 l10n.translate('rewardAdTitle') ?? 'Earn Reward',
-                style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w800),
+                style: GoogleFonts.outfit(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ],
@@ -101,20 +111,29 @@ class _RewardAdWidgetState extends State<RewardAdWidget> {
             Text(
               l10n.translate('rewardAdMessage') ??
                   'Watch a short video to support the app and earn a reward!',
-              style: GoogleFonts.outfit(fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
+              style: GoogleFonts.outfit(
+                fontSize: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                color: Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.monetization_on_rounded, color: Colors.amber, size: 28),
+                  const Icon(
+                    Icons.monetization_on_rounded,
+                    color: Colors.amber,
+                    size: 28,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     l10n.translate('rewardAdReward') ?? 'Reward awaits!',
@@ -132,7 +151,10 @@ class _RewardAdWidgetState extends State<RewardAdWidget> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: Text(l10n.translate('cancel') ?? 'Later', style: GoogleFonts.outfit(fontWeight: FontWeight.w600)),
+            child: Text(
+              l10n.translate('cancel') ?? 'Later',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w600),
+            ),
           ),
           ElevatedButton.icon(
             onPressed: () async {
@@ -145,12 +167,17 @@ class _RewardAdWidgetState extends State<RewardAdWidget> {
               );
             },
             icon: const Icon(Icons.play_circle_fill_rounded, size: 20),
-            label: Text(l10n.translate('watchAd') ?? 'Watch Ad', style: GoogleFonts.outfit(fontWeight: FontWeight.w700)),
+            label: Text(
+              l10n.translate('watchAd') ?? 'Watch Ad',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.primary,
               foregroundColor: Theme.of(context).colorScheme.onPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         ],
@@ -189,7 +216,11 @@ class _RewardAdWidgetState extends State<RewardAdWidget> {
               color: Colors.amber.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.card_giftcard_rounded, color: Colors.amber, size: 28),
+            child: const Icon(
+              Icons.card_giftcard_rounded,
+              color: Colors.amber,
+              size: 28,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -222,13 +253,21 @@ class _RewardAdWidgetState extends State<RewardAdWidget> {
               icon: const Icon(Icons.play_circle_fill_rounded, size: 18),
               label: Text(
                 l10n.translate('watchAd') ?? 'Watch Ad',
-                style: GoogleFonts.outfit(fontWeight: FontWeight.w700, fontSize: 13),
+                style: GoogleFonts.outfit(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             )
           else
@@ -308,7 +347,9 @@ class InlineRewardAdButton extends StatelessWidget {
                     ),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isReady ? Colors.transparent : Theme.of(context).colorScheme.outlineVariant,
+                color: isReady
+                    ? Colors.transparent
+                    : Theme.of(context).colorScheme.outlineVariant,
               ),
             ),
             child: Row(
@@ -318,29 +359,43 @@ class InlineRewardAdButton extends StatelessWidget {
                   const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   )
                 else
                   Icon(
-                    isReady ? Icons.card_giftcard_rounded : Icons.hourglass_empty_rounded,
+                    isReady
+                        ? Icons.card_giftcard_rounded
+                        : Icons.hourglass_empty_rounded,
                     size: 20,
-                    color: isReady ? Colors.white : Theme.of(context).colorScheme.onSurfaceVariant,
+                    color: isReady
+                        ? Colors.white
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 const SizedBox(width: 8),
                 Text(
                   isReady
-                      ? (l10n.translate('watchAdEarnReward') ?? 'Watch Ad & Earn Reward')
-                      : (l10n.translate('rewardAdPreparing') ?? 'Preparing Reward...'),
+                      ? (l10n.translate('watchAdEarnReward') ??
+                            'Watch Ad & Earn Reward')
+                      : (l10n.translate('rewardAdPreparing') ??
+                            'Preparing Reward...'),
                   style: GoogleFonts.outfit(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: isReady ? Colors.white : Theme.of(context).colorScheme.onSurfaceVariant,
+                    color: isReady
+                        ? Colors.white
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 if (isReady) ...[
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(10),
@@ -445,7 +500,11 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.3),
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -462,7 +521,8 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  AppLocalizations.of(context).translate('sponsoredLabel') ?? 'Sponsored',
+                  AppLocalizations.of(context).translate('sponsoredLabel') ??
+                      'Sponsored',
                   style: GoogleFonts.outfit(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -505,8 +565,13 @@ class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
   @override
   void initState() {
     super.initState();
-    _loadAd();
+    if (_supportsNativeAds) _loadAd();
   }
+
+  bool get _supportsNativeAds =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
 
   void _loadAd() {
     if (_loading || _ad != null) return;
@@ -548,14 +613,20 @@ class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_ad == null) return const SizedBox.shrink();
+    if (!_supportsNativeAds || _ad == null) {
+      return const SizedBox.shrink();
+    }
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: Theme.of(
+            context,
+          ).colorScheme.outlineVariant.withValues(alpha: 0.3),
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -572,7 +643,8 @@ class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  AppLocalizations.of(context).translate('sponsoredLabel') ?? 'Sponsored',
+                  AppLocalizations.of(context).translate('sponsoredLabel') ??
+                      'Sponsored',
                   style: GoogleFonts.outfit(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

@@ -103,63 +103,82 @@ function generate_secure_id($prefix = '') {
     return $prefix . bin2hex(random_bytes(16));
 }
 
-function require_auth() {
-    // 1. Session-based (web browser / admin dashboard)
-    if (!empty($_SESSION['user_id'])) {
-        return $_SESSION['user_id'];
-    }
+function get_extracted_auth_token() {
+    // 1. Check HTTP headers
+    $candidates = [
+        $_SERVER['HTTP_AUTHORIZATION'] ?? null,
+        $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null,
+        $_SERVER['HTTP_X_AUTH_TOKEN'] ?? null,
+        $_SERVER['HTTP_X_USER_TOKEN'] ?? null,
+        $_SERVER['HTTP_X_AUTHORIZATION'] ?? null,
+    ];
 
-    // 2. Bearer token (Flutter mobile app)
-    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-    if (preg_match('/^Bearer\s+(.+)$/i', $authHeader, $m)) {
-        $token = trim($m[1]);
-        if (!empty($token)) {
-            try {
-                require_once __DIR__ . '/db.php';
-                $db = Database::getInstance();
-                $stmt = $db->query(
-                    "SELECT id, role FROM yn_users WHERE auth_token = ? AND auth_token IS NOT NULL LIMIT 1",
-                    [$token]
-                );
-                $u = $stmt->fetch();
-                if ($u) {
-                    $_SESSION['user_id'] = $u['id'];
-                    $_SESSION['role']    = $u['role'];
-                    return $u['id'];
-                }
-            } catch (Exception $e) {
-                error_log('Token auth error: ' . $e->getMessage());
+    if (function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        foreach (['Authorization', 'authorization', 'X-Auth-Token', 'x-auth-token', 'X-User-Token', 'x-user-token'] as $h) {
+            if (!empty($headers[$h])) {
+                $candidates[] = $headers[$h];
             }
         }
     }
 
-    json_response(['error' => 'Unauthorized'], 401);
+    foreach ($candidates as $raw) {
+        if (!empty($raw) && is_string($raw)) {
+            $trimmed = trim($raw);
+            if (preg_match('/^Bearer\s+(.+)$/i', $trimmed, $m)) {
+                return trim($m[1]);
+            }
+            if (strlen($trimmed) >= 16 && !str_contains($trimmed, ' ')) {
+                return $trimmed;
+            }
+        }
+    }
+
+    // 2. Check JSON input or POST body
+    $data = get_json_input();
+    if (!empty($data['auth_token'])) return trim($data['auth_token']);
+    if (!empty($data['token'])) return trim($data['token']);
+    if (!empty($_POST['auth_token'])) return trim($_POST['auth_token']);
+    if (!empty($_POST['token'])) return trim($_POST['token']);
+
+    // 3. Check query parameters
+    if (!empty($_GET['auth_token'])) return trim($_GET['auth_token']);
+    if (!empty($_GET['token'])) return trim($_GET['token']);
+
+    return null;
 }
 
 function get_authenticated_user_id() {
     if (!empty($_SESSION['user_id'])) return $_SESSION['user_id'];
 
-    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-    if (preg_match('/^Bearer\s+(.+)$/i', $authHeader, $m)) {
-        $token = trim($m[1]);
-        if (!empty($token)) {
-            try {
-                require_once __DIR__ . '/db.php';
-                $db = Database::getInstance();
-                $stmt = $db->query(
-                    "SELECT id, role FROM yn_users WHERE auth_token = ? AND auth_token IS NOT NULL LIMIT 1",
-                    [$token]
-                );
-                $u = $stmt->fetch();
-                if ($u) {
-                    $_SESSION['user_id'] = $u['id'];
-                    $_SESSION['role']    = $u['role'];
-                    return $u['id'];
-                }
-            } catch (Exception $e) {}
+    $token = get_extracted_auth_token();
+    if (!empty($token)) {
+        try {
+            require_once __DIR__ . '/db.php';
+            $db = Database::getInstance();
+            $stmt = $db->query(
+                "SELECT id, role FROM yn_users WHERE auth_token = ? AND auth_token IS NOT NULL LIMIT 1",
+                [$token]
+            );
+            $u = $stmt->fetch();
+            if ($u) {
+                $_SESSION['user_id'] = $u['id'];
+                $_SESSION['role']    = $u['role'];
+                return $u['id'];
+            }
+        } catch (Exception $e) {
+            error_log('Token lookup error: ' . $e->getMessage());
         }
     }
     return null;
+}
+
+function require_auth() {
+    $userId = get_authenticated_user_id();
+    if (!empty($userId)) {
+        return $userId;
+    }
+    json_response(['error' => 'Unauthorized'], 401);
 }
 
 function require_admin() {

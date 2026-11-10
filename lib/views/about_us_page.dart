@@ -153,9 +153,7 @@ class _AboutUsPageState extends State<AboutUsPage> {
             expandedHeight: 320,
             pinned: true,
             stretch: true,
-            backgroundColor: isDark
-                ? theme.colorScheme.surfaceContainer
-                : theme.colorScheme.surface,
+            backgroundColor: theme.scaffoldBackgroundColor,
             leading: IconButton(
               icon: Container(
                 padding: const EdgeInsets.all(6),
@@ -174,21 +172,7 @@ class _AboutUsPageState extends State<AboutUsPage> {
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: isDark
-                        ? [
-                            theme.colorScheme.surfaceContainer,
-                            theme.colorScheme.surface,
-                            theme.colorScheme.surfaceContainerHighest,
-                          ]
-                        : [
-                            theme.colorScheme.primary,
-                            theme.colorScheme.primary,
-                            theme.colorScheme.primaryContainer,
-                          ],
-                  ),
+                  color: theme.scaffoldBackgroundColor,
                 ),
                 child: SafeArea(
                   child: Column(

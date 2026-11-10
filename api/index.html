@@ -9,6 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="icon" href="favicon.ico">
   
   <style>
     :root {
@@ -1598,6 +1600,13 @@
                   <select id="news-cat-filter" class="form-control" style="width: auto;" onchange="loadNews()">
                     <option value="">جميع التصنيفات</option>
                   </select>
+                  <select id="news-language-filter" class="form-control" style="width: auto;" onchange="populateCategorySelects(); loadNews()">
+                    <option value="">جميع اللغات</option>
+                    <option value="ar">العربية</option>
+                    <option value="en">English</option>
+                    <option value="fr">Français</option>
+                    <option value="tr">Türkçe</option>
+                  </select>
                   <select id="news-sort-filter" class="form-control" style="width: auto;" onchange="loadNews()">
                     <option value="published_at_desc">📅 الأحدث أولاً</option>
                     <option value="published_at_asc">📅 الأقدم أولاً</option>
@@ -1619,6 +1628,7 @@
                       <th style="width: 60px;">صورة</th>
                       <th>عنوان الخبر</th>
                       <th>القسم</th>
+                      <th>اللغة</th>
                       <th>المصدر</th>
                       <th style="width: 90px; text-align: center;">المشاهدات</th>
                       <th>تاريخ النشر</th>
@@ -1627,7 +1637,7 @@
                     </tr>
                   </thead>
                   <tbody id="news-table-body">
-                    <tr><td colspan="8" style="text-align: center; padding: 30px;">جارٍ تحميل الأخبار...</td></tr>
+                    <tr><td colspan="9" style="text-align: center; padding: 30px;">جارٍ تحميل الأخبار...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1648,20 +1658,28 @@
               </button>
             </div>
             <div class="panel-body">
+              <div class="filter-bar">
+                <label for="category-language-filter">لغة الترجمة المعروضة:</label>
+                <select id="category-language-filter" class="form-control" style="width: auto;" onchange="loadCategoriesTable()">
+                  <option value="ar">العربية</option>
+                  <option value="en">English</option>
+                  <option value="fr">Français</option>
+                  <option value="tr">Türkçe</option>
+                </select>
+              </div>
               <div class="table-container">
                 <table>
                   <thead>
                     <tr>
                       <th>معرف القسم (ID)</th>
-                      <th>الاسم بالعربية</th>
-                      <th>الاسم بالإنجليزية</th>
+                      <th id="category-language-heading">الاسم بالعربية</th>
                       <th>الترتيب</th>
                       <th>الحالة</th>
                       <th style="width: 140px; text-align: center;">إجراءات</th>
                     </tr>
                   </thead>
                   <tbody id="categories-table-body">
-                    <tr><td colspan="6" style="text-align: center; padding: 30px;">جارٍ تحميل الأقسام...</td></tr>
+                    <tr><td colspan="5" style="text-align: center; padding: 30px;">جارٍ تحميل الأقسام...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1797,6 +1815,15 @@
           </div>
           <div class="form-grid">
             <div class="form-group">
+              <label class="form-label">لغة الخبر *</label>
+              <select id="news-form-language" class="form-control" required onchange="populateCategorySelects()">
+                <option value="ar">العربية</option>
+                <option value="en">English</option>
+                <option value="fr">Français</option>
+                <option value="tr">Türkçe</option>
+              </select>
+            </div>
+            <div class="form-group">
               <label class="form-label">القسم / التصنيف *</label>
               <select id="news-form-category" class="form-control" required></select>
             </div>
@@ -1832,7 +1859,7 @@
 
   <!-- ─── MODAL: ADD / EDIT CATEGORY ─── -->
   <div class="modal-backdrop" id="category-modal">
-    <div class="modal" style="max-width: 480px;">
+    <div class="modal" style="max-width: 600px;">
       <div class="modal-header">
         <h3 class="modal-title" id="category-modal-title">إضافة تصنيف جديد</h3>
         <button class="modal-close" onclick="closeModal('category-modal')">&times;</button>
@@ -1850,7 +1877,15 @@
           </div>
           <div class="form-group">
             <label class="form-label">الاسم بالإنجليزية</label>
-            <input type="text" id="cat-form-name-en" class="form-control" placeholder="e.g. Sports">
+            <input type="text" id="cat-form-name-en" class="form-control" required placeholder="e.g. Sports">
+          </div>
+          <div class="form-group">
+            <label class="form-label">الاسم بالفرنسية *</label>
+            <input type="text" id="cat-form-name-fr" class="form-control" required placeholder="ex. Sports">
+          </div>
+          <div class="form-group">
+            <label class="form-label">الاسم بالتركية *</label>
+            <input type="text" id="cat-form-name-tr" class="form-control" required placeholder="örn. Spor">
           </div>
           <div class="form-grid">
             <div class="form-group">
@@ -2973,49 +3008,73 @@
       try {
         const res = await fetch(`${API_BASE}/categories/list.php?all=1`, { credentials: 'include' });
         const data = await res.json();
-        if (data.success) {
-          STATE.categories = data.categories || [];
-          populateCategorySelects();
+        if (!res.ok || data.success !== true || !Array.isArray(data.categories)) {
+          throw new Error(data.error || `HTTP ${res.status}`);
         }
-      } catch (e) {}
+        STATE.categories = data.categories;
+        populateCategorySelects();
+      } catch (e) {
+        showToast(`تعذر تحميل التصنيفات: ${e.message}`, 'error');
+      }
     }
 
     function populateCategorySelects() {
       const filterSelect = document.getElementById('news-cat-filter');
       const formSelect = document.getElementById('news-form-category');
-      
+      const filterLanguage = document.getElementById('news-language-filter')?.value || 'ar';
+      const formLanguage = document.getElementById('news-form-language')?.value || 'ar';
+      const selectedFilterCategory = filterSelect?.value || '';
+      const selectedFormCategory = formSelect?.value || '';
+
       let filterOpts = '<option value="">جميع التصنيفات</option>';
       let formOpts = '';
 
       STATE.categories.forEach(c => {
-        filterOpts += `<option value="${c.id}">${c.name} (${c.nameEn})</option>`;
-        formOpts += `<option value="${c.id}">${c.name}</option>`;
+        const id = escapeHtml(c.id);
+        filterOpts += `<option value="${id}">${escapeHtml(localizedCategoryName(c, filterLanguage))}</option>`;
+        formOpts += `<option value="${id}">${escapeHtml(localizedCategoryName(c, formLanguage))}</option>`;
       });
 
       if (filterSelect) filterSelect.innerHTML = filterOpts;
       if (formSelect) formSelect.innerHTML = formOpts;
+      if (filterSelect && selectedFilterCategory) filterSelect.value = selectedFilterCategory;
+      if (formSelect && selectedFormCategory) formSelect.value = selectedFormCategory;
+    }
+
+    function localizedCategoryName(category, language) {
+      const translations = category.translations || {};
+      return translations[language] ||
+        ({ ar: category.nameAr, en: category.nameEn, fr: category.nameFr, tr: category.nameTr }[language]) ||
+        category.nameAr || category.name || category.id;
     }
 
     async function loadCategoriesTable() {
-      await loadCategories();
       const tbody = document.getElementById('categories-table-body');
+      const language = document.getElementById('category-language-filter')?.value || 'ar';
+      const languageLabels = { ar: 'العربية', en: 'English', fr: 'Français', tr: 'Türkçe' };
+      document.getElementById('category-language-heading').textContent = `الاسم (${languageLabels[language] || language})`;
+      try {
+        await loadCategories();
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px;">${escapeHtml(e.message)}</td></tr>`;
+        return;
+      }
       if (STATE.categories.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px;">لا توجد تصنيفات مضافة</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px;">لا توجد تصنيفات مضافة</td></tr>';
         return;
       }
 
-      tbody.innerHTML = STATE.categories.map(c => `
+      tbody.innerHTML = STATE.categories.map((c, index) => `
         <tr>
           <td><code>${escapeHtml(c.id)}</code></td>
-          <td><b>${escapeHtml(c.name)}</b></td>
-          <td>${escapeHtml(c.nameEn || '')}</td>
+          <td><b>${escapeHtml(localizedCategoryName(c, language))}</b></td>
           <td>${c.sortOrder}</td>
           <td>${c.active ? '<span class="badge badge-success">نشط</span>' : '<span class="badge badge-muted">معطل</span>'}</td>
           <td style="text-align: center;">
-            <button class="btn btn-secondary btn-sm" onclick="openEditCategoryModal('${c.id}', '${escapeHtml(c.name)}', '${escapeHtml(c.nameEn)}', ${c.sortOrder}, ${c.active ? 1 : 0})">
+            <button class="btn btn-secondary btn-sm" onclick="openEditCategoryModal(${index})">
               <i class="fa-solid fa-pen-to-square"></i>
             </button>
-            <button class="btn btn-danger btn-sm" onclick="deleteCategory('${c.id}')">
+            <button class="btn btn-danger btn-sm" onclick="deleteCategoryByIndex(${index})">
               <i class="fa-solid fa-trash"></i>
             </button>
           </td>
@@ -3030,20 +3089,26 @@
       document.getElementById('cat-form-id').value = '';
       document.getElementById('cat-form-name').value = '';
       document.getElementById('cat-form-name-en').value = '';
+      document.getElementById('cat-form-name-fr').value = '';
+      document.getElementById('cat-form-name-tr').value = '';
       document.getElementById('cat-form-sort').value = '0';
       document.getElementById('cat-form-active').value = '1';
       openModal('category-modal');
     }
 
-    function openEditCategoryModal(id, name, nameEn, sort, active) {
+    function openEditCategoryModal(index) {
+      const category = STATE.categories[index];
+      if (!category) return;
       document.getElementById('category-modal-title').innerText = 'تعديل التصنيف';
       document.getElementById('category-is-edit').value = '1';
       document.getElementById('cat-form-id').readOnly = true;
-      document.getElementById('cat-form-id').value = id;
-      document.getElementById('cat-form-name').value = name;
-      document.getElementById('cat-form-name-en').value = nameEn;
-      document.getElementById('cat-form-sort').value = sort;
-      document.getElementById('cat-form-active').value = active;
+      document.getElementById('cat-form-id').value = category.id;
+      document.getElementById('cat-form-name').value = category.nameAr || category.name || '';
+      document.getElementById('cat-form-name-en').value = category.nameEn || '';
+      document.getElementById('cat-form-name-fr').value = category.nameFr || '';
+      document.getElementById('cat-form-name-tr').value = category.nameTr || '';
+      document.getElementById('cat-form-sort').value = category.sortOrder || 0;
+      document.getElementById('cat-form-active').value = category.active ? '1' : '0';
       openModal('category-modal');
     }
 
@@ -3053,6 +3118,8 @@
       const id = document.getElementById('cat-form-id').value;
       const name = document.getElementById('cat-form-name').value;
       const nameEn = document.getElementById('cat-form-name-en').value;
+      const nameFr = document.getElementById('cat-form-name-fr').value;
+      const nameTr = document.getElementById('cat-form-name-tr').value;
       const sortOrder = parseInt(document.getElementById('cat-form-sort').value) || 0;
       const active = parseInt(document.getElementById('cat-form-active').value);
 
@@ -3063,13 +3130,22 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ id, name, nameEn, sortOrder, active })
+          body: JSON.stringify({
+            id,
+            name,
+            nameEn,
+            nameFr,
+            nameTr,
+            translations: { ar: name, en: nameEn, fr: nameFr, tr: nameTr },
+            sortOrder,
+            active
+          })
         });
         const data = await res.json();
         if (data.success) {
           showToast(isEdit ? 'تم تحديث التصنيف' : 'تمت إضافة التصنيف', 'success');
           closeModal('category-modal');
-          loadCategoriesTable();
+          await loadCategoriesTable();
         } else {
           showToast(data.error || 'حدث خطأ', 'error');
         }
@@ -3078,14 +3154,16 @@
       }
     }
 
-    async function deleteCategory(id) {
+    async function deleteCategoryByIndex(index) {
+      const id = STATE.categories[index]?.id;
+      if (!id) return;
       if (!confirm(`هل أنت متأكد من حذف التصنيف (${id})؟`)) return;
       try {
         const res = await fetch(`${API_BASE}/categories/delete.php?id=${encodeURIComponent(id)}`, { credentials: 'include' });
         const data = await res.json();
         if (data.success) {
           showToast(data.message || 'تم حذف التصنيف', 'success');
-          loadCategoriesTable();
+          await loadCategoriesTable();
         } else {
           showToast(data.error || 'فشل حذف التصنيف', 'error');
         }
@@ -3098,14 +3176,16 @@
     async function loadNews() {
       const search = document.getElementById('news-search')?.value || '';
       const cat = document.getElementById('news-cat-filter')?.value || '';
+      const language = document.getElementById('news-language-filter')?.value || '';
       const sortSelect = document.getElementById('news-sort-filter')?.value || 'published_at_desc';
       const tbody = document.getElementById('news-table-body');
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin"></i> جارٍ التحميل...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin"></i> جارٍ التحميل...</td></tr>';
 
       try {
-        const params = new URLSearchParams({ limit: 40 });
+        const params = new URLSearchParams({ limit: 40, include_all: '1' });
         if (search) params.append('search', search);
         if (cat) params.append('category', cat);
+        if (language) params.append('language', language);
 
         let sortField = 'published_at';
         let sortOrder = 'DESC';
@@ -3121,8 +3201,11 @@
 
         const res = await fetch(`${API_BASE}/news/list.php?${params.toString()}`, { credentials: 'include' });
         const data = await res.json();
-        if (!data.success || !data.articles || data.articles.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 30px;">لا توجد أخبار مطابقة</td></tr>';
+        if (!res.ok || data.success !== true) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        if (!Array.isArray(data.articles) || data.articles.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 30px;">لا توجد أخبار مطابقة</td></tr>';
           return;
         }
 
@@ -3140,6 +3223,7 @@
               </div>
             </td>
             <td><span class="badge badge-info">${escapeHtml(a.category || 'عام')}</span></td>
+            <td><span class="badge badge-secondary">${escapeHtml(a.language || '')}</span></td>
             <td>
               <span class="badge ${a.source?.name === 'يلا نيوز' ? 'badge-primary' : 'badge-secondary'}" style="${a.source?.name === 'يلا نيوز' ? 'background: rgba(229, 57, 53, 0.2); color: #f87171;' : ''}">
                 ${a.source?.name === 'يلا نيوز' ? '⚡ ' : ''}${escapeHtml(a.source?.name || a.sourceName || 'مصدر')}
@@ -3151,7 +3235,7 @@
               </span>
             </td>
             <td>${formatDate(a.publishedAt)}</td>
-            <td><span class="badge badge-success">${a.status || 'منشور'}</span></td>
+            <td><span class="badge ${a.status === 'published' ? 'badge-success' : 'badge-muted'}">${escapeHtml(a.status || 'منشور')}</span></td>
             <td style="text-align: center;">
               <button class="btn btn-secondary btn-sm" onclick="openEditNewsModal('${a.id}')" title="تعديل">
                 <i class="fa-solid fa-pen"></i>
@@ -3164,7 +3248,7 @@
         `).join('');
 
       } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--danger); padding: 30px;">فشل جلب الأخبار</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger); padding: 30px;">تعذر تحميل الأخبار: ${escapeHtml(err.message)}</td></tr>`;
       }
     }
 
@@ -3180,6 +3264,8 @@
       document.getElementById('news-modal-title').innerText = 'إضافة خبر جديد';
       document.getElementById('news-edit-id').value = '';
       document.getElementById('news-form-title').value = '';
+      document.getElementById('news-form-language').value = document.getElementById('news-language-filter')?.value || 'ar';
+      populateCategorySelects();
       document.getElementById('news-form-source').value = 'يلا نيوز';
       document.getElementById('news-form-url').value = 'https://yallanews.app/news/yn_' + Date.now().toString(36);
       document.getElementById('news-form-image').value = '';
@@ -3201,6 +3287,8 @@
         document.getElementById('news-modal-title').innerText = 'تعديل الخبر';
         document.getElementById('news-edit-id').value = a.id;
         document.getElementById('news-form-title').value = a.title || '';
+        document.getElementById('news-form-language').value = a.language || 'ar';
+        populateCategorySelects();
         document.getElementById('news-form-category').value = a.category || '';
         document.getElementById('news-form-source').value = a.source?.name || a.source_name || '';
         document.getElementById('news-form-url').value = a.sourceUrl || a.source_url_article || '';
@@ -3217,6 +3305,7 @@
       e.preventDefault();
       const id = document.getElementById('news-edit-id').value;
       const title = document.getElementById('news-form-title').value;
+      const language = document.getElementById('news-form-language').value;
       const category = document.getElementById('news-form-category').value;
       const sourceName = document.getElementById('news-form-source').value;
       const sourceUrl = document.getElementById('news-form-url').value;
@@ -3235,7 +3324,7 @@
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
             body: JSON.stringify({
-              title, category, summary, content,
+              title, language, category, summary, content,
               source_name: sourceName,
               source_url_article: sourceUrl,
               image_url: imageUrl
@@ -3260,7 +3349,7 @@
               source: { name: sourceName, id: sourceName },
               sourceUrl,
               imageUrl,
-              language: 'ar'
+              language
             })
           });
           const data = await res.json();

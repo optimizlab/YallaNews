@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إدارة المصادر - يلا نيوز</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Tahoma, Arial, sans-serif; background: #f5f5f5; color: #222; padding: 20px; direction: rtl; }
+  .container { max-width: 900px; margin: 0 auto; }
+  header { background: #1a73e8; color: #fff; padding: 16px 24px; border-radius: 8px 8px 0 0; margin-bottom: 16px; }
+  header h1 { font-size: 20px; }
+  header a { color: #bbdefb; text-decoration: none; margin-left: 12px; font-size: 14px; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  input, select { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+  button { padding: 8px 16px; border: 1px solid #1a73e8; background: #1a73e8; color: #fff; border-radius: 4px; cursor: pointer; font-size: 14px; }
+  button:hover { background: #1557b0; }
+  button.secondary { background: #fff; border-color: #999; color: #333; }
+  button.secondary:hover { background: #f0f0f0; }
+  button.danger { border-color: #d32f2f; background: #d32f2f; }
+  button.danger:hover { background: #b71c1c; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { padding: 10px 12px; text-align: right; border-bottom: 1px solid #eee; font-size: 14px; }
+  th { background: #f9f9f9; color: #555; }
+  tr:hover { background: #f5f5f5; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+  .badge.published { background: #e8f5e9; color: #2e7d32; }
+  .badge.draft { background: #fff3e0; color: #ef6c00; }
+  .badge.archived { background: #f5f5f5; color: #757575; }
+  .tag { display: inline-block; padding: 2px 6px; border-radius: 6px; background: #eee; color: #666; font-size: 12px; margin: 2px 0; }
+  .msg { padding: 10px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 14px; display: none; }
+  .msg.success { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+  .msg.error { background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }
+  .actions { white-space: nowrap; }
+  .actions button { font-size: 12px; padding: 4px 10px; margin-left: 4px; }
+  .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+  .hidden { display: none !important; }
+  .score-cell { font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>إدارة مصادر الأخبار</h1>
+    <a href="../index.html">العودة للواجهة الرئيسية</a>
+  </header>
+
+  <div class="card">
+    <div class="msg" id="msg"></div>
+
+    <div class="toolbar">
+      <input type="text" id="searchInput" placeholder="بحث باسم أو رابط المصدر...">
+      <select id="statusFilter">
+        <option value="">الحالة</option>
+        <option value="published">منشور</option>
+        <option value="draft">مسودة</option>
+        <option value="archived">مؤرشف</option>
+      </select>
+      <select id="countryFilter">
+        <option value="">الدولة</option>
+      </select>
+      <button onclick="loadSources()">تحديث</button>
+      <button class="secondary" onclick="showForm()">إضافة مصدر جديد</button>
+    </div>
+
+    <table id="sourcesTable">
+      <thead>
+        <tr>
+          <th>الاسم</th>
+          <th>الرابط</th>
+          <th>القسم</th>
+          <th>الدولة</th>
+          <th>اللغة</th>
+          <th>الحالة</th>
+          <th>التقييم</th>
+          <th>آخر زحف</th>
+          <th>الإجراءات</th>
+        </tr>
+      </thead>
+      <tbody id="sourcesBody"></tbody>
+    </table>
+  </div>
+
+  <div class="card hidden" id="formCard">
+    <h3 style="margin-bottom:12px;">إضافة / تعديل مصدر</h3>
+    <div class="form-row">
+      <div>
+        <label>معرف المصدر (ID)</label>
+        <input type="text" id="fId" placeholder="مثال: al-ahram">
+      </div>
+      <div>
+        <label>اسم المصدر</label>
+        <input type="text" id="fName" placeholder="مثال: الأهرام">
+      </div>
+      <div>
+        <label>رابط الموقع</label>
+        <input type="text" id="fUrl" placeholder="https://example.com">
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label>القسم</label>
+        <select id="fCategory" required></select>
+      </div>
+      <div>
+        <label>الدولة (رمز من حرفين)</label>
+        <input type="text" id="fCountry" placeholder="EG" maxlength="2">
+      </div>
+      <div>
+        <label>اللغة</label>
+        <input type="text" id="fLanguage" placeholder="ar" value="ar">
+      </div>
+    </div>
+    <div class="form-row">
+      <div>
+        <label>الحالة</label>
+        <select id="fStatus">
+          <option value="published">منشور</option>
+          <option value="draft">مسودة</option>
+          <option value="archived">مؤرشف</option>
+        </select>
+      </div>
+      <div>
+        <label>التقييم (0 - 0.99)</label>
+        <input type="number" id="fScore" step="0.01" min="0" max="0.99" value="0.50">
+      </div>
+      <div style="align-self:end;">
+        <button class="secondary" onclick="hideForm()">إلغاء</button>
+        <button onclick="saveSource()">حفظ المصدر</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'sources/';
+const CATEGORIES_API = '../categories/list.php?all=1';
+let editId = null;
+let categories = [];
+const msg = document.getElementById('msg');
+const formCard = document.getElementById('formCard');
+
+function showMessage(text, type) {
+  msg.textContent = text;
+  msg.className = 'msg ' + type;
+  msg.style.display = 'block';
+  setTimeout(() => { msg.style.display = 'none'; }, 4000);
+}
+
+function showForm() {
+  editId = null;
+  document.getElementById('fId').value = '';
+  document.getElementById('fName').value = '';
+  document.getElementById('fUrl').value = '';
+  document.getElementById('fCategory').value =
+    categories.find(category => category.id === 'general' && category.active)?.id ||
+    categories.find(category => category.active)?.id ||
+    '';
+  document.getElementById('fCountry').value = '';
+  document.getElementById('fLanguage').value = 'ar';
+  document.getElementById('fStatus').value = 'published';
+  document.getElementById('fScore').value = '0.50';
+  formCard.classList.remove('hidden');
+  formCard.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function loadCategories() {
+  const res = await fetch(CATEGORIES_API);
+  const data = await res.json();
+  if (!res.ok || data.success !== true || !Array.isArray(data.categories)) {
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  categories = data.categories;
+  const select = document.getElementById('fCategory');
+  select.innerHTML = categories
+    .filter(category => category.active)
+    .map(category => {
+      const translations = category.translations || {};
+      const label = translations.ar || category.name || category.id;
+      return `<option value="${escapeHtml(category.id)}">${escapeHtml(label)}</option>`;
+    })
+    .join('');
+}
+
+function hideForm() {
+  formCard.classList.add('hidden');
+}
+
+async function loadSources() {
+  const search = document.getElementById('searchInput').value;
+  const status = document.getElementById('statusFilter').value;
+  let url = API + 'list.php?all=1';
+  if (search) url += '&search=' + encodeURIComponent(search);
+  if (status) url += '&status=' + encodeURIComponent(status);
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    renderSources(data.sources || []);
+  } catch (e) {
+    showMessage('فشل تحميل المصادر: ' + e.message, 'error');
+  }
+}
+
+function renderSources(sources) {
+  const body = document.getElementById('sourcesBody');
+  body.innerHTML = '';
+  const countries = new Set();
+
+  for (const s of sources) {
+    if (s.country) countries.add(s.country);
+    const tr = document.createElement('tr');
+    const lastCrawled = s.lastCrawled ? new Date(s.lastCrawled).toLocaleString('ar-EG') : '-';
+    const categoryTranslations = s.categoryTranslations || {};
+    const categoryName = categoryTranslations.ar || s.categoryName || s.category || 'general';
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(s.name)}</strong><br><small style="color:#888;">${escapeHtml(s.id)}</small></td>
+      <td><a href="${escapeHtml(s.url)}" target="_blank">${escapeHtml(s.url)}</a></td>
+      <td><span class="tag">${escapeHtml(categoryName)}</span></td>
+      <td><span class="tag">${escapeHtml(s.country || '-')}</span></td>
+      <td><span class="tag">${escapeHtml(s.language || 'ar')}</span></td>
+      <td><span class="badge ${s.status}">${escapeHtml(s.status)}</span></td>
+      <td class="score-cell">${parseFloat(s.score || 0).toFixed(2)}</td>
+      <td>${lastCrawled}</td>
+      <td class="actions">
+        <button class="secondary" onclick="editSource('${escapeAttr(s.id)}', '${escapeAttr(s.name)}', '${escapeAttr(s.url)}', '${escapeAttr(s.category||'')}', '${escapeAttr(s.country||'')}', '${escapeAttr(s.language||'')}', '${s.status}', '${s.score || 0}')">تعديل</button>
+        <button class="danger" onclick="deleteSource('${escapeAttr(s.id)}', '${escapeAttr(s.name)}')">حذف</button>
+      </td>
+    `;
+    body.appendChild(tr);
+  }
+
+  // populate country filter
+  const sel = document.getElementById('countryFilter');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">الدولة</option>';
+  for (const c of [...countries].sort()) {
+    sel.innerHTML += '<option value="' + escapeHtml(c) + '">' + escapeHtml(c) + '</option>';
+  }
+  sel.value = current;
+}
+
+async function editSource(id, name, url, category, country, language, status, score) {
+  editId = id;
+  document.getElementById('fId').value = id;
+  document.getElementById('fName').value = name;
+  document.getElementById('fUrl').value = url;
+  const categorySelect = document.getElementById('fCategory');
+  if (category && !Array.from(categorySelect.options).some(option => option.value === category)) {
+    const option = document.createElement('option');
+    option.value = category;
+    option.textContent = category;
+    categorySelect.appendChild(option);
+  }
+  categorySelect.value = category;
+  document.getElementById('fCountry').value = country;
+  document.getElementById('fLanguage').value = language;
+  document.getElementById('fStatus').value = status;
+  document.getElementById('fScore').value = score;
+  formCard.classList.remove('hidden');
+  formCard.scrollIntoView({ behavior: 'smooth' });
+}
+
+async function saveSource() {
+  const id = document.getElementById('fId').value.trim();
+  const name = document.getElementById('fName').value.trim();
+  const url = document.getElementById('fUrl').value.trim();
+  const category = document.getElementById('fCategory').value.trim();
+  const country = document.getElementById('fCountry').value.trim() || null;
+  const language = document.getElementById('fLanguage').value.trim() || 'ar';
+  const status = document.getElementById('fStatus').value;
+  const score = parseFloat(document.getElementById('fScore').value) || 0;
+
+  if (!id || !name || !url) {
+    showMessage('يرجى تعبئة المعرف والاسم والرابط', 'error');
+    return;
+  }
+
+  const method = 'POST';
+  const endpoint = API + (editId ? 'update.php' : 'create.php');
+  const body = { id, name, url, category, country, language, status, score };
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    showMessage(editId ? 'تم تحديث المصدر بنجاح' : 'تم إضافة المصدر بنجاح', 'success');
+    hideForm();
+    loadSources();
+  } catch (e) {
+    showMessage('فشل الحفظ: ' + e.message, 'error');
+  }
+}
+
+async function deleteSource(id, name) {
+  if (!confirm('هل أنت متأكد من حذف المصدر: ' + name + '?')) return;
+  try {
+    const res = await fetch(API + 'delete.php?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    showMessage(data.softDeleted ? 'تم أرشفة المصدر لوجود مقالات مرتبطة به' : 'تم حذف المصدر بنجاح', 'success');
+    loadSources();
+  } catch (e) {
+    showMessage('فشل الحذف: ' + e.message, 'error');
+  }
+}
+
+function escapeHtml(text) {
+  if (text == null) return '';
+  return String(text).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m]));
+}
+function escapeAttr(text) {
+  return escapeHtml(text).replace(/'/g, '&#39;');
+}
+
+document.getElementById('searchInput').addEventListener('input', loadSources);
+document.getElementById('statusFilter').addEventListener('change', loadSources);
+document.getElementById('countryFilter').addEventListener('change', loadSources);
+
+loadCategories()
+  .catch(error => showMessage('فشل تحميل الأقسام: ' + error.message, 'error'))
+  .finally(loadSources);
+</script>
+</body>
+</html>

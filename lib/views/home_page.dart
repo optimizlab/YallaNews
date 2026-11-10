@@ -14,6 +14,7 @@ import '../services/app_settings.dart';
 import '../services/yalla_engine_service.dart';
 import '../services/background_crawler_service.dart';
 import '../services/server_api_service.dart';
+import '../services/auth_service.dart';
 import '../services/category_service.dart';
 import '../services/connectivity_service.dart';
 import '../widgets/shimmer_loading.dart';
@@ -228,6 +229,9 @@ class _HomePageState extends State<HomePage> {
   String _selectedCategory = 'all';
   bool _waitingForInitialCrawl = false;
   bool _isOfflineMode = false;
+  Locale? _lastLocale;
+  int _dataLoadGeneration = 0;
+  int _languageReloadGeneration = 0;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   StreamSubscription<NewsModel>? _articleSubscription;
@@ -240,6 +244,9 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     CategoryService.instance.addListener(_onCategoriesChanged);
+    AppSettings.instance.addListener(_onSettingsChanged);
+    AuthService.instance.addListener(_onAuthChanged);
+    _lastLocale = AppSettings.instance.locale;
     _loadData();
   }
 
@@ -250,7 +257,15 @@ class _HomePageState extends State<HomePage> {
     _crawlerBlendTimer?.cancel();
     _scrollController.dispose();
     CategoryService.instance.removeListener(_onCategoriesChanged);
+    AppSettings.instance.removeListener(_onSettingsChanged);
+    AuthService.instance.removeListener(_onAuthChanged);
     super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _onCategoriesChanged() {
@@ -259,6 +274,47 @@ class _HomePageState extends State<HomePage> {
         _categories = CategoryService.instance.categories;
       });
     }
+  }
+
+  void _onSettingsChanged() {
+    if (!mounted) return;
+    final currentLocale = AppSettings.instance.locale;
+    if (_lastLocale == null ||
+        currentLocale?.languageCode != _lastLocale?.languageCode) {
+      _lastLocale = currentLocale;
+      _dataLoadGeneration++;
+      final reloadGeneration = ++_languageReloadGeneration;
+      debugPrint(
+        '[HOME] Language changed to ${currentLocale?.languageCode}, reloading news',
+      );
+      unawaited(_reloadForLanguageChange(reloadGeneration));
+    }
+  }
+
+  Future<void> _reloadForLanguageChange(int reloadGeneration) async {
+    await CrawlerScheduler.instance.stop();
+    await BackgroundCrawlerService.instance.stop();
+    if (!mounted || reloadGeneration != _languageReloadGeneration) return;
+
+    // Reload categories from the server so their names match the
+    // newly selected language before we reload the news feed.
+    await CategoryService.instance.loadCategories(forceRefresh: true);
+    if (!mounted || reloadGeneration != _languageReloadGeneration) return;
+
+    _articleSubscription?.cancel();
+    _crawlerFlushTimer?.cancel();
+    _crawlerBlendTimer?.cancel();
+    _pendingArticles.clear();
+    setState(() {
+      _isLoading = true;
+      _rawArticles = [];
+      _allArticles = [];
+      _articles = [];
+      _selectedCategory = 'all';
+      _trendingSearches = [];
+    });
+
+    await _loadData(skipCachedArticles: true);
   }
 
   Future<bool> _getIsWifi() async {
@@ -338,14 +394,21 @@ class _HomePageState extends State<HomePage> {
   /// News and Magazines policy requires current content and clear publisher
   /// attribution. Articles without either are not shown in the feed.
   List<NewsModel> _filterPolicyCompliantArticles(Iterable<NewsModel> articles) {
+    final selectedLanguage = AppSettings.instance.locale?.languageCode;
     return articles.where((article) {
       final hasPublisher =
           article.sourceName.trim().isNotEmpty ||
+          article.displaySourceName.trim().isNotEmpty ||
           article.authorName.trim().isNotEmpty ||
           article.author.trim().isNotEmpty;
+      final languageMatches =
+          article.language.isEmpty ||
+          selectedLanguage == null ||
+          article.language.toLowerCase() == selectedLanguage.toLowerCase();
       // The server may legitimately have no original publication timestamp.
       // Keep such articles visible; only reject a known, genuinely stale date.
       return hasPublisher &&
+          languageMatches &&
           (article.publicationDate == null || article.isWithinMonths(3));
     }).toList();
   }
@@ -369,10 +432,6 @@ class _HomePageState extends State<HomePage> {
       }
     });
     _applyBlendedArticles(_rawArticles);
-    // Persist newly crawled articles on the server as well as inserting them
-    // into the local feed. Without this, clearing the API database leaves it
-    // permanently empty even though the crawler found articles.
-    unawaited(_pushArticlesToApi(batch));
     widget.engineService.addLog(
       '[HOME] Flushed ${batch.length} articles, total: ${_rawArticles.length}',
     );
@@ -449,7 +508,8 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {}
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool skipCachedArticles = false}) async {
+    final loadGeneration = ++_dataLoadGeneration;
     debugPrint('[HOME] _loadData started');
     _waitingForInitialCrawl = false;
 
@@ -462,10 +522,12 @@ class _HomePageState extends State<HomePage> {
       }
 
       final articleCount = await db.getArticleCount();
+      if (loadGeneration != _dataLoadGeneration) return;
 
       // If we have cached articles, show them immediately
-      if (articleCount > 0 && mounted) {
+      if (!skipCachedArticles && articleCount > 0 && mounted) {
         final cachedArticles = await db.getAllArticles(limit: 100);
+        if (loadGeneration != _dataLoadGeneration) return;
         final validCached = _filterPolicyCompliantArticles(
           cachedArticles.where(_isValidArticle),
         );
@@ -498,11 +560,13 @@ class _HomePageState extends State<HomePage> {
       List<NewsModel> trending = [];
       try {
         final results = await Future.wait([articlesFuture, trendingFuture]);
+        if (loadGeneration != _dataLoadGeneration) return;
         rawList = _filterPolicyCompliantArticles(results[0] as List<NewsModel>);
         trending = results[1] as List<NewsModel>;
       } catch (e) {
         debugPrint('[HOME] API load failed: $e');
       }
+      if (loadGeneration != _dataLoadGeneration) return;
 
       debugPrint('[HOME] Loaded ${rawList.length} articles from API');
 
@@ -530,21 +594,14 @@ class _HomePageState extends State<HomePage> {
         });
       }
 
-      // Push to API in background
-      if (rawList.isNotEmpty) {
-        unawaited(_pushArticlesToApi(rawList));
-      }
-
       // Handle local DB and crawler in background
       if (!kIsWeb) {
-        unawaited(_setupLocalDbAndCrawler(rawList, trending));
-        // Start independently of the local DB setup. A DB/settings failure
-        // must not silently prevent news collection.
-        debugPrint('[HOME] Starting crawler independently of DB setup');
         unawaited(
-          BackgroundCrawlerService.instance.startSilentCrawl(
-            engineService: widget.engineService,
-            requireWifi: false,
+          _setupLocalDbAndCrawler(
+            rawList,
+            trending,
+            loadGeneration: loadGeneration,
+            allowCachedFallback: !skipCachedArticles,
           ),
         );
       }
@@ -558,8 +615,16 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _pushArticlesToApi(List<NewsModel> articles) async {
     try {
+      final uploadable = articles
+          .where((article) => article.language.trim().isNotEmpty)
+          .toList();
+      if (uploadable.length != articles.length) {
+        debugPrint(
+          '[HOME] Skipped ${articles.length - uploadable.length} cached articles without a known language',
+        );
+      }
       int pushed = 0;
-      for (final article in articles) {
+      for (final article in uploadable) {
         try {
           await ServerApiService.saveArticle(
             article,
@@ -570,20 +635,24 @@ class _HomePageState extends State<HomePage> {
         }
         await Future.delayed(const Duration(milliseconds: 200));
       }
-      debugPrint('[HOME] Pushed $pushed/${articles.length} articles to API');
+      debugPrint('[HOME] Pushed $pushed/${uploadable.length} articles to API');
     } catch (_) {}
   }
 
   Future<void> _setupLocalDbAndCrawler(
     List<NewsModel> rawList,
-    List<NewsModel> trending,
-  ) async {
+    List<NewsModel> trending, {
+    required int loadGeneration,
+    bool allowCachedFallback = true,
+  }) async {
     try {
       final db = NewsDatabase.instance;
       final articleCount = await db.getArticleCount();
+      if (loadGeneration != _dataLoadGeneration) return;
       final serverEmpty = rawList.isEmpty;
 
       final settings = await AppSettings.instance.getPrefs();
+      if (loadGeneration != _dataLoadGeneration) return;
       final backgroundEnabled =
           settings.getBool('background_crawler_enabled') ?? true;
 
@@ -634,42 +703,55 @@ class _HomePageState extends State<HomePage> {
           }
         });
 
-        // Start the adaptive scheduler for every startup, not only when the
-        // server has zero articles. Otherwise an existing but stale feed
-        // never triggers a crawl and users stop receiving new news.
+        // Start both the immediate crawl and adaptive scheduler only when
+        // enabled in the user's saved preferences.
+        unawaited(
+          CrawlerScheduler.instance.start(
+            engineService: widget.engineService,
+            requireWifi: false,
+            onComplete: () {
+              if (mounted && _pendingArticles.isNotEmpty) {
+                _flushPendingArticles();
+              }
+            },
+          ),
+        );
+        unawaited(
+          BackgroundCrawlerService.instance.startSilentCrawl(
+            engineService: widget.engineService,
+            requireWifi: false,
+            onComplete: () {
+              if (mounted && _pendingArticles.isNotEmpty) {
+                _flushPendingArticles();
+              }
+            },
+          ),
+        );
+      } else {
+        await _articleSubscription?.cancel();
+        _articleSubscription = null;
+        _crawlerFlushTimer?.cancel();
+        _crawlerFlushTimer = null;
+        _crawlerBlendTimer?.cancel();
+        _crawlerBlendTimer = null;
+        _pendingArticles.clear();
+        await CrawlerScheduler.instance.stop();
+        await BackgroundCrawlerService.instance.stop();
       }
 
-      // Keep crawling enabled even when the API already has older articles.
-      // Use any active network (Wi-Fi or mobile data), not Wi-Fi only.
-      unawaited(
-        CrawlerScheduler.instance.start(
-          engineService: widget.engineService,
-          requireWifi: false,
-          onComplete: () {
-            if (mounted && _pendingArticles.isNotEmpty) _flushPendingArticles();
-          },
-        ),
-      );
-      // Do not wait for the adaptive benchmark/8-second grace period for the
-      // first refresh. Start one crawl immediately; the scheduler handles
-      // subsequent periodic runs.
-      unawaited(
-        BackgroundCrawlerService.instance.startSilentCrawl(
-          engineService: widget.engineService,
-          requireWifi: false,
-          onComplete: () {
-            if (mounted && _pendingArticles.isNotEmpty) _flushPendingArticles();
-          },
-        ),
-      );
-
-      if (serverEmpty && articleCount > 0) {
+      if (loadGeneration == _dataLoadGeneration &&
+          allowCachedFallback &&
+          serverEmpty &&
+          articleCount > 0) {
         debugPrint(
           '[HOME] Server empty, loading ${articleCount} articles from local DB',
         );
         final localArticles = await db.getAllArticles(limit: 100);
         final validLocal = _filterPolicyCompliantArticles(
           localArticles.where(_isValidArticle),
+        );
+        debugPrint(
+          '[HOME] Local fallback kept ${validLocal.length}/${localArticles.length} cached articles',
         );
 
         if (validLocal.isNotEmpty && mounted) {
@@ -689,7 +771,8 @@ class _HomePageState extends State<HomePage> {
     try {
       debugPrint('[HOME] Loading articles from server API...');
       final locale = AppSettings.instance.locale;
-      final language = locale?.languageCode == 'ar' ? 'ar' : null;
+      final language = locale?.languageCode;
+      if (language == null || language.isEmpty) return [];
       final serverArticles = await ServerApiService.getNews(
         limit: 100,
         language: language,
@@ -810,10 +893,10 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.search_rounded),
             onPressed: _activateSearch,
           ),
-          FutureBuilder<bool>(
-            future: ServerApiService.isLoggedIn(),
-            builder: (context, snapshot) {
-              final isLoggedIn = snapshot.data ?? false;
+          AnimatedBuilder(
+            animation: AuthService.instance,
+            builder: (context, _) {
+              final isLoggedIn = AuthService.instance.isLoggedIn;
               if (!isLoggedIn) {
                 return IconButton(
                   icon: const Icon(Icons.person_add_rounded),
@@ -865,7 +948,7 @@ class _HomePageState extends State<HomePage> {
                               child: ElevatedButton(
                                 onPressed: () async {
                                   Navigator.pop(context);
-                                  await ServerApiService.logout();
+                                  await AuthService.instance.logout();
                                   if (mounted) setState(() {});
                                 },
                                 style: ElevatedButton.styleFrom(
@@ -1062,8 +1145,8 @@ class _HomePageState extends State<HomePage> {
                             ),
                           );
                         },
-                        getCategoryLabel: (cat) =>
-                            _getCategoryLabel(cat, context),
+                        getCategoryName: (cat) =>
+                            _getCategoryName(cat, context),
                         getReadTime: (art) => _getReadTime(art, context),
                         getSourceName: (art) => _getSourceName(art),
                       ),
@@ -1084,7 +1167,7 @@ class _HomePageState extends State<HomePage> {
                             Text(
                               _selectedCategory == 'all'
                                   ? 'الكل'
-                                  : _getCategoryLabel(
+                                  : _getCategoryName(
                                       _selectedCategory,
                                       context,
                                     ),
@@ -1153,7 +1236,7 @@ class _HomePageState extends State<HomePage> {
   Widget _buildCategoryChips(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final allCats = <Map<String, dynamic>>[
-      {'id': 'all', 'name': 'الكل', 'nameEn': 'الكل'},
+      {'id': 'all', 'name': l10n.translate('all'), 'nameEn': l10n.translate('all')},
     ];
     if (_blendedCount > 0) {
       allCats.add({
@@ -1172,7 +1255,14 @@ class _HomePageState extends State<HomePage> {
         itemBuilder: (context, i) {
           final cat = allCats[i];
           final catKey = cat['id']?.toString() ?? 'all';
-          final catName = cat['name']?.toString() ?? catKey;
+          final String catName;
+          if (catKey == 'all') {
+            catName = l10n.translate('all');
+          } else if (catKey == 'blended') {
+            catName = l10n.translate('blendedBadge');
+          } else {
+            catName = CategoryService.getCategoryDisplayName(cat, context);
+          }
           final int count = catKey == 'all'
               ? _allArticles.length
               : (catKey == 'blended'
@@ -1353,7 +1443,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   child: CachedNewsImage(
                     imageUrl: article.imageUrl.isEmpty
-                        ? 'https://placehold.co/800x220/1A1A2E/C62828?text=${_getCategoryLabel(article.category, context)}'
+                        ? 'https://placehold.co/800x220/1A1A2E/C62828?text=${_getCategoryName(article.category, context)}'
                         : article.imageUrl,
                     width: double.infinity,
                     height: 220,
@@ -1407,7 +1497,7 @@ class _HomePageState extends State<HomePage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      _getCategoryLabel(article.category, context),
+                      _getCategoryName(article.category, context),
                       style: GoogleFonts.outfit(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -1588,7 +1678,7 @@ class _HomePageState extends State<HomePage> {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              _getCategoryLabel(article.category, context),
+                              _getCategoryName(article.category, context),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.outfit(
@@ -1684,7 +1774,7 @@ class _HomePageState extends State<HomePage> {
                 borderRadius: BorderRadius.circular(10),
                 child: CachedNewsImage(
                   imageUrl: article.imageUrl.isEmpty
-                      ? 'https://placehold.co/72x72/1A1A2E/C62828?text=${_getCategoryLabel(article.category, context)[0]}'
+                      ? 'https://placehold.co/72x72/1A1A2E/C62828?text=${_getCategoryName(article.category, context)[0]}'
                       : article.imageUrl,
                   width: 72,
                   height: 72,
@@ -1700,7 +1790,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildFallbackImage(String category) {
-    final label = _getCategoryLabel(category, context);
+    final label = _getCategoryName(category, context);
     return Container(
       width: 72,
       height: 72,
@@ -1728,8 +1818,8 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  String _getCategoryLabel(String category, BuildContext context) {
-    return CategoryService.getCategoryLabel(category, context);
+  String _getCategoryName(String category, BuildContext context) {
+    return CategoryService.instance.getCategoryName(category, context);
   }
 
   String _getReadTime(NewsModel article, BuildContext context) {
@@ -1852,7 +1942,7 @@ class _HomePageState extends State<HomePage> {
               label: l10n.translate('terms'),
               onTap: () {
                 Navigator.pop(context);
-                _openPublicPage('https://apps.inoov.com/yallanews/terms.html');
+                _openPublicPage('https://apps.inoov.com/yallanews/#terms');
               },
             ),
           ],

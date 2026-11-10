@@ -31,6 +31,57 @@ void main() {
       expect(result, 'economy');
     });
 
+    test('classifies NFL trade deadline news as sports, not economy', () async {
+      final result = await NewsIntelligence.classifyCategory(
+        '2026 NFL trade deadline: Proposing deals for Tony Pollard, Riq Woolen, others',
+        title:
+            '2026 NFL trade deadline: Proposing deals for Tony Pollard, Riq Woolen, others',
+      );
+      expect(result, 'sports');
+    });
+
+    test(
+      'uses a sports section URL when the headline has no sports keywords',
+      () async {
+        final result = await NewsIntelligence.classifyCategory(
+          'The club announces a new appointment',
+          title: 'The club announces a new appointment',
+          url: 'https://example.com/sports/club-announcement',
+          validCategoryIds: const ['general', 'sport_news'],
+        );
+        expect(result, 'sport_news');
+      },
+    );
+
+    test('maps sports language to a sports API category slug', () async {
+      final result = await NewsIntelligence.classifyCategory(
+        'The national team won the football match',
+        validCategoryIds: const ['general', 'sports_news'],
+      );
+      expect(result, 'sports_news');
+    });
+
+    test(
+      'classifies market coverage as economy when it mentions an election',
+      () async {
+        const title =
+            'Decisive election. Dramatic stock swings. How we handled the market last week';
+        final result = await NewsIntelligence.classifyCategory(
+          title,
+          title: title,
+        );
+        expect(result, 'economy');
+      },
+    );
+
+    test('returns the matching API category id', () async {
+      final result = await NewsIntelligence.classifyCategory(
+        'The economy and stock market are changing',
+        validCategoryIds: const ['general', 'business', 'sports'],
+      );
+      expect(result, 'business');
+    });
+
     test('extract returns IntelligenceResult', () {
       final result = NewsIntelligence.extract(
         'عنوان الخبر',

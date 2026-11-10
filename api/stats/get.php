@@ -1,11 +1,16 @@
 <?php
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../news/news_schema.php';
 
 no_cache_headers();
 
 try {
     $db = Database::getInstance();
+    $newsColumns = news_table_columns($db);
+    $sourceNameExpression = news_source_name_expression($newsColumns);
+    $sourceJoin = news_source_join($newsColumns);
+    $createdAtExpression = news_has_column($newsColumns, 'created_at') ? 'n.created_at' : 'NULL';
 
     // 1. Real-time presence & audience stats (from heartbeats)
     $liveCount = 0;
@@ -191,7 +196,10 @@ try {
 
     // Latest news added
     try {
-        $recentNews = $db->query("SELECT id, title, category, source_name, created_at FROM yn_news ORDER BY id DESC LIMIT 5")->fetchAll();
+        $recentNews = $db->query(
+            "SELECT n.id, n.title, n.category, $sourceNameExpression AS source_name, $createdAtExpression AS created_at
+             FROM yn_news n $sourceJoin ORDER BY n.id DESC LIMIT 5"
+        )->fetchAll();
         foreach ($recentNews as $rn) {
             $activities[] = [
                 'type' => 'news',

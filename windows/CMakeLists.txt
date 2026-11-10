@@ -1,5 +1,5 @@
 # Project-level configuration.
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.20)
 project(yalla_news LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
@@ -8,7 +8,7 @@ set(BINARY_NAME "yalla_news")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
-cmake_policy(VERSION 3.14...3.25)
+cmake_policy(VERSION 3.20...3.25)
 
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -32,13 +32,17 @@ set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# Workaround for CMake 3.31 bug in CMakeRCInformation.cmake
+# https://gitlab.kitware.com/cmake/cmake/-/issues/25622
+set(CMAKE_RC_COMPILER "rc.exe" CACHE INTERNAL "")
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by
 # default. In most cases, you should add new options to specific targets instead
 # of modifying this function.
 function(APPLY_STANDARD_SETTINGS TARGET)
-  target_compile_features(${TARGET} PUBLIC cxx_std_17)
+  target_compile_features(${TARGET} PUBLIC cxx_std_23)
   target_compile_options(${TARGET} PRIVATE /W4 /WX /wd"4100")
   target_compile_options(${TARGET} PRIVATE /EHsc)
   target_compile_definitions(${TARGET} PRIVATE "_HAS_EXCEPTIONS=0")
@@ -51,8 +55,17 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
-add_subdirectory("news_brain")
 
+# ---------------------------------------------------------------------------
+# news_brain: Use prebuilt DLL to skip C++ recompilation on every flutter run.
+# To rebuild from source: run windows/prebuilt/rebuild.bat, then flutter run.
+# ---------------------------------------------------------------------------
+set(NEWSBRAIN_PREBUILT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/prebuilt/$<CONFIG>")
+add_library(newsBrain SHARED IMPORTED GLOBAL)
+set_target_properties(newsBrain PROPERTIES
+  IMPORTED_LOCATION "${NEWSBRAIN_PREBUILT_DIR}/newsBrain.dll"
+  IMPORTED_IMPLIB   "${CMAKE_CURRENT_SOURCE_DIR}/prebuilt/$<CONFIG>/newsBrain.lib"
+)
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
@@ -76,7 +89,9 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 
-install(TARGETS newsBrain RUNTIME DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+# Install the prebuilt newsBrain.dll directly (IMPORTED targets can't use install(TARGETS))
+install(FILES "${NEWSBRAIN_PREBUILT_DIR}/newsBrain.dll"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"

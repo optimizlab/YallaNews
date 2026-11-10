@@ -17,7 +17,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  // Switch thread desktop to the user's interactive "Default" desktop so the window
+  // is visibly displayed on the user's monitor even when launched from sandbox/agent environments.
+  HDESK default_desktop = ::OpenDesktopW(L"Default", 0, FALSE, GENERIC_ALL);
+  if (default_desktop) {
+    ::SetThreadDesktop(default_desktop);
+  }
+
   flutter::DartProject project(L"data");
+
+  // Disable experimental Impeller backend on Windows to ensure reliable rendering via Skia.
+  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();

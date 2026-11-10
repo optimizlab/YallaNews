@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../categories/category_helpers.php';
+require_once __DIR__ . '/news_schema.php';
 
 no_cache_headers();
 
@@ -12,10 +14,19 @@ if (!$id) {
 
 try {
     $db = Database::getInstance();
+    $newsColumns = news_table_columns($db);
+    $sourceNameExpression = news_source_name_expression($newsColumns);
+    $sourceUrlExpression = news_source_url_expression($newsColumns);
+    $sourceJoin = news_source_join($newsColumns);
 
-    $sql = "SELECT n.*,
-                   c.name as category_name, c.name_en as category_name_en
+    $categoryColumns = category_table_columns($db);
+    $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+
+    $sql = "SELECT n.*, $sourceNameExpression AS resolved_source_name,
+               $sourceUrlExpression AS resolved_source_url,
+               $categorySelect
             FROM yn_news n
+            $sourceJoin
             LEFT JOIN yn_categories c ON n.category = c.id
             WHERE n.id = ?
             LIMIT 1";
@@ -26,9 +37,20 @@ try {
         json_response(['error' => 'Article not found'], 404);
     }
 
-    $sourceName = $article['source_name'] ?? $article['source_id'] ?? '';
-    $sourceUrl = $article['source_url'] ?? '';
+    $sourceName = $article['resolved_source_name'] ?? '';
+    $sourceUrl = $article['resolved_source_url'] ?? '';
     $sourceUrlArticle = $article['source_url_article'] ?? $article['source_url'] ?? '';
+    $categoryTranslations = [
+        'ar' => (string)($article['category_name'] ?? ''),
+        'en' => (string)($article['category_name_en'] ?? ''),
+        'fr' => (string)($article['category_name_fr'] ?? ''),
+        'tr' => (string)($article['category_name_tr'] ?? ''),
+    ];
+    $language = strtolower((string)($article['language'] ?? 'ar'));
+    $localizedCategoryName = $categoryTranslations[$language] ?? '';
+    if ($localizedCategoryName === '') {
+        $localizedCategoryName = $categoryTranslations['ar'] ?: (string)$article['category'];
+    }
 
     json_response([
         'success' => true,
@@ -39,8 +61,12 @@ try {
             'content' => $article['content'],
             'language' => $article['language'] ?? 'ar',
             'category' => $article['category'],
-            'categoryName' => $article['category_name'] ?? $article['category'],
+            'categoryName' => $localizedCategoryName,
+            'categoryNameAr' => $categoryTranslations['ar'],
             'categoryNameEn' => $article['category_name_en'] ?? '',
+            'categoryNameFr' => $article['category_name_fr'] ?? '',
+            'categoryNameTr' => $article['category_name_tr'] ?? '',
+            'categoryTranslations' => $categoryTranslations,
             'source' => [
                 'name' => $sourceName,
                 'url' => $sourceUrl,

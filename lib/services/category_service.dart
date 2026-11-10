@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
+import '../database/news_db.dart';
 import 'server_api_service.dart';
 
 class CategoryService extends ChangeNotifier {
@@ -14,52 +16,73 @@ class CategoryService extends ChangeNotifier {
   bool _initialized = false;
   bool get initialized => _initialized;
 
-  static const List<Map<String, dynamic>> defaultCategories = [
-    {'id': 'general', 'name': 'أخبار عامة', 'nameEn': 'General News', 'sortOrder': 1, 'active': true, 'newsCount': 0},
-    {'id': 'politics', 'name': 'سياسة', 'nameEn': 'سياسة', 'sortOrder': 2, 'active': true, 'newsCount': 0},
-    {'id': 'sports', 'name': 'رياضة', 'nameEn': 'رياضة', 'sortOrder': 3, 'active': true, 'newsCount': 0},
-    {'id': 'business', 'name': 'أعمال', 'nameEn': 'أعمال', 'sortOrder': 4, 'active': true, 'newsCount': 0},
-    {'id': 'technology', 'name': 'تكنولوجيا', 'nameEn': 'تكنولوجيا', 'sortOrder': 5, 'active': true, 'newsCount': 0},
-    {'id': 'health', 'name': 'صحة', 'nameEn': 'صحة', 'sortOrder': 6, 'active': true, 'newsCount': 0},
-    {'id': 'culture', 'name': 'ثقافة', 'nameEn': 'Culture', 'sortOrder': 7, 'active': true, 'newsCount': 0},
-    {'id': 'entertainment', 'name': 'ترفيه', 'nameEn': 'ترفيه', 'sortOrder': 8, 'active': true, 'newsCount': 0},
-    {'id': 'science', 'name': 'علوم', 'nameEn': 'علوم', 'sortOrder': 9, 'active': true, 'newsCount': 0},
-  ];
+  static Map<String, String> _parseNameTranslation(dynamic raw) {
+    final translations = <String, String>{};
+    if (raw == null) return translations;
+
+    dynamic decoded;
+    if (raw is String) {
+      try {
+        decoded = jsonDecode(raw);
+      } catch (_) {
+        return translations;
+      }
+    } else {
+      decoded = raw;
+    }
+
+    if (decoded is List && decoded.isNotEmpty) {
+      final first = decoded.first;
+      if (first is Map) {
+        for (final entry in first.entries) {
+          translations[entry.key.toString()] = entry.value.toString();
+        }
+      }
+    } else if (decoded is Map) {
+      for (final entry in decoded.entries) {
+        translations[entry.key.toString()] = entry.value.toString();
+      }
+    }
+
+    return translations;
+  }
 
   Future<void> loadCategories({bool forceRefresh = false}) async {
     if (_initialized && !forceRefresh) return;
     try {
       final fetched = await ServerApiService.getCategories();
       if (fetched.isNotEmpty) {
-        final activeList = fetched.where((c) {
-          final active = c['active'];
-          return active == true || active == 1 || active == '1' || active == null;
-        }).map((c) => Map<String, dynamic>.from(c)).toList();
+        final activeList = fetched
+            .where((c) {
+              final active = c['active'];
+              return active == true ||
+                  active == 1 ||
+                  active == '1' ||
+                  active == null;
+            })
+            .map((c) => Map<String, dynamic>.from(c))
+            .toList();
 
-        // Deduplicate and normalize display names if server returned raw slugs
         final Map<String, Map<String, dynamic>> uniqueCats = {};
         for (final cat in activeList) {
           final id = (cat['id']?.toString() ?? '').toLowerCase().trim();
           if (id.isEmpty) continue;
-          
-          // Normalize slugs like tech -> technology, general_news -> general
-          final normalizedId = _normalizeCategoryId(id);
+
+          final nameTranslations = _parseNameTranslation(
+            cat['name_translation'],
+          );
           var name = (cat['name']?.toString() ?? '').trim();
-          var nameEn = (cat['nameEn']?.toString() ?? '').trim();
+          final nameEn = (cat['nameEn'] ?? cat['name_en'] ?? '')
+              .toString()
+              .trim();
+          if (name.isEmpty && nameEn.isEmpty) continue;
 
-          // If the name is just the raw ID, provide Arabic/English human-readable names
-          if (name.isEmpty || name == id || name == normalizedId) {
-            name = _defaultArabicName(normalizedId);
-          }
-          if (nameEn.isEmpty || nameEn == id || nameEn == normalizedId) {
-            nameEn = _defaultEnglishName(normalizedId);
-          }
-
-          if (!uniqueCats.containsKey(normalizedId)) {
-            uniqueCats[normalizedId] = {
-              'id': normalizedId,
+          if (!uniqueCats.containsKey(id)) {
+            uniqueCats[id] = {
+              'id': id,
               'name': name,
               'nameEn': nameEn,
+              'name_translation': nameTranslations,
               'sortOrder': cat['sortOrder'] ?? 50,
               'active': true,
               'newsCount': cat['newsCount'] ?? 0,
@@ -76,9 +99,8 @@ class CategoryService extends ChangeNotifier {
 
         _categories = sorted;
       }
-
       if (_categories.isEmpty) {
-        _categories = defaultCategories.map((c) => Map<String, dynamic>.from(c)).toList();
+        await _loadCategoriesFromLocalArticles();
       }
 
       _initialized = true;
@@ -87,12 +109,47 @@ class CategoryService extends ChangeNotifier {
       if (kDebugMode) {
         print('[CategoryService] Failed to load categories: $e');
       }
-      if (_categories.isEmpty) {
-        _categories = defaultCategories.map((c) => Map<String, dynamic>.from(c)).toList();
-        _initialized = true;
-        notifyListeners();
+      try {
+        await _loadCategoriesFromLocalArticles();
+      } catch (fallbackError) {
+        if (kDebugMode) {
+          print(
+            '[CategoryService] Failed to load categories from local articles: $fallbackError',
+          );
+        }
       }
+      _initialized = true;
+      notifyListeners();
     }
+  }
+
+  Future<void> _loadCategoriesFromLocalArticles() async {
+    final articles = await NewsDatabase.instance.getAllArticles(limit: 1000);
+    final categoryCounts = <String, int>{};
+    for (final article in articles) {
+      final id = article.category.trim();
+      if (id.isEmpty) continue;
+      categoryCounts.update(id, (count) => count + 1, ifAbsent: () => 1);
+    }
+
+    final categories =
+        categoryCounts.entries
+            .map(
+              (entry) => <String, dynamic>{
+                'id': entry.key,
+                'name': entry.key,
+                'nameEn': entry.key,
+                'translations': const <String, String>{},
+                'sortOrder': 50,
+                'active': true,
+                'newsCount': entry.value,
+              },
+            )
+            .toList()
+          ..sort(
+            (a, b) => (a['name'] as String).compareTo(b['name'] as String),
+          );
+    if (categories.isNotEmpty) _categories = categories;
   }
 
   static String _normalizeCategoryId(String id) {
@@ -115,85 +172,8 @@ class CategoryService extends ChangeNotifier {
     }
   }
 
-  static String _defaultArabicName(String id) {
-    switch (id) {
-      case 'general':
-      case 'general_news':
-        return 'أخبار عامة';
-      case 'politics':
-        return 'سياسة';
-      case 'sports':
-      case 'football':
-        return 'رياضة';
-      case 'economy':
-      case 'business':
-      case 'markets':
-        return 'اقتصاد';
-      case 'technology':
-      case 'tech':
-      case 'ai':
-        return 'تكنولوجيا';
-      case 'health':
-      case 'medicine':
-        return 'صحة';
-      case 'culture':
-        return 'ثقافة';
-      case 'entertainment':
-      case 'cinema':
-        return 'فن وترفيه';
-      case 'science':
-      case 'space':
-        return 'علوم';
-      case 'international':
-      case 'world':
-        return 'أخبار دولية';
-      case 'local':
-        return 'أخبار محلية';
-      default:
-        return id;
-    }
-  }
-
-  static String _defaultEnglishName(String id) {
-    switch (id) {
-      case 'general':
-      case 'general_news':
-        return 'General News';
-      case 'politics':
-        return 'Politics';
-      case 'sports':
-      case 'football':
-        return 'Sports';
-      case 'economy':
-      case 'business':
-      case 'markets':
-        return 'Economy';
-      case 'technology':
-      case 'tech':
-      case 'ai':
-        return 'Technology';
-      case 'health':
-      case 'medicine':
-        return 'Health';
-      case 'culture':
-        return 'Culture';
-      case 'entertainment':
-      case 'cinema':
-        return 'Entertainment';
-      case 'science':
-      case 'space':
-        return 'Science';
-      case 'international':
-      case 'world':
-        return 'International News';
-      case 'local':
-        return 'Local News';
-      default:
-        return id;
-    }
-  }
-
-  List<String> get categoryIds => _categories.map((c) => c['id']?.toString() ?? 'general').toList();
+  List<String> get categoryIds =>
+      _categories.map((c) => c['id']?.toString() ?? 'general').toList();
 
   Map<String, String> get categoryNames {
     final map = <String, String>{};
@@ -211,42 +191,99 @@ class CategoryService extends ChangeNotifier {
     if (a == t) return true;
 
     final categoryAliases = <String, List<String>>{
-      'sports': ['sports', 'رياضة', 'كرة القدم', 'كرة السلة', 'تنس', 'sport', 'football', 'motorsport'],
+      'sports': [
+        'sports',
+        'رياضة',
+        'كرة القدم',
+        'كرة السلة',
+        'تنس',
+        'sport',
+        'football',
+        'motorsport',
+      ],
       'politics': ['politics', 'سياسة', 'politic'],
-      'business': ['business', 'اقتصاد', 'أعمال', 'أسواق ومال', 'عقارات', 'economy', 'finance', 'markets', 'real_estate'],
-      'technology': ['technology', 'تكنولوجيا', 'تقنية', 'علوم وتكنولوجيا', 'tech', 'ai', 'cybersecurity'],
+      'business': [
+        'business',
+        'اقتصاد',
+        'أعمال',
+        'أسواق ومال',
+        'عقارات',
+        'economy',
+        'finance',
+        'markets',
+        'real_estate',
+      ],
+      'technology': [
+        'technology',
+        'تكنولوجيا',
+        'تقنية',
+        'علوم وتكنولوجيا',
+        'tech',
+        'ai',
+        'cybersecurity',
+      ],
       'health': ['health', 'صحة', 'طب وصحة', 'علوم وطب', 'medical', 'medicine'],
-      'entertainment': ['entertainment', 'ترفيه', 'فن', 'فن وترفيه', 'سينما', 'موسيقى', 'cinema', 'music'],
+      'entertainment': [
+        'entertainment',
+        'ترفيه',
+        'فن',
+        'فن وترفيه',
+        'سينما',
+        'موسيقى',
+        'cinema',
+        'music',
+      ],
       'culture': ['culture', 'ثقافة', 'كتب وأدب', 'books'],
       'science': ['science', 'علوم', 'علم', 'فضاء', 'space'],
-      'world': ['world', 'international', 'أخبار دولية', 'دولي', 'العالم', 'regional', 'أخبار إقليمية'],
+      'world': [
+        'world',
+        'international',
+        'أخبار دولية',
+        'دولي',
+        'العالم',
+        'regional',
+        'أخبار إقليمية',
+      ],
       'general': ['general', 'general_news', 'أخبار عامة', 'عام'],
       'local': ['local', 'أخبار محلية', 'محلي'],
     };
 
     for (final aliases in categoryAliases.values) {
-      final matchesA = aliases.any((x) => x == a || a.contains(x) || x.contains(a));
-      final matchesT = aliases.any((x) => x == t || t.contains(x) || x.contains(t));
+      final matchesA = aliases.any(
+        (x) => x == a || a.contains(x) || x.contains(a),
+      );
+      final matchesT = aliases.any(
+        (x) => x == t || t.contains(x) || x.contains(t),
+      );
       if (matchesA && matchesT) return true;
     }
 
     return false;
   }
 
-  static String getCategoryLabel(String category, BuildContext context) {
-    final cat = category.toLowerCase().trim();
-    if (matchesCategory(cat, 'all') || cat == 'all' || cat == 'الكل') return 'الكل';
-    if (matchesCategory(cat, 'politics') || cat == 'سياسة') return 'سياسة';
-    if (matchesCategory(cat, 'sports') || cat == 'رياضة') return 'رياضة';
-    if (matchesCategory(cat, 'technology') || cat == 'تكنولوجيا') return 'تكنولوجيا';
-    if (matchesCategory(cat, 'health') || cat == 'صحة') return 'صحة';
-    if (matchesCategory(cat, 'entertainment') || cat == 'ترفيه') return 'ترفيه';
-    if (matchesCategory(cat, 'business') || matchesCategory(cat, 'economy') || cat == 'أعمال' || cat == 'اقتصاد') return 'أعمال';
-    if (matchesCategory(cat, 'science') || cat == 'علوم') return 'علوم';
-    final l10n = AppLocalizations.of(context);
-    if (matchesCategory(cat, 'world')) return l10n.translate('world');
-    if (matchesCategory(cat, 'local')) return l10n.translate('local');
-    return category.isNotEmpty ? category : l10n.translate('generalNews');
+  String getCategoryName(String categoryId, BuildContext context) {
+    final normalizedId = categoryId.toLowerCase().trim();
+    if (normalizedId.isEmpty) {
+      return categoryId;
+    }
+    if (normalizedId == 'all' || normalizedId == 'الكل') {
+      return 'الكل';
+    }
+
+    for (final category in _categories) {
+      final id = category['id']?.toString().toLowerCase().trim() ?? '';
+      final name = category['name']?.toString().toLowerCase().trim() ?? '';
+      final translations = _categoryTranslations(category);
+      if (normalizedId == id ||
+          normalizedId == name ||
+          translations.values.any(
+            (translation) => translation.toLowerCase().trim() == normalizedId,
+          )) {
+        return getCategoryDisplayName(category, context);
+      }
+    }
+
+    return categoryId;
   }
 
   static IconData getCategoryIcon(String id) {
@@ -309,23 +346,91 @@ class CategoryService extends ChangeNotifier {
     }
   }
 
-  static String getCategoryDisplayName(Map<String, dynamic> category, BuildContext context) {
+  static String getCategoryDisplayName(
+    Map<String, dynamic> category,
+    BuildContext context,
+  ) {
     final id = (category['id']?.toString() ?? '').toLowerCase().trim();
-    if (matchesCategory(id, 'all') || id == 'all' || id == 'الكل') return 'الكل';
-    if (matchesCategory(id, 'politics') || id == 'politics' || id == 'سياسة') return 'سياسة';
-    if (matchesCategory(id, 'sports') || id == 'sports' || id == 'رياضة') return 'رياضة';
-    if (matchesCategory(id, 'technology') || id == 'technology' || id == 'tech' || id == 'تكنولوجيا') return 'تكنولوجيا';
-    if (matchesCategory(id, 'health') || id == 'health' || id == 'صحة') return 'صحة';
-    if (matchesCategory(id, 'entertainment') || id == 'entertainment' || id == 'ترفيه') return 'ترفيه';
-    if (matchesCategory(id, 'business') || matchesCategory(id, 'economy') || id == 'business' || id == 'economy' || id == 'أعمال' || id == 'اقتصاد') return 'أعمال';
-    if (matchesCategory(id, 'science') || id == 'science' || id == 'علوم') return 'علوم';
+    if (matchesCategory(id, 'all') || id == 'all' || id == 'الكل')
+      return AppLocalizations.of(context).translate('all');
 
-    final isArabic = (AppLocalizations.of(context)?.locale?.languageCode ?? 'ar') == 'ar';
-    final name = category['name']?.toString() ?? '';
-    final nameEn = category['nameEn']?.toString() ?? '';
-    if (isArabic && name.isNotEmpty) return name;
-    if (!isArabic && nameEn.isNotEmpty) return nameEn;
-    return name.isNotEmpty ? name : (category['id']?.toString() ?? '');
+    final localeCode = AppLocalizations.of(context).locale.languageCode;
+
+    final name = category['name']?.toString().trim() ?? '';
+    final nameAr =
+        (category['nameAr'] ?? category['name_ar'])?.toString().trim() ?? '';
+    final nameEn =
+        (category['nameEn'] ?? category['name_en'])?.toString().trim() ?? '';
+    final nameFr =
+        (category['nameFr'] ?? category['name_fr'])?.toString().trim() ?? '';
+    final nameTr =
+        (category['nameTr'] ?? category['name_tr'])?.toString().trim() ?? '';
+
+    final translations = _categoryTranslations(category);
+
+    switch (localeCode) {
+      case 'ar':
+        if (nameAr.isNotEmpty) return nameAr;
+        final arTr = translations['ar'];
+        if (arTr != null && arTr.isNotEmpty) return arTr;
+        if (name.isNotEmpty) return name;
+        if (nameEn.isNotEmpty) return nameEn;
+        break;
+      case 'en':
+        if (nameEn.isNotEmpty) return nameEn;
+        final enTr = translations['en'];
+        if (enTr != null && enTr.isNotEmpty) return enTr;
+        if (name.isNotEmpty) return name;
+        break;
+      case 'fr':
+        if (nameFr.isNotEmpty) return nameFr;
+        final frTr = translations['fr'];
+        if (frTr != null && frTr.isNotEmpty) return frTr;
+        if (name.isNotEmpty) return name;
+        if (nameEn.isNotEmpty) return nameEn;
+        break;
+      case 'tr':
+        if (nameTr.isNotEmpty) return nameTr;
+        final trTr = translations['tr'];
+        if (trTr != null && trTr.isNotEmpty) return trTr;
+        if (name.isNotEmpty) return name;
+        if (nameEn.isNotEmpty) return nameEn;
+        break;
+    }
+
+    final fallback = <String, String>{
+      'ar': nameAr.isNotEmpty ? nameAr : name,
+      'en': nameEn.isNotEmpty ? nameEn : name,
+      'fr': nameFr.isNotEmpty ? nameFr : name,
+      'tr': nameTr.isNotEmpty ? nameTr : name,
+    }[localeCode];
+    if (fallback != null && fallback.isNotEmpty) return fallback;
+    if (name.isNotEmpty) return name;
+    if (nameEn.isNotEmpty) return nameEn;
+    return category['id']?.toString() ?? '';
+  }
+
+  static Map<String, String> _categoryTranslations(
+    Map<String, dynamic> category,
+  ) {
+    final fromApi = _parseNameTranslation(
+      category['translations'] ?? category['name_translation'],
+    );
+    final fields = <String, String>{
+      'ar': (category['nameAr'] ?? category['name_ar'])?.toString().trim() ?? '',
+      'en':
+          (category['nameEn'] ?? category['name_en'])?.toString().trim() ?? '',
+      'fr':
+          (category['nameFr'] ?? category['name_fr'])?.toString().trim() ?? '',
+      'tr':
+          (category['nameTr'] ?? category['name_tr'])?.toString().trim() ?? '',
+    };
+    for (final entry in fields.entries) {
+      if (entry.value.isNotEmpty) {
+        fromApi[entry.key] = entry.value;
+      }
+    }
+    return fromApi;
   }
 
   void updateCategoryCounts(List<NewsModel> articles) {
@@ -334,7 +439,8 @@ class CategoryService extends ChangeNotifier {
       final name = category['name']?.toString() ?? id;
       int count = 0;
       for (final article in articles) {
-        if (matchesCategory(article.category, id) || matchesCategory(article.category, name)) {
+        if (matchesCategory(article.category, id) ||
+            matchesCategory(article.category, name)) {
           count++;
         }
       }

@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/news_schema.php';
 
 require_post();
 check_rate_limit('news_create:' . get_client_ip(), 100, 300);
@@ -12,14 +13,21 @@ $summary = sanitize_string($data['summary'] ?? '', 1000);
 $content = $data['content'] ?? null;
 $language = sanitize_string($data['language'] ?? 'ar', 8);
 $category = sanitize_string($data['category'] ?? '', 64);
-$sourceId = sanitize_string($data['source']['name'] ?? $data['sourceId'] ?? $data['source']['id'] ?? '', 64);
-$sourceUrlArticle = filter_var(sanitize_string($data['sourceUrl'] ?? $data['sourceUrlArticle'] ?? '', 512), FILTER_SANITIZE_URL);
+$sourceName = sanitize_string($data['source']['name'] ?? $data['sourceName'] ?? $data['sourceId'] ?? $data['source']['id'] ?? '', 255);
+$sourceUrl = filter_var(
+    sanitize_string($data['source']['url'] ?? $data['source_url'] ?? '', 512),
+    FILTER_SANITIZE_URL
+);
+$sourceUrlArticle = filter_var(
+    sanitize_string($data['sourceUrlArticle'] ?? $data['articleUrl'] ?? $data['sourceUrl'] ?? '', 512),
+    FILTER_SANITIZE_URL
+);
 $imageUrl = filter_var(sanitize_string($data['imageUrl'] ?? '', 512), FILTER_SANITIZE_URL);
-if (empty($sourceId)) {
-    $sourceId = 'يلا نيوز';
+if (empty($sourceName)) {
+    $sourceName = 'يلا نيوز';
 }
 
-$isYallaNews = ($sourceId === 'يلا نيوز' || strtolower($sourceId) === 'yalla news' || strtolower($sourceId) === 'yallanews');
+$isYallaNews = ($sourceName === 'يلا نيوز' || strtolower($sourceName) === 'yalla news' || strtolower($sourceName) === 'yallanews');
 if ($isYallaNews && (empty($sourceUrlArticle) || $sourceUrlArticle === 'https://yallanews.app' || $sourceUrlArticle === 'https://yallanews.app/')) {
     $sourceUrlArticle = 'https://yallanews.app/news/exclusive_' . time() . '_' . substr(bin2hex(random_bytes(4)), 0, 6);
 }
@@ -31,32 +39,69 @@ if (empty($imageUrl) || str_contains($imageUrl, 'bing.com/images/search')) {
 $publishedAt = intval($data['publishedAt'] ?? time() * 1000);
 $status = in_array($data['status'] ?? 'published', ['published', 'draft', 'archived']) ? $data['status'] : 'published';
 
-validate_required(['title' => $title, 'category' => $category, 'source_id' => $sourceId, 'source_url_article' => $sourceUrlArticle]);
+validate_required(['title' => $title, 'category' => $category, 'source_id' => $sourceName, 'source_url_article' => $sourceUrlArticle]);
 
 try {
     $db = Database::getInstance();
-
-    if ($category !== '') {
-        $exists = $db->query('SELECT id FROM yn_categories WHERE id = ? LIMIT 1', [$category])->fetch();
-        if (!$exists) {
-            $db->query('INSERT INTO yn_categories (id, name, name_en, sort_order, active) VALUES (?, ?, ?, ?, ?)', [
-                $category,
-                $category,
-                $category,
-                0,
-                1,
-            ]);
+    $columns = news_table_columns($db);
+    foreach (['id', 'title', 'category', 'language', 'source_url_article'] as $requiredColumn) {
+        if (!news_has_column($columns, $requiredColumn)) {
+            throw new RuntimeException("yn_news is missing required column: $requiredColumn");
         }
     }
 
+    [$sourceColumn, $sourceValue] = news_source_write_value(
+        $db,
+        $columns,
+        $sourceName,
+        $sourceUrl
+    );
+    if ($sourceColumn === null) {
+        throw new RuntimeException('yn_news must contain source_name or source_id');
+    }
+
+    $categoryColumns = $db->query('SHOW COLUMNS FROM yn_categories')->fetchAll(PDO::FETCH_COLUMN, 0);
+    $categoryQuery = in_array('active', $categoryColumns, true)
+        ? 'SELECT id FROM yn_categories WHERE id = ? AND active = 1 LIMIT 1'
+        : 'SELECT id FROM yn_categories WHERE id = ? LIMIT 1';
+    $categoryExists = $db->query($categoryQuery, [$category])->fetch();
+    if (!$categoryExists) {
+        json_response(['error' => 'Category does not exist or is inactive'], 400);
+    }
+
     $existing = $db->query(
-        'SELECT id FROM yn_news WHERE source_url_article = ? LIMIT 1',
-        [$sourceUrlArticle]
+        'SELECT id FROM yn_news WHERE source_url_article = ? AND language = ? LIMIT 1',
+        [$sourceUrlArticle, $language]
     )->fetch();
 
     if ($existing) {
-        $sql = "UPDATE yn_news SET title = ?, summary = ?, content = ?, language = ?, category = ?, source_id = ?, source_url_article = ?, image_url = ?, published_at = ?, status = ?, updated_at = NOW() WHERE id = ?";
-        $db->query($sql, [$title, $summary, $content, $language, $category, $sourceId, $sourceUrlArticle, $imageUrl, $publishedAt, $status, $existing['id']]);
+        $updates = [
+            'title' => $title,
+            'language' => $language,
+            'category' => $category,
+            $sourceColumn => $sourceValue,
+            'source_url_article' => $sourceUrlArticle,
+        ];
+        foreach ([
+            'summary' => $summary,
+            'content' => $content,
+            'source_url' => $sourceUrl,
+            'image_url' => $imageUrl,
+            'published_at' => $publishedAt,
+            'status' => $status,
+        ] as $column => $value) {
+            if (news_has_column($columns, $column)) {
+                $updates[$column] = $value;
+            }
+        }
+        $assignments = array_map(fn($column) => "$column = ?", array_keys($updates));
+        if (news_has_column($columns, 'updated_at')) {
+            $assignments[] = 'updated_at = NOW()';
+        }
+        $db->query(
+            'UPDATE yn_news SET ' . implode(', ', $assignments) . ' WHERE id = ?',
+            array_merge(array_values($updates), [$existing['id']])
+        );
 
         json_response([
             'success' => true,
@@ -68,10 +113,38 @@ try {
     }
 
     $id = generate_secure_id('article_');
-
-    $sql = "INSERT INTO yn_news (id, title, summary, content, language, category, source_id, source_url_article, image_url, published_at, status, created_at, updated_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-    $db->query($sql, [$id, $title, $summary, $content, $language, $category, $sourceId, $sourceUrlArticle, $imageUrl, $publishedAt, $status]);
+    $insert = [
+        'id' => $id,
+        'title' => $title,
+        'language' => $language,
+        'category' => $category,
+        $sourceColumn => $sourceValue,
+        'source_url_article' => $sourceUrlArticle,
+    ];
+    foreach ([
+        'summary' => $summary,
+        'content' => $content,
+        'source_url' => $sourceUrl,
+        'image_url' => $imageUrl,
+        'published_at' => $publishedAt,
+        'status' => $status,
+    ] as $column => $value) {
+        if (news_has_column($columns, $column)) {
+            $insert[$column] = $value;
+        }
+    }
+    $insertColumns = array_keys($insert);
+    $insertValues = array_fill(0, count($insertColumns), '?');
+    if (news_has_column($columns, 'created_at')) {
+        $insertColumns[] = 'created_at';
+        $insertValues[] = 'NOW()';
+    }
+    if (news_has_column($columns, 'updated_at')) {
+        $insertColumns[] = 'updated_at';
+        $insertValues[] = 'NOW()';
+    }
+    $sql = 'INSERT INTO yn_news (' . implode(', ', $insertColumns) . ') VALUES (' . implode(', ', $insertValues) . ')';
+    $db->query($sql, array_values($insert));
 
     json_response([
         'success' => true,

@@ -41,10 +41,10 @@ class NewsDatabase {
       }
     }
 
-      try {
+    try {
       final db = await openDatabase(
         dbPath,
-        version: 15, // v15: add url_blacklist table
+        version: 22, // v22: AI content tables, event clusters with source refs, user interests
         onCreate: (Database db, int version) async {
           await _createSchema(db);
           try {
@@ -55,13 +55,13 @@ class NewsDatabase {
           await _seedFromJson(db);
         },
         onUpgrade: (Database db, int oldVersion, int newVersion) async {
-            if (oldVersion < 2) {
-              await db.execute('DROP TABLE IF EXISTS sources');
-              await _createSchema(db);
-              await _seedFromJson(db);
-            }
-            if (oldVersion < 3) {
-              await db.execute('''
+          if (oldVersion < 2) {
+            await db.execute('DROP TABLE IF EXISTS sources');
+            await _createSchema(db);
+            await _seedFromJson(db);
+          }
+          if (oldVersion < 3) {
+            await db.execute('''
                 CREATE TABLE IF NOT EXISTS crawled_articles (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   source_url TEXT NOT NULL,
@@ -76,17 +76,17 @@ class NewsDatabase {
                   logs TEXT NOT NULL
                 )
               ''');
-            }
-            if (oldVersion < 4) {
-              try {
-                await db.execute(
-                  'ALTER TABLE crawled_articles ADD COLUMN crawled_at INTEGER NOT NULL DEFAULT 0',
-                );
-              } catch (_) {}
-            }
-            if (oldVersion < 8) {
-              await db.execute('DROP TABLE IF EXISTS crawled_articles');
-              await db.execute('''
+          }
+          if (oldVersion < 4) {
+            try {
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN crawled_at INTEGER NOT NULL DEFAULT 0',
+              );
+            } catch (_) {}
+          }
+          if (oldVersion < 8) {
+            await db.execute('DROP TABLE IF EXISTS crawled_articles');
+            await db.execute('''
                 CREATE TABLE IF NOT EXISTS crawled_articles (
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   source_url TEXT NOT NULL,
@@ -104,42 +104,42 @@ class NewsDatabase {
                   publish_date TEXT NOT NULL DEFAULT ''
                 )
               ''');
-            }
-            if (oldVersion < 9) {
-              try {
-                await db.execute(
-                  'ALTER TABLE crawled_articles ADD COLUMN author TEXT NOT NULL DEFAULT ""',
-                );
-                await db.execute(
-                  'ALTER TABLE crawled_articles ADD COLUMN publish_date TEXT NOT NULL DEFAULT ""',
-                );
-              } catch (_) {}
-            }
-            if (oldVersion < 10) {
-              await db.execute('DELETE FROM sources');
-              await _seedFromJson(db);
-            }
-            if (oldVersion < 11) {
-              await db.execute("DELETE FROM sources WHERE country_code != 'MA'");
-            }
-            if (oldVersion < 12) {
-              try {
-                await db.execute(
-                  'ALTER TABLE crawled_articles ADD COLUMN url_hash TEXT NOT NULL DEFAULT ""',
-                );
-                await db.execute(
-                  'ALTER TABLE crawled_articles ADD COLUMN meta_tags TEXT NOT NULL DEFAULT "{}"',
-                );
-                await db.execute(
-                  'ALTER TABLE crawled_articles ADD COLUMN source_count INTEGER NOT NULL DEFAULT 1',
-                );
-                await db.execute(
-                  'ALTER TABLE crawled_articles ADD COLUMN sources TEXT NOT NULL DEFAULT ""',
-                );
-              } catch (_) {}
-            }
-            if (oldVersion < 13) {
-              await db.execute('''
+          }
+          if (oldVersion < 9) {
+            try {
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN author TEXT NOT NULL DEFAULT ""',
+              );
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN publish_date TEXT NOT NULL DEFAULT ""',
+              );
+            } catch (_) {}
+          }
+          if (oldVersion < 10) {
+            await db.execute('DELETE FROM sources');
+            await _seedFromJson(db);
+          }
+          if (oldVersion < 11) {
+            await db.execute("DELETE FROM sources WHERE country_code != 'MA'");
+          }
+          if (oldVersion < 12) {
+            try {
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN url_hash TEXT NOT NULL DEFAULT ""',
+              );
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN meta_tags TEXT NOT NULL DEFAULT "{}"',
+              );
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN source_count INTEGER NOT NULL DEFAULT 1',
+              );
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN sources TEXT NOT NULL DEFAULT ""',
+              );
+            } catch (_) {}
+          }
+          if (oldVersion < 13) {
+            await db.execute('''
                 CREATE TABLE IF NOT EXISTS yn_entities (
                   id TEXT PRIMARY KEY,
                   article_url TEXT NOT NULL,
@@ -152,7 +152,7 @@ class NewsDatabase {
                   extracted_at INTEGER NOT NULL
                 )
               ''');
-              await db.execute('''
+            await db.execute('''
                 CREATE TABLE IF NOT EXISTS yn_events (
                   id TEXT PRIMARY KEY,
                   article_url TEXT NOT NULL,
@@ -165,7 +165,7 @@ class NewsDatabase {
                   extracted_at INTEGER NOT NULL
                 )
               ''');
-              await db.execute('''
+            await db.execute('''
                 CREATE TABLE IF NOT EXISTS yn_topics (
                   id TEXT PRIMARY KEY,
                   article_url TEXT NOT NULL,
@@ -176,7 +176,7 @@ class NewsDatabase {
                   extracted_at INTEGER NOT NULL
                 )
               ''');
-    await db.execute('''
+            await db.execute('''
       CREATE TABLE IF NOT EXISTS yn_claims (
         id TEXT PRIMARY KEY,
         article_url TEXT NOT NULL,
@@ -187,31 +187,128 @@ class NewsDatabase {
         extracted_at INTEGER NOT NULL
       )
     ''');
-    await db.execute('''
+            await db.execute('''
       CREATE TABLE IF NOT EXISTS url_blacklist (
         url_hash TEXT PRIMARY KEY,
         reason TEXT NOT NULL DEFAULT '',
         added_at INTEGER NOT NULL
       )
     ''');
-  }
-            if (oldVersion < 14) {
-              try {
-                await _createFtsIndex(db);
-              } catch (_) {
-                _hasFts5 = false;
-              }
+          }
+          if (oldVersion < 14) {
+            try {
+              await _createFtsIndex(db);
+            } catch (_) {
+              _hasFts5 = false;
             }
-            if (oldVersion < 15) {
-              await db.execute('''
+          }
+          if (oldVersion < 15) {
+            await db.execute('''
                 CREATE TABLE IF NOT EXISTS url_blacklist (
                   url_hash TEXT PRIMARY KEY,
                   reason TEXT NOT NULL DEFAULT '',
                   added_at INTEGER NOT NULL
                 )
               ''');
+          }
+          if (oldVersion < 16) {
+            final columns = await db.rawQuery(
+              'PRAGMA table_info(crawled_articles)',
+            );
+            if (!columns.any((column) => column['name'] == 'language')) {
+              await db.execute(
+                "ALTER TABLE crawled_articles ADD COLUMN language TEXT NOT NULL DEFAULT ''",
+              );
             }
-          },
+          }
+          // v17: AI summaries table
+          if (oldVersion < 17) {
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS ai_summaries (
+                  id TEXT PRIMARY KEY,
+                  article_url TEXT NOT NULL,
+                  model_version TEXT NOT NULL,
+                  summary TEXT NOT NULL,
+                  tokens_used INTEGER NOT NULL DEFAULT 0,
+                  created_at INTEGER NOT NULL,
+                  FOREIGN KEY(article_url) REFERENCES crawled_articles(url) ON DELETE CASCADE
+                )
+              ''');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_summaries_article ON ai_summaries(article_url)');
+          }
+          // v18: Translations table
+          if (oldVersion < 18) {
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS translations (
+                  id TEXT PRIMARY KEY,
+                  article_url TEXT NOT NULL,
+                  target_lang TEXT NOT NULL,
+                  translated_title TEXT NOT NULL,
+                  translated_content TEXT NOT NULL,
+                  model_version TEXT NOT NULL,
+                  created_at INTEGER NOT NULL,
+                  FOREIGN KEY(article_url) REFERENCES crawled_articles(url) ON DELETE CASCADE
+                )
+              ''');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_translations_article_lang ON translations(article_url, target_lang)');
+          }
+          // v19: Provider cache table
+          if (oldVersion < 19) {
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS provider_cache (
+                  id TEXT PRIMARY KEY,
+                  provider TEXT NOT NULL,
+                  url_hash TEXT NOT NULL,
+                  response_json TEXT NOT NULL,
+                  expires_at INTEGER NOT NULL
+                )
+              ''');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_provider_cache_lookup ON provider_cache(provider, url_hash)');
+          }
+          // v20: Processing jobs table
+          if (oldVersion < 20) {
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS processing_jobs (
+                  id TEXT PRIMARY KEY,
+                  type TEXT NOT NULL,
+                  status TEXT NOT NULL DEFAULT 'pending',
+                  payload_json TEXT NOT NULL DEFAULT '{}',
+                  result_json TEXT NOT NULL DEFAULT '{}',
+                  created_at INTEGER NOT NULL,
+                  started_at INTEGER,
+                  completed_at INTEGER
+                )
+              ''');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status)');
+          }
+          // v21: User interests table
+          if (oldVersion < 21) {
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS user_interests (
+                  id TEXT PRIMARY KEY,
+                  user_id TEXT NOT NULL,
+                  topic TEXT NOT NULL,
+                  weight REAL NOT NULL DEFAULT 1.0,
+                  updated_at INTEGER NOT NULL
+                )
+              ''');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_user_interests_user ON user_interests(user_id)');
+          }
+          // v22: Bookmarks table
+          if (oldVersion < 22) {
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS bookmarks (
+                  id TEXT PRIMARY KEY,
+                  user_id TEXT NOT NULL,
+                  article_url TEXT NOT NULL,
+                  created_at INTEGER NOT NULL,
+                  FOREIGN KEY(article_url) REFERENCES crawled_articles(url) ON DELETE CASCADE
+                )
+              ''');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id)');
+            await db.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_article ON bookmarks(article_url)');
+          }
+        },
         onOpen: (Database db) async {
           // Older installations may already be at the current schema version
           // but were created before url_blacklist was added. Do not rely only
@@ -239,15 +336,15 @@ class NewsDatabase {
       if (await dbFile.exists()) {
         await dbFile.delete();
       }
-        final db = await openDatabase(
-          dbPath,
-          version: 15,
-          onCreate: (Database db, int version) async {
-            await _createSchema(db);
-            await _createFtsIndex(db);
-            await _seedFromJson(db);
-          },
-        );
+      final db = await openDatabase(
+        dbPath,
+        version: 22,
+        onCreate: (Database db, int version) async {
+          await _createSchema(db);
+          await _createFtsIndex(db);
+          await _seedFromJson(db);
+        },
+      );
       return db;
     }
   }
@@ -285,6 +382,7 @@ class NewsDatabase {
         crawled_at INTEGER NOT NULL DEFAULT 0,
         author TEXT NOT NULL DEFAULT '',
         publish_date TEXT NOT NULL DEFAULT '',
+        language TEXT NOT NULL DEFAULT '',
         meta_tags TEXT NOT NULL DEFAULT '{}',
         source_count INTEGER NOT NULL DEFAULT 1,
         sources TEXT NOT NULL DEFAULT ''
@@ -354,6 +452,86 @@ class NewsDatabase {
         added_at INTEGER NOT NULL
       )
     ''');
+
+    // AI content tables (v17-v18)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ai_summaries (
+        id TEXT PRIMARY KEY,
+        article_url TEXT NOT NULL,
+        model_version TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        tokens_used INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(article_url) REFERENCES crawled_articles(url) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_ai_summaries_article ON ai_summaries(article_url)');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS translations (
+        id TEXT PRIMARY KEY,
+        article_url TEXT NOT NULL,
+        target_lang TEXT NOT NULL,
+        translated_title TEXT NOT NULL,
+        translated_content TEXT NOT NULL,
+        model_version TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(article_url) REFERENCES crawled_articles(url) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_translations_article_lang ON translations(article_url, target_lang)');
+
+    // Provider cache (v19)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS provider_cache (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        url_hash TEXT NOT NULL,
+        response_json TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_provider_cache_lookup ON provider_cache(provider, url_hash)');
+
+    // Processing jobs (v20)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS processing_jobs (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        result_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        started_at INTEGER,
+        completed_at INTEGER
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_processing_jobs_status ON processing_jobs(status)');
+
+    // User interests (v21)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS user_interests (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        weight REAL NOT NULL DEFAULT 1.0,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_user_interests_user ON user_interests(user_id)');
+
+    // Bookmarks (v22)
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS bookmarks (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        article_url TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY(article_url) REFERENCES crawled_articles(url) ON DELETE CASCADE
+      )
+    ''');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id)');
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_article ON bookmarks(article_url)');
   }
 
   static Future<void> _createFtsIndex(Database db) async {
@@ -443,20 +621,18 @@ class NewsDatabase {
         if (apiSources.isNotEmpty) {
           final batch = db.batch();
           for (final s in apiSources) {
-            batch.insert(
-              'sources',
-              {
-                'country': s['country'] ?? 'Morocco',
-                'country_code': s['country_code'] ?? s['countryCode'] ?? 'MA',
-                'name': s['name'] ?? '',
-                'url': s['url'] ?? '',
-                'category': s['category'] ?? 'general_news',
-                'type': s['type'] ?? 'digital_news',
-                'language': s['language'] is List ? (s['language'] as List).join(',') : (s['language'] ?? 'ar').toString(),
-                'rank': s['rank'] ?? 0,
-              },
-              conflictAlgorithm: ConflictAlgorithm.replace,
-            );
+            batch.insert('sources', {
+              'country': s['country'] ?? 'Morocco',
+              'country_code': s['country_code'] ?? s['countryCode'] ?? 'MA',
+              'name': s['name'] ?? '',
+              'url': s['url'] ?? '',
+              'category': s['category'] ?? 'general_news',
+              'type': s['type'] ?? 'digital_news',
+              'language': s['language'] is List
+                  ? (s['language'] as List).join(',')
+                  : (s['language'] ?? 'ar').toString(),
+              'rank': s['rank'] ?? 0,
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
           }
           await batch.commit(noResult: true);
         }
@@ -512,6 +688,7 @@ class NewsDatabase {
     final batch = db.batch();
     final now = DateTime.now().millisecondsSinceEpoch;
     for (final art in articles) {
+      final imageUrl = NewsModel.resolveImageUrl(art.imageUrl, art.url);
       batch.insert('crawled_articles', {
         'source_url': sourceUrl,
         'url': art.url,
@@ -519,7 +696,9 @@ class NewsDatabase {
         'title': art.title,
         'summary': art.summary,
         'content': art.content,
-        'image_url': art.imageUrl,
+        'image_url': imageUrl.isEmpty
+            ? NewsModel.getFallbackImage(art.category)
+            : imageUrl,
         'category': art.category,
         'sentiment': art.sentiment,
         'keywords': art.keywords.join(','),
@@ -527,6 +706,7 @@ class NewsDatabase {
         'crawled_at': now,
         'author': art.author,
         'publish_date': art.publishDate,
+        'language': art.language,
         'meta_tags': jsonEncode(art.metaTags),
         'source_count': art.sourceCount,
         'sources': art.sources.join(','),
@@ -560,6 +740,7 @@ class NewsDatabase {
         logs: map['logs'] as String,
         author: map['author'] as String? ?? '',
         publishDate: map['publish_date'] as String? ?? '',
+        language: map['language'] as String? ?? '',
         metaTags: map['meta_tags'] != null
             ? Map<String, dynamic>.from(jsonDecode(map['meta_tags'] as String))
             : const {},
@@ -617,7 +798,7 @@ class NewsDatabase {
       '%الكل%',
       '%كل الأخبار%',
     ];
-    
+
     int totalRemoved = 0;
     for (final pattern in invalidPatterns) {
       final result = await db.delete(
@@ -627,7 +808,7 @@ class NewsDatabase {
       );
       totalRemoved += result;
     }
-    
+
     // Also remove articles with very short content
     final shortContentResult = await db.delete(
       'crawled_articles',
@@ -635,7 +816,7 @@ class NewsDatabase {
       whereArgs: [100],
     );
     totalRemoved += shortContentResult;
-    
+
     // Also remove articles with URL paths that look like categories (1-2 segments)
     final categoryUrls = await db.query('crawled_articles');
     int removedByUrl = 0;
@@ -643,15 +824,21 @@ class NewsDatabase {
       final url = map['url'] as String;
       final uri = Uri.tryParse(url);
       if (uri != null) {
-        final pathSegments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+        final pathSegments = uri.pathSegments
+            .where((s) => s.isNotEmpty)
+            .toList();
         if (pathSegments.length <= 2) {
-          await db.delete('crawled_articles', where: 'url = ?', whereArgs: [url]);
+          await db.delete(
+            'crawled_articles',
+            where: 'url = ?',
+            whereArgs: [url],
+          );
           removedByUrl++;
         }
       }
     }
     totalRemoved += removedByUrl;
-    
+
     return totalRemoved;
   }
 
@@ -669,19 +856,23 @@ class NewsDatabase {
     final List<Map<String, dynamic>> maps;
     if (_hasFts5) {
       final ftsQuery = '"$sanitized"';
-      maps = await db.rawQuery('''
+      maps = await db.rawQuery(
+        '''
         SELECT ca.*
         FROM crawled_articles ca
         JOIN crawled_articles_fts fts ON fts.rowid = ca.id
         WHERE crawled_articles_fts MATCH ?
         ORDER BY ca.crawled_at DESC
         LIMIT ?
-      ''', [ftsQuery, limit]);
+      ''',
+        [ftsQuery, limit],
+      );
     } else {
       final like = '%$sanitized%';
       maps = await db.query(
         'crawled_articles',
-        where: 'title LIKE ? OR summary LIKE ? OR content LIKE ? OR keywords LIKE ?',
+        where:
+            'title LIKE ? OR summary LIKE ? OR content LIKE ? OR keywords LIKE ?',
         whereArgs: [like, like, like, like],
         orderBy: 'crawled_at DESC',
         limit: limit,
@@ -769,7 +960,11 @@ class NewsDatabase {
     return maps.map((map) => map['source_url'] as String).toSet();
   }
 
-  Future<bool> isImageUsedByOtherArticle(String imageUrl, String articleUrl, {String? sourceUrl}) async {
+  Future<bool> isImageUsedByOtherArticle(
+    String imageUrl,
+    String articleUrl, {
+    String? sourceUrl,
+  }) async {
     if (imageUrl.isEmpty) return false;
     final db = await database;
     final whereClauses = <String>['image_url = ? AND url != ?'];
@@ -821,7 +1016,10 @@ class NewsDatabase {
   /// first 50 words + last 50 words of normalized title + content.
   static String _contentFingerprint(String title, String content) {
     final combined = '$title ${content.trim()}';
-    final words = combined.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final words = combined
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
     if (words.length <= 100) return combined;
     final first50 = words.take(50).join(' ');
     final last50 = words.sublist(words.length - 50).join(' ');
@@ -873,15 +1071,11 @@ class NewsDatabase {
   Future<void> addToBlacklist(String urlHash, {String reason = ''}) async {
     if (urlHash.isEmpty) return;
     final db = await database;
-    await db.insert(
-      'url_blacklist',
-      {
-        'url_hash': urlHash,
-        'reason': reason,
-        'added_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('url_blacklist', {
+      'url_hash': urlHash,
+      'reason': reason,
+      'added_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<int> getBlacklistCount() async {
@@ -897,7 +1091,9 @@ class NewsDatabase {
 
   Future<int> clearOldBlacklistEntries({int days = 7}) async {
     final db = await database;
-    final cutoff = DateTime.now().subtract(Duration(days: days)).millisecondsSinceEpoch;
+    final cutoff = DateTime.now()
+        .subtract(Duration(days: days))
+        .millisecondsSinceEpoch;
     final result = await db.delete(
       'url_blacklist',
       where: 'added_at < ?',
