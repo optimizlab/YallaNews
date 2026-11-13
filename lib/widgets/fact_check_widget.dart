@@ -46,28 +46,33 @@ class _FactCheckWidgetState extends State<FactCheckWidget> {
     }
 
     try {
-      final aiService = AIService.instance;
-      if (!aiService.isReady) {
-        setState(() => _isChecking = false);
-        return;
-      }
-
       final claims = _extractClaims(widget.article.content);
       
       final factChecks = <Map<String, dynamic>>[];
       
+      final aiService = AIService.instance;
+      final aiReady = aiService.isReady;
+
       for (final claim in claims.take(3)) {
-        final result = await AIService.instance.generate(
-          prompt: 'Fact-check this claim: "$claim". Provide a verdict (True/False/Misleading/Unproven) with a brief explanation and cite sources if possible.',
-          maxTokens: 200,
-          temperature: 0.1,
-        );
-        
-        final text = result['text'] as String? ?? '';
+        String verdict = 'unproven';
+        String explanation = 'Claim extracted from article. AI verification unavailable.';
+
+        if (aiReady) {
+          final result = await AIService.instance.generate(
+            prompt: 'Fact-check this claim: "$claim". Provide a verdict (True/False/Misleading/Unproven) with a brief explanation and cite sources if possible.',
+            maxTokens: 200,
+            temperature: 0.1,
+          );
+          
+          final text = result['text'] as String? ?? '';
+          verdict = _parseVerdict(text);
+          explanation = text;
+        }
+
         factChecks.add({
           'claim': claim,
-          'verdict': _parseVerdict(text),
-          'explanation': text,
+          'verdict': verdict,
+          'explanation': explanation,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
         });
       }
@@ -457,6 +462,6 @@ class _FactCheckWidgetState extends State<FactCheckWidget> {
           ),
         ],
       ),
-    }
+    );
   }
 }

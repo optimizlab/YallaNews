@@ -1,22 +1,25 @@
-// Personalized Feed Page
-// User interests + relevance ranking with adaptive learning
+// Personalized Feed Page - AI-ranked news feed based on user interests
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:sqflite/sqflite.dart' show ConflictAlgorithm;
+import 'package:sqflite/sqflite.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../database/news_db.dart';
-import '../services/ai_service.dart';
-import '../services/ai_fallback_service.dart';
-import '../services/ai_language_ext.dart';
 import '../services/category_service.dart';
+import '../services/background_crawler_service.dart';
+import '../services/app_settings.dart';
 import '../widgets/cached_news_image.dart';
 import '../views/news_detail_page.dart';
+import '../widgets/ask_this_news_widget.dart';
 
 class PersonalizedFeedPage extends StatefulWidget {
-  const PersonalizedFeedPage({super.key});
+  /// When shown from the root navigation tabs, the parent [Scaffold] already
+  /// provides the app bar and bottom navigation.
+  final bool embedded;
+
+  const PersonalizedFeedPage({super.key, this.embedded = false});
 
   @override
   State<PersonalizedFeedPage> createState() => _PersonalizedFeedPageState();
@@ -28,10 +31,11 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
   List<NewsModel> _feed = [];
   List<NewsModel> _allArticles = [];
   bool _isLoading = true;
-  String _sortBy = 'relevance'; // relevance, recent, popular
+  String _sortBy = 'relevance';
   Map<String, double> _userInterests = {};
   Map<String, int> _interactionCounts = {};
   Timer? _refreshTimer;
+  StreamSubscription<NewsModel>? _crawlerSubscription;
 
   @override
   void initState() {
@@ -39,68 +43,71 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     _tabController = TabController(length: 2, vsync: this);
     _loadUserInterests();
     _loadFeed();
+    _listenToCrawler();
     _refreshTimer = Timer.periodic(const Duration(minutes: 10), (_) => _loadFeed());
+    debugPrint('[PERSONALIZED FEED] Page initialized');
   }
 
   @override
   void dispose() {
+    _crawlerSubscription?.cancel();
     _tabController.dispose();
     _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  void _listenToCrawler() {
+    _crawlerSubscription =
+        BackgroundCrawlerService.instance.articleStream.listen((article) {
+      if (!mounted) return;
+      debugPrint('[PERSONALIZED FEED] Crawler stream article: ${article.title}');
+      _loadFeed();
+    });
   }
 
   Future<void> _loadUserInterests() async {
     try {
       final db = await NewsDatabase.instance.database;
       final interests = await db.query('user_interests');
-      final interactions = await db.query('processing_jobs', where: "type = 'interaction'");
 
       final interestsMap = <String, double>{};
       for (final row in interests) {
         interestsMap[row['topic'] as String] = (row['weight'] as num).toDouble();
       }
 
-      final interactionMap = <String, int>{};
-      for (final row in interactions) {
-        final payload = row['payload_json'] as String;
-        // Parse interaction data
-      }
-
       if (mounted) {
         setState(() {
           _userInterests = interestsMap;
-          _interactionCounts = interactionMap;
         });
       }
+      debugPrint('[PERSONALIZED FEED] Interests loaded: $_userInterests');
     } catch (_) {}
   }
 
   Future<void> _loadFeed() async {
+      debugPrint('[PERSONALIZED FEED] _loadFeed started');
     setState(() => _isLoading = true);
 
     try {
       final db = await NewsDatabase.instance.database;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final cutoff = now - (48 * 60 * 60 * 1000); // Last 48 hours
+      final activeLanguage = AppSettings.instance.locale?.languageCode ?? '';
 
-      // Get recent articles
-      final articles = await db.query(
+      final allArticles = (await db.query(
         'crawled_articles',
-        where: 'crawled_at > ?',
-        whereArgs: [cutoff],
+        where: activeLanguage.isNotEmpty ? 'language = ?' : null,
+        whereArgs: activeLanguage.isNotEmpty ? [activeLanguage] : null,
         orderBy: 'crawled_at DESC',
         limit: 200,
-      );
+      )).cast<Map<String, dynamic>>();
+      debugPrint('[PERSONALIZED FEED] Retrieved ${allArticles.length} articles from DB');
 
-      final articlesList = articles.map((row) => NewsModel.fromJson(
+      final articlesList = allArticles.map((row) => NewsModel.fromJson(
         Map<String, dynamic>.from(row),
         row['url'] as String,
       )).toList();
 
-      // Score and rank articles
       final ranked = _rankArticles(articlesList);
 
-      // Apply sort
       switch (_sortBy) {
         case 'recent':
           ranked.sort((a, b) {
@@ -112,9 +119,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
           });
           break;
         case 'popular':
-          ranked.sort((a, b) => (b.relevanceScore * 100).compareTo((a.relevanceScore * 100)));
-          break;
-        default: // relevance
+        default:
           ranked.sort((a, b) => (b.relevanceScore * 100).compareTo((a.relevanceScore * 100)));
       }
 
@@ -124,26 +129,25 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
           _feed = ranked;
           _isLoading = false;
         });
+        debugPrint('[PERSONALIZED FEED] Loaded ${_feed.length} articles');
       }
     } catch (e) {
+      debugPrint('[PERSONALIZED FEED] Error: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   double _calculateRelevance(NewsModel article) {
-    double score = 0.5; // Base score
+    double score = 0.5;
 
-    // Interest matching
-    for (final entity in article.entities ?? []) {
+    for (final entity in article.entities) {
       final interest = _userInterests[entity.toLowerCase()] ?? 0.0;
       score += interest * 0.15;
     }
 
-    // Category interest
     final catInterest = _userInterests[article.category.toLowerCase()] ?? 0.0;
     score += catInterest * 0.1;
 
-    // Recency boost
     try {
       final pubDate = DateTime.parse(article.publishDate);
       final hoursAgo = DateTime.now().difference(pubDate).inHours;
@@ -153,17 +157,14 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
       else if (hoursAgo < 48) score += 0.05;
     } catch (_) {}
 
-    // AI enrichment bonus
     if (article.aiSummary.isNotEmpty) score += 0.1;
     if (article.translations.isNotEmpty) score += 0.05;
 
-    // Source credibility
     final premiumSources = ['reuters', 'ap', 'bbc', 'nytimes', 'aljazeera'];
     if (premiumSources.any((s) => article.sourceName.toLowerCase().contains(s))) {
       score += 0.1;
     }
 
-    // Interaction history
     final interactions = _interactionCounts[article.url] ?? 0;
     score += (interactions * 0.02).clamp(0.0, 0.2);
 
@@ -183,7 +184,6 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
   }
 
   void _recordInteraction(String url, String type) async {
-    // Record user interaction for learning
     final db = await NewsDatabase.instance.database;
     await db.insert('processing_jobs', {
       'id': '${url}_${type}_${DateTime.now().millisecondsSinceEpoch}',
@@ -196,9 +196,10 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
       'completed_at': DateTime.now().millisecondsSinceEpoch,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
 
-    // Update local cache
     _interactionCounts[url] = (_interactionCounts[url] ?? 0) + 1;
-    setState(() => _feed = _rankArticles(_feed));
+    if (mounted) {
+      setState(() => _feed = _rankArticles(_feed));
+    }
   }
 
   Future<void> _saveInterest(String topic, double weight) async {
@@ -212,7 +213,9 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     }, conflictAlgorithm: ConflictAlgorithm.replace);
 
     _userInterests[topic] = weight;
-    setState(() => _feed = _rankArticles(_feed));
+    if (mounted) {
+      setState(() => _feed = _rankArticles(_feed));
+    }
   }
 
   @override
@@ -220,7 +223,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
 
-    return Scaffold(
+    final content = Scaffold(
       appBar: AppBar(
         title: Text(
           l10n.translate('personalizedFeed'),
@@ -244,9 +247,9 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
               _loadFeed();
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(value: 'relevance', child: Text('Relevance (AI)')),
-              const PopupMenuItem(value: 'recent', child: Text('Most Recent')),
-              const PopupMenuItem(value: 'popular', child: Text('Most Popular')),
+              PopupMenuItem(value: 'relevance', child: Text(l10n.translate('sortRelevance'))),
+              PopupMenuItem(value: 'recent', child: Text(l10n.translate('recent'))),
+              PopupMenuItem(value: 'popular', child: Text(l10n.translate('sortPopular'))),
             ],
             icon: const Icon(Icons.sort_rounded),
             tooltip: l10n.translate('sortBy'),
@@ -262,15 +265,18 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
           : TabBarView(
               controller: _tabController,
               children: [
-                _buildForYouTab(),
-                _buildFollowingTab(),
+                _buildForYouTab(context),
+                _buildFollowingTab(context),
               ],
             ),
-      );
-    }
+    );
+
+    if (widget.embedded) return content.body ?? const SizedBox.shrink();
+
+    return content;
   }
 
-  Widget _buildForYouTab() {
+  Widget _buildForYouTab(BuildContext context) {
     if (_feed.isEmpty) {
       return _buildEmptyState(context);
     }
@@ -289,15 +295,18 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     );
   }
 
-  Widget _buildFollowingTab() {
-    // Show articles from explicitly followed sources/topics
+  Widget _buildFollowingTab(BuildContext context) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.rss_feed_rounded, size: 64, color: Theme.of(context).colorScheme.primary),
+            Icon(
+              Icons.rss_feed_rounded,
+              size: 64,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             const SizedBox(height: 16),
             Text(
               AppLocalizations.of(context).translate('noFollowedSources'),
@@ -312,14 +321,14 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed: () => _showManageSources(),
+              onPressed: _showManageSources,
               icon: const Icon(Icons.add_rounded),
               label: Text(AppLocalizations.of(context).translate('manageSources')),
             ),
           ],
         ),
-      );
-    }
+      ),
+    );
   }
 
   Widget _buildSkeleton(BuildContext context) {
@@ -349,16 +358,24 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(height: 16, width: 150, color: theme.colorScheme.surfaceContainerHighest),
+                  Container(
+                    height: 16,
+                    width: 150,
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  ),
                   const SizedBox(height: 8),
-                  Container(height: 12, width: 200, color: theme.colorScheme.surfaceContainerHighest),
+                  Container(
+                    height: 12,
+                    width: 200,
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  ),
                 ],
               ),
             ),
           ],
         ),
-      ));
-    });
+      )),
+    );
   }
 
   Widget _buildEmptyState(BuildContext context) {
@@ -370,7 +387,11 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.psychology_rounded, size: 64, color: theme.colorScheme.primary),
+            Icon(
+              Icons.psychology_rounded,
+              size: 64,
+              color: theme.colorScheme.primary,
+            ),
             const SizedBox(height: 16),
             Text(
               l10n.translate('buildingYourFeed'),
@@ -391,8 +412,8 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
             ),
           ],
         ),
-      );
-    });
+      ),
+    );
   }
 
   Widget _buildFeedCard(BuildContext context, NewsModel article, int index, double relevance) {
@@ -425,14 +446,15 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Hero image
-            if (article.imageUrl.isNotEmpty)
+            if (article.imageUrl.isNotEmpty && !article.imageUrl.contains('image.png'))
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                 child: AspectRatio(
                   aspectRatio: 16 / 9,
                   child: CachedNewsImage(
                     imageUrl: article.imageUrl,
+                    fallbackImageUrl:
+                        NewsModel.getFallbackImage(article.category),
                     width: double.infinity,
                     fit: BoxFit.cover,
                     errorWidget: Container(
@@ -447,7 +469,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                     ),
                   ),
                 ),
-
+              ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -455,7 +477,6 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                 children: [
                   Row(
                     children: [
-                      // Relevance indicator
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
@@ -472,7 +493,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '${(relevance * 100).round()}% ${AppLocalizations.of(context).translate('match')}',
+                              '${(relevance * 100).round()}% ${l10n.translate('match')}',
                               style: GoogleFonts.outfit(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
@@ -500,7 +521,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                AppLocalizations.of(context).translate('aiSummary'),
+                                l10n.translate('aiSummary'),
                                 style: GoogleFonts.outfit(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w600,
@@ -567,7 +588,11 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    article.summary.isNotEmpty ? article.summary : article.content.substring(0, 150),
+                    article.summary.isNotEmpty
+                        ? article.summary
+                        : (article.content.length > 150
+                            ? article.content.substring(0, 150)
+                            : article.content),
                     style: GoogleFonts.outfit(
                       fontSize: 14,
                       height: 1.6,
@@ -599,7 +624,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                AppLocalizations.of(context).translate('aiSummary'),
+                                l10n.translate('aiSummary'),
                                 style: GoogleFonts.outfit(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -620,27 +645,28 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                         ],
                       ),
                     ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
+                  ],
                   Row(
                     children: [
                       _buildActionButton(
                         context,
                         Icons.thumb_up_alt_outlined,
-                        AppLocalizations.of(context).translate('like'),
+                        l10n.translate('like'),
                         () => _recordInteraction(article.url, 'like'),
                       ),
                       const SizedBox(width: 12),
                       _buildActionButton(
                         context,
                         Icons.share_outlined,
-                        AppLocalizations.of(context).translate('share'),
+                        l10n.translate('share'),
                         () => _shareArticle(article),
                       ),
                       const SizedBox(width: 12),
                       _buildActionButton(
                         context,
                         Icons.bookmark_outline,
-                        AppLocalizations.of(context).translate('save'),
+                        l10n.translate('save'),
                         () => _recordInteraction(article.url, 'save'),
                       ),
                       const Spacer(),
@@ -733,7 +759,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.bookmark_outline),
+                leading: const Icon(Icons.bookmark_outlined),
                 title: Text(AppLocalizations.of(context).translate('save')),
                 onTap: () {
                   Navigator.pop(context);
@@ -749,7 +775,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.psychology_outlined),
+                leading: const Icon(Icons.auto_awesome_outlined),
                 title: Text(AppLocalizations.of(context).translate('askThisNews')),
                 onTap: () {
                   Navigator.pop(context);
@@ -782,8 +808,8 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: ['ar', 'en', 'fr'].map((lang) => ListTile(
-            leading: Text(YallaLanguageExt.fromString(lang).flag),
-            title: Text(YallaLanguageExt.fromString(lang).nativeName),
+            leading: Text(lang.toUpperCase()),
+            title: Text(lang.toUpperCase()),
             onTap: () {
               Navigator.pop(context);
               _translateArticle(article, lang);
@@ -833,12 +859,5 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     } catch (_) {
       return '';
     }
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _refreshTimer?.cancel();
-    super.dispose();
   }
 }

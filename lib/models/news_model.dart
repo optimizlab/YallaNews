@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:yallanews/services/ai_language_ext.dart';
 
@@ -364,6 +365,42 @@ class NewsModel {
     return 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=500';
   }
 
+  static List<String> _parseKeywords(dynamic value) {
+    if (value == null) return [];
+    if (value is List<String>) return value;
+    if (value is List) return value.cast<String>();
+    if (value is String) {
+      return value.split(',').where((s) => s.trim().isNotEmpty).map((s) => s.trim()).toList();
+    }
+    return [];
+  }
+
+  static Map<String, String> _parseStringMap(dynamic value) {
+    if (value == null) return const {};
+    if (value is Map<String, String>) return value;
+    if (value is Map) return value.map((k, v) => MapEntry(k.toString(), v.toString()));
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is Map) {
+          return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+        }
+      } catch (_) {}
+      return const {};
+    }
+    return const {};
+  }
+
+  static List<String> _parseStringList(dynamic value) {
+    if (value == null) return [];
+    if (value is List<String>) return value;
+    if (value is List) return value.cast<String>();
+    if (value is String) {
+      return value.split(',').where((s) => s.trim().isNotEmpty).map((s) => s.trim()).toList();
+    }
+    return [];
+  }
+
   static String hashUrl(String url) {
     final normalized = url.trim().toLowerCase();
     var hash = 0;
@@ -414,7 +451,7 @@ class NewsModel {
       category: cat,
       language: (json['language'] ?? json['lang'] ?? '').toString(),
       sentiment: (json['sentiment'] as num?)?.toDouble() ?? 0.0,
-      keywords: List<String>.from(json['keywords'] ?? []),
+      keywords: _parseKeywords(json['keywords']),
       logs: json['logs'] ?? '',
       author: json['author'] ?? '',
       authorName: json['author_name'] ?? '',
@@ -432,33 +469,25 @@ class NewsModel {
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       aiSummary: json['ai_summary'] ?? '',
-      translations: json['translations'] != null
-          ? Map<String, String>.from(json['translations'])
-          : const {},
+      translations: _parseStringMap(json['translations']),
       relevanceScore: (json['relevance_score'] as num?)?.toDouble() ?? 0.5,
       eventType: json['event_type'] ?? 'general',
       subcategory: json['subcategory'] ?? 'general',
-      entities: json['entities'] != null
-          ? List<String>.from(json['entities'])
-          : const [],
+      entities: _parseStringList(json['entities']),
       structuredData: json['structured_data'] != null
-          ? Map<String, dynamic>.from(json['structured_data'])
+          ? _parseStringMap(json['structured_data'])
           : (json['structuredData'] != null
-                ? Map<String, dynamic>.from(json['structuredData'])
+                ? _parseStringMap(json['structuredData'])
                 : const {}),
       intelligenceJson: json['intelligence_json'] ?? '',
-      metaTags: json['meta_tags'] != null
-          ? Map<String, dynamic>.from(json['meta_tags'])
-          : const {},
+      metaTags: _parseStringMap(json['meta_tags']),
       hashtags: json['hashtags'] ?? '',
       youtubeVideoId: json['youtube_video_id'] ?? '',
       instagramVideoId: json['instagram_video_id'] ?? '',
       twitterVideoUrl: json['twitter_video_url'] ?? '',
       imageId: json['image_id'] ?? '',
-      sourceCount: json['source_count'] ?? 1,
-      sources: json['sources'] != null
-          ? List<String>.from(json['sources'])
-          : const [],
+      sourceCount: (json['source_count'] as num?)?.toInt() ?? 1,
+      sources: _parseStringList(json['sources']),
       isFresh: computeFreshness(pubDate),
     );
   }

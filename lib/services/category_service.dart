@@ -267,7 +267,7 @@ class CategoryService extends ChangeNotifier {
       return categoryId;
     }
     if (normalizedId == 'all' || normalizedId == 'الكل') {
-      return 'الكل';
+      return AppLocalizations.of(context).translate('all');
     }
 
     for (final category in _categories) {
@@ -373,6 +373,8 @@ class CategoryService extends ChangeNotifier {
         if (nameAr.isNotEmpty) return nameAr;
         final arTr = translations['ar'];
         if (arTr != null && arTr.isNotEmpty) return arTr;
+        final l10nTr = AppLocalizations.of(context).translate(id);
+        if (l10nTr != id && l10nTr.isNotEmpty) return l10nTr;
         if (name.isNotEmpty) return name;
         if (nameEn.isNotEmpty) return nameEn;
         break;
@@ -380,12 +382,16 @@ class CategoryService extends ChangeNotifier {
         if (nameEn.isNotEmpty) return nameEn;
         final enTr = translations['en'];
         if (enTr != null && enTr.isNotEmpty) return enTr;
+        final l10nTr = AppLocalizations.of(context).translate(id);
+        if (l10nTr != id && l10nTr.isNotEmpty) return l10nTr;
         if (name.isNotEmpty) return name;
         break;
       case 'fr':
         if (nameFr.isNotEmpty) return nameFr;
         final frTr = translations['fr'];
         if (frTr != null && frTr.isNotEmpty) return frTr;
+        final l10nTr = AppLocalizations.of(context).translate(id);
+        if (l10nTr != id && l10nTr.isNotEmpty) return l10nTr;
         if (name.isNotEmpty) return name;
         if (nameEn.isNotEmpty) return nameEn;
         break;
@@ -393,6 +399,8 @@ class CategoryService extends ChangeNotifier {
         if (nameTr.isNotEmpty) return nameTr;
         final trTr = translations['tr'];
         if (trTr != null && trTr.isNotEmpty) return trTr;
+        final l10nTr = AppLocalizations.of(context).translate(id);
+        if (l10nTr != id && l10nTr.isNotEmpty) return l10nTr;
         if (name.isNotEmpty) return name;
         if (nameEn.isNotEmpty) return nameEn;
         break;

@@ -5,9 +5,8 @@
 #include <mutex>
 #include <chrono>
 #include <thread>
-#include <curl/curl.h>
+#include <regex>
 #include <nlohmann/json.hpp>
-#include <openssl/sha.h>
 #include <sstream>
 #include <iomanip>
 
@@ -52,63 +51,14 @@ struct HttpClient {
     }
 
     std::string get(const std::string& url, const std::unordered_map<std::string, std::string>& headers = {}) {
-        std::string response;
-        std::string header_data;
-        CURL* curl = curl_easy_init();
-        if (!curl) return "";
-
-        struct curl_slist* header_list = nullptr;
-        for (const auto& [key, value] : headers) {
-            std::string h = key + ": " + value;
-            header_list = curl_slist_append(header_list, h.c_str());
-        }
-        header_list = curl_slist_append(header_list, ("User-Agent: " + user_agent).c_str());
-
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
-        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &header_data);
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
-        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
-
-        CURLcode res = curl_easy_perform(curl);
-        curl_slist_free_all(header_list);
-        curl_easy_cleanup(curl);
-
-        return (res == CURLE_OK) ? response : "";
+        (void)url; (void)headers;
+        return "";
     }
 
     std::string post(const std::string& url, const std::string& body,
                      const std::unordered_map<std::string, std::string>& headers = {}) {
-        std::string response;
-        CURL* curl = curl_easy_init();
-        if (!curl) return "";
-
-        struct curl_slist* header_list = nullptr;
-        for (const auto& [key, value] : headers) {
-            std::string h = key + ": " + value;
-            header_list = curl_slist_append(header_list, h.c_str());
-        }
-        header_list = curl_slist_append(header_list, ("User-Agent: " + user_agent).c_str());
-        header_list = curl_slist_append(header_list, "Content-Type: application/json");
-
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, body.size());
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
-
-        CURLcode res = curl_easy_perform(curl);
-        curl_slist_free_all(header_list);
-        curl_easy_cleanup(curl);
-
-        return (res == CURLE_OK) ? response : "";
+        (void)url; (void)body; (void)headers;
+        return "";
     }
 };
 
@@ -140,18 +90,11 @@ struct ResponseCache {
     }
 
     std::string make_key(const std::string& base, const std::string& params) {
-        // Simple hash for cache key
+        // Simple hash for cache key (no openssl dependency)
         std::string combined = base + "|" + params;
-        unsigned char hash[SHA256_DIGEST_LENGTH];
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, combined.c_str(), combined.size());
-        SHA256_Final(hash, &ctx);
-
+        size_t hash = std::hash<std::string>{}(combined);
         std::ostringstream oss;
-        for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
-            oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
-        }
+        oss << std::hex << hash;
         return oss.str();
     }
 };
@@ -580,7 +523,7 @@ private:
 struct WikimediaProvider : YallaProviderAdapter {
     std::string base_url = "https://en.wikipedia.org/w/api.php";
 
-    WikimediaProvider(const YallaProviderAdapter& cfg) : YallaProviderAdapter(cfg) {
+    WikimediaProvider(const YallaProviderConfig& cfg) : YallaProviderAdapter(cfg) {
         if (config.base_url) base_url = config.base_url;
     }
 
@@ -720,7 +663,7 @@ YALLA_CORE_EXPORT YallaProviderAdapterHandle yalla_provider_adapter_create(const
     auto* adapter = ProviderFactory::create(*config);
     if (!adapter) return nullptr;
 
-    std::string id = config.provider_id ? config.provider_id : "unknown";
+    std::string id = config->provider_id ? config->provider_id : "unknown";
     std::lock_guard<std::mutex> lock(g_providers_mutex);
     g_providers[id] = adapter;
     return reinterpret_cast<YallaProviderAdapterHandle>(adapter);

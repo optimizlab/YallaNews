@@ -8,6 +8,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../database/news_db.dart' show NewsDatabase;
+import '../services/app_settings.dart';
 import '../views/news_detail_page.dart';
 
 class NewsMapPage extends StatefulWidget {
@@ -67,9 +68,15 @@ class _NewsMapPageState extends State<NewsMapPage> {
       final timeRangeMs = _getTimeRangeMs(_timeRange);
       final now = DateTime.now().millisecondsSinceEpoch;
       final cutoff = now - timeRangeMs;
+      final activeLanguage = AppSettings.instance.locale?.languageCode ?? '';
 
       String whereClause = 'crawled_at > ? AND latitude IS NOT NULL AND longitude IS NOT NULL';
       List<dynamic> whereArgs = [cutoff];
+
+      if (activeLanguage.isNotEmpty) {
+        whereClause += ' AND language = ?';
+        whereArgs.add(activeLanguage);
+      }
 
       if (_selectedCategory != 'all') {
         whereClause += ' AND category = ?';

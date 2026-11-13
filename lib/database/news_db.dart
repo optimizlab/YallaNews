@@ -328,6 +328,8 @@ class NewsDatabase {
           if (count == null || count == 0) {
             await _seedFromJson(db);
           }
+
+          // No demo article seeding — only real content from API/crawler.
         },
       );
       return db;
@@ -612,6 +614,146 @@ class NewsDatabase {
     }
   }
 
+  /// Seed demo articles so features always have content to display.
+  static Future<void> seedDemoArticles(Database db) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final oneHourAgo = now - 3600000;
+    final twoHoursAgo = now - 7200000;
+    final sixHoursAgo = now - 21600000;
+
+    final batch = db.batch();
+
+    final demoArticles = [
+      {
+        'source_url': 'https://demo.yallanews.ma',
+        'url': 'https://demo.yallanews.ma/articles/technology/ai-breakthrough',
+        'url_hash': 'demo_tech_1',
+        'title': 'AI Breakthrough: New Model Achieves Human-Level Reasoning',
+        'summary':
+            'Researchers unveil a new AI model that demonstrates human-level reasoning capabilities across multiple domains.',
+        'content':
+            'Researchers at leading AI labs have unveiled a new model that achieves human-level reasoning capabilities across mathematics, coding, and scientific analysis. This represents a major milestone in artificial intelligence development.',
+        'image_url': 'https://placehold.co/400x220/1A1A2E/C62828?text=AI+Breakthrough',
+        'category': 'technology',
+        'sentiment': 0.6,
+        'keywords': 'AI,artificial intelligence,machine learning,reasoning',
+        'logs': '',
+        'crawled_at': oneHourAgo,
+        'author': 'Yalla News Tech Desk',
+        'authorName': 'Yalla News',
+        'sourceName': 'Yalla News',
+        'publish_date': DateTime.fromMillisecondsSinceEpoch(oneHourAgo).toIso8601String(),
+        'language': '',
+        'meta_tags': '{}',
+        'source_count': 1,
+        'sources': 'demo.yallanews.ma',
+      },
+      {
+        'source_url': 'https://demo.yallanews.ma',
+        'url': 'https://demo.yallanews.ma/articles/world/climate-summit',
+        'url_hash': 'demo_world_1',
+        'title': 'World Leaders Reach Agreement on Climate Action',
+        'summary':
+            'Major world powers sign landmark climate agreement during emergency summit in Geneva.',
+        'content':
+            'World leaders from over 50 nations have signed a landmark climate agreement during an emergency summit held in Geneva. The agreement commits signatories to carbon neutrality by 2050.',
+        'image_url': 'https://placehold.co/400x220/1A1A2E/C62828?text=Climate+Summit',
+        'category': 'world',
+        'sentiment': 0.4,
+        'keywords': 'climate,world leaders,agreement,Geneva,environment',
+        'logs': '',
+        'crawled_at': twoHoursAgo,
+        'author': 'Yalla News World Desk',
+        'authorName': 'Yalla News',
+        'sourceName': 'Yalla News',
+        'publish_date': DateTime.fromMillisecondsSinceEpoch(twoHoursAgo).toIso8601String(),
+        'language': '',
+        'meta_tags': '{}',
+        'source_count': 1,
+        'sources': 'demo.yallanews.ma',
+      },
+      {
+        'source_url': 'https://demo.yallanews.ma',
+        'url': 'https://demo.yallanews.ma/articles/sports/championship-finals',
+        'url_hash': 'demo_sports_1',
+        'title': 'National Team Wins Championship in Dramatic Final',
+        'summary':
+            'The national team secures the championship title after a dramatic overtime victory against rivals.',
+        'content':
+            'In a thrilling championship final, the national team secured victory in overtime, winning their first title in a decade. Fans celebrated across the country.',
+        'image_url': 'https://placehold.co/400x220/1A1A2E/C62828?text=Championship',
+        'category': 'sports',
+        'sentiment': 0.8,
+        'keywords': 'sports,championship,final,victory,team',
+        'logs': '',
+        'crawled_at': sixHoursAgo,
+        'author': 'Yalla News Sports Desk',
+        'authorName': 'Yalla News',
+        'sourceName': 'Yalla News',
+        'publish_date': DateTime.fromMillisecondsSinceEpoch(sixHoursAgo).toIso8601String(),
+        'language': '',
+        'meta_tags': '{}',
+        'source_count': 1,
+        'sources': 'demo.yallanews.ma',
+      },
+      {
+        'source_url': 'https://demo.yallanews.ma',
+        'url': 'https://demo.yallanews.ma/articles/health/vaccine-update',
+        'url_hash': 'demo_health_1',
+        'title': 'New Vaccine Shows 95% Effectiveness in Trials',
+        'summary':
+            'Clinical trials demonstrate a new vaccine candidate with 95% effectiveness against targeted virus.',
+        'content':
+            'Phase III clinical trials show a new vaccine candidate achieving 95% effectiveness. Health officials say the vaccine could be available within months.',
+        'image_url': 'https://placehold.co/400x220/1A1A2E/C62828?text=Health+Vaccine',
+        'category': 'health',
+        'sentiment': 0.7,
+        'keywords': 'vaccine,health,clinical trials,effectiveness,virus',
+        'logs': '',
+        'crawled_at': now - 43200000,
+        'author': 'Yalla News Health Desk',
+        'authorName': 'Yalla News',
+        'sourceName': 'Yalla News',
+        'publish_date': DateTime.fromMillisecondsSinceEpoch(now - 43200000).toIso8601String(),
+        'language': '',
+        'meta_tags': '{}',
+        'source_count': 1,
+        'sources': 'demo.yallanews.ma',
+      },
+      {
+        'source_url': 'https://demo.yallanews.ma',
+        'url': 'https://demo.yallanews.ma/articles/business/market-surge',
+        'url_hash': 'demo_business_1',
+        'title': 'Stock Markets Surge on Positive Economic Data',
+        'summary':
+            'Global stock markets rally following better-than-expected economic indicators.',
+        'content':
+            'Stock markets around the world surged following positive economic data showing strong GDP growth and declining unemployment rates.',
+        'image_url': 'https://placehold.co/400x220/1A1A2E/C62828?text=Market+Surge',
+        'category': 'business',
+        'sentiment': 0.5,
+        'keywords': 'stock market,business,economy,GDP,finance',
+        'logs': '',
+        'crawled_at': now - 86400000,
+        'author': 'Yalla News Business Desk',
+        'authorName': 'Yalla News',
+        'sourceName': 'Yalla News',
+        'publish_date': DateTime.fromMillisecondsSinceEpoch(now - 86400000).toIso8601String(),
+        'language': '',
+        'meta_tags': '{}',
+        'source_count': 1,
+        'sources': 'demo.yallanews.ma',
+      },
+    ];
+
+    for (final art in demoArticles) {
+      batch.insert('crawled_articles', art, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+
+    await batch.commit(noResult: true);
+    print('[NewsDatabase] Seeded ${demoArticles.length} demo articles.');
+  }
+
   Future<List<NewsSource>> getAllSources({bool syncApi = true}) async {
     final db = await database;
 
@@ -716,10 +858,13 @@ class NewsDatabase {
   }
 
   /// Fetch ALL crawled articles across all sources, newest first.
-  Future<List<NewsModel>> getAllArticles({int limit = 100}) async {
+  /// If [language] is provided, only articles matching that language are returned.
+  Future<List<NewsModel>> getAllArticles({int limit = 100, String? language}) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'crawled_articles',
+      where: language != null && language.isNotEmpty ? 'language = ?' : null,
+      whereArgs: language != null && language.isNotEmpty ? [language] : null,
       orderBy: 'crawled_at DESC, id DESC',
       limit: limit,
     );
@@ -916,12 +1061,16 @@ class NewsDatabase {
     return maps.map((m) => m['source_url'] as String).toList();
   }
 
-  Future<List<NewsModel>> getArticlesBySource(String sourceUrl) async {
+  Future<List<NewsModel>> getArticlesBySource(String sourceUrl, {String? language}) async {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'crawled_articles',
-      where: 'source_url = ?',
-      whereArgs: [sourceUrl],
+      where: language != null && language.isNotEmpty
+          ? 'source_url = ? AND language = ?'
+          : 'source_url = ?',
+      whereArgs: language != null && language.isNotEmpty
+          ? [sourceUrl, language]
+          : [sourceUrl],
     );
     return maps.map((map) {
       return NewsModel(

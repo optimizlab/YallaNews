@@ -134,7 +134,7 @@ YALLA_CORE_EXPORT int32_t yalla_task_scheduler_pending_count(YallaTaskSchedulerH
 // News Ingestion (RSS, Atom, HTML extraction)
 // ============================================================================
 
-YALLA_CORE_EXPORT YallaNewsIngestionHandle yalla_news_ingestion_create();
+YALLA_CORE_EXPORT YallaNewsIngestionHandle yalla_news_ingestion_create(const char* modelsDir);
 YALLA_CORE_EXPORT void yalla_news_ingestion_destroy(YallaNewsIngestionHandle handle);
 YALLA_CORE_EXPORT bool yalla_news_ingestion_fetch_rss(YallaNewsIngestionHandle handle,
     const char* feed_url, YallaCompletionCallback callback, void* user_data);

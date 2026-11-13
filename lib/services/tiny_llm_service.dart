@@ -171,7 +171,11 @@ class TinyLLMService {
     final s = summary.length > 500 ? summary.substring(0, 500) : summary;
     final c = content.length > 3400 ? '${content.substring(0, 3400)}...' : content;
 
-    final prompt = _buildPrompt(t, s, c);
+    // Preprocess content to remove any image references that model cannot read
+    final cleanContent = c.replaceAll(RegExp(r'<img[^>]*>', caseSensitive: false), '');
+    final cleanContent2 = cleanContent.replaceAll(RegExp(r'image\.png', caseSensitive: false), '');
+
+    final prompt = _buildPrompt(t, s, cleanContent2);
 
     try {
       List<String> mainEvents = [];
@@ -187,7 +191,7 @@ class TinyLLMService {
       if (hasNativeEngine) {
         final analysisJson = analyzeArticleJson(jsonEncode({
           'title': t,
-          'content': c,
+          'content': cleanContent2, // Use cleaned content instead of original
           'summary': s,
         }));
         if (analysisJson.isNotEmpty) {
@@ -199,7 +203,7 @@ class TinyLLMService {
           geopoliticalRegion = (analysisJson['geopolitical_region'] as String?)?.trim() ?? 'global';
         }
 
-        final storyElements = extractStoryElementsJson(t, c);
+        final storyElements = extractStoryElementsJson(t, cleanContent2); // Use cleaned content
         if (storyElements.isNotEmpty) {
           final events = (storyElements['events'] as List<dynamic>?) ?? [];
           mainEvents = events.map((e) => e.toString()).toList();
@@ -220,7 +224,7 @@ class TinyLLMService {
       // The native bridge can return analysis without story elements on some
       // platforms. Always provide words from the actual article text so the
       // UI and downstream services never receive an empty extraction.
-      final extractedWords = _extractStoryWords('$t $s $c');
+      final extractedWords = _extractStoryWords('$t $s $cleanContent2'); // Use cleaned content
       if (mainEvents.isEmpty && extractedWords.isNotEmpty) {
         mainEvents = extractedWords.take(3).toList();
         llmSummary = mainEvents.first;
@@ -243,6 +247,97 @@ class TinyLLMService {
     } catch (e) {
       return NewsLLMResult.fallback('Inference error: $e', raw: e.toString());
     }
+  }
+
+  /// Generate a reporter-style daily briefing from multiple articles.
+  /// Returns ONE short briefing written by a "news writer" persona.
+  static Future<String> generateBriefing({
+    required List<Map<String, dynamic>> articles,
+    required String language,
+  }) async {
+    if (articles.isEmpty) {
+      return 'No news available for today.';
+    }
+
+    final currentModel = TinyLLMService.instance._model;
+    if (currentModel == null) {
+      return _fallbackBriefing(articles, language);
+    }
+
+    final now = DateTime.now();
+    final currentDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+    // Build article list for the prompt (top 10)
+    final articleLines = <String>[];
+    for (int i = 0; i < articles.length && i < 10; i++) {
+      final a = articles[i];
+      final title = a['title']?.toString() ?? 'Untitled';
+      final summary = a['summary']?.toString() ?? '';
+      final source = a['source_name'] ?? a['sourceName'] ?? 'Unknown';
+      final cat = a['category'] ?? 'general';
+      articleLines.add(
+        "${i + 1}. [$cat] $title — $summary (Source: $source)",
+      );
+    }
+    final articleBlock = articleLines.join('\n');
+
+    final langInstruction = language == 'ar'
+        ? 'Write the briefing in Arabic.'
+        : language == 'fr'
+            ? 'Write the briefing in French.'
+            : language == 'tr'
+                ? 'Write the briefing in Turkish.'
+                : 'Write the briefing in English.';
+
+    final prompt = '''You are an experienced news reporter and editor writing a daily briefing.
+
+TASK: Read the following ${articles.length} top news stories from ${currentDate} and write ONE concise, professional briefing (2-4 short paragraphs) that a news anchor would read on air.
+
+STYLE GUIDELINES:
+- Write like a professional reporter: objective, clear, engaging
+- Use a strong opening sentence that captures the most important story
+- Connect related stories where they share themes
+- Keep it conversational but authoritative
+- Do NOT just list headlines — synthesize them into a narrative
+- ${langInstruction}
+- Output ONLY the briefing text, no JSON, no markdown, no preamble
+
+TOP STORIES:
+${articleBlock}
+
+DAILY BRIEFING:''';
+
+    try {
+      final result = analyzeArticleJson(jsonEncode({
+        'prompt': prompt,
+        'task': 'briefing',
+      }));
+
+      final briefing = (result['briefing'] as String?) ??
+          (result['summary'] as String?) ??
+          result.toString();
+
+      if (briefing.isNotEmpty && briefing.length > 20) {
+        return briefing.trim();
+      }
+    } catch (_) {}
+
+    return _fallbackBriefing(articles, language);
+  }
+
+  static String _fallbackBriefing(List<Map<String, dynamic>> articles, String language) {
+    final top3 = articles.take(3).map((a) => a['title']?.toString() ?? 'Untitled');
+    final headline = top3.join('; ');
+    if (language == 'ar') {
+      return 'نشرة الأخبار اليومية: أهم عناوين اليوم تشمل $headline.';
+    }
+    if (language == 'fr') {
+      return 'Briefing quotidien: Les titres principaux incluent $headline.';
+    }
+    if (language == 'tr') {
+      return 'Günlük özet: Başlıklar arasında $headline yer alıyor.';
+    }
+    return 'Daily Briefing: Top stories include $headline.';
   }
 
   static List<String> _extractStoryWords(String text) {

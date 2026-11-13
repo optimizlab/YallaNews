@@ -1,5 +1,4 @@
 // Event Detail Page - Multi-source Event View
-// Shows all articles clustered in a single event with timeline and sources
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -15,10 +14,10 @@ class EventDetailPage extends StatefulWidget {
   final String? eventLabel;
 
   const EventDetailPage({
-    Key? key,
+    super.key,
     required this.clusterId,
     this.eventLabel,
-  }) : super(key: key);
+  });
 
   @override
   State<EventDetailPage> createState() => _EventDetailPageState();
@@ -44,7 +43,6 @@ class _EventDetailPageState extends State<EventDetailPage> {
     try {
       final db = await NewsDatabase.instance.database;
 
-      // Get event info
       final eventInfo = await db.query(
         'yn_events',
         where: 'cluster_id = ?',
@@ -56,7 +54,6 @@ class _EventDetailPageState extends State<EventDetailPage> {
         _eventData.addAll(Map<String, dynamic>.from(eventInfo.first));
       }
 
-      // Get all articles in this cluster
       final articleUrls = await db.query(
         'yn_events',
         columns: ['article_url'],
@@ -67,7 +64,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
       final articles = <NewsModel>[];
       for (final row in articleUrls) {
         final url = row['article_url'] as String;
-        final articleData = await NewsDatabase.instance.database.query(
+        final articleDb = await NewsDatabase.instance.database;
+        final articleData = await articleDb.query(
           'crawled_articles',
           where: 'url = ?',
           whereArgs: [url],
@@ -81,30 +79,29 @@ class _EventDetailPageState extends State<EventDetailPage> {
         }
       }
 
-      // Sort by publish date
       articles.sort((a, b) {
         try {
           final dateA = DateTime.parse(a.publishDate);
           final dateB = DateTime.parse(b.publishDate);
-          return dateB.compareTo(dateA); // Newest first
+          return dateB.compareTo(dateA);
         } catch (_) {
           return 0;
         }
       });
 
-      // Count sources
       final sourceCounts = <String, int>{};
       for (final article in articles) {
-        final source = article.sourceName.isNotEmpty ? article.sourceName : article.displaySourceName;
+        final source = article.sourceName.isNotEmpty
+            ? article.sourceName
+            : article.displaySourceName;
         if (source.isNotEmpty) {
           sourceCounts[source] = (sourceCounts[source] ?? 0) + 1;
         }
       }
 
-      // Extract entities by type
       final entitiesByType = <String, List<String>>{};
       for (final article in articles) {
-        for (final entity in article.entities ?? []) {
+        for (final entity in article.entities) {
           entitiesByType.putIfAbsent('entities', () => []).add(entity);
         }
       }
@@ -184,9 +181,17 @@ class _EventDetailPageState extends State<EventDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(height: 16, width: 150, color: theme.colorScheme.surfaceContainerHighest),
+                    Container(
+                      height: 16,
+                      width: 150,
+                      color: theme.colorScheme.surfaceContainerHighest,
+                    ),
                     const SizedBox(height: 8),
-                    Container(height: 12, width: 200, color: theme.colorScheme.surfaceContainerHighest),
+                    Container(
+                      height: 12,
+                      width: 200,
+                      color: theme.colorScheme.surfaceContainerHighest,
+                    ),
                   ],
                 ),
               ),
@@ -205,17 +210,26 @@ class _EventDetailPageState extends State<EventDetailPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline_rounded, size: 64, color: theme.colorScheme.error),
+            Icon(
+              Icons.error_outline_rounded,
+              size: 64,
+              color: theme.colorScheme.error,
+            ),
             const SizedBox(height: 16),
             Text(
               AppLocalizations.of(context).translate('errorLoadingEvent'),
-              style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.w600),
+              style: GoogleFonts.outfit(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               _error!,
-              style: GoogleFonts.outfit(color: theme.colorScheme.onSurfaceVariant),
+              style: GoogleFonts.outfit(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
@@ -225,7 +239,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
             ),
           ],
         ),
-      );
+      ),
+    );
   }
 
   Widget _buildContent(BuildContext context) {
@@ -234,7 +249,6 @@ class _EventDetailPageState extends State<EventDetailPage> {
 
     return CustomScrollView(
       slivers: [
-        // Event Header
         SliverToBoxAdapter(
           child: Container(
             padding: const EdgeInsets.all(20),
@@ -253,7 +267,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
               children: [
                 if (widget.eventLabel != null) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.primaryContainer,
                       borderRadius: BorderRadius.circular(20),
@@ -320,21 +337,21 @@ class _EventDetailPageState extends State<EventDetailPage> {
                     children: _entitiesByType.entries
                         .take(10)
                         .map((entry) => Chip(
-                              label: Text(entry.key),
-                              avatar: Icon(_getEntityIcon(entry.key), size: 16),
-                              backgroundColor: theme.colorScheme.primaryContainer.withOpacity(0.3),
-                            ))
+                          label: Text(entry.key),
+                          avatar: Icon(_getEntityIcon(entry.key), size: 16),
+                          backgroundColor:
+                              theme.colorScheme.primaryContainer.withOpacity(0.3),
+                        ))
                         .toList(),
                   ),
                 ],
               ],
             ),
           ),
-        // Sources Summary
+        ),
         SliverToBoxAdapter(
           child: _buildSourcesSection(context),
         ),
-        // Articles Timeline
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverList(
@@ -351,7 +368,12 @@ class _EventDetailPageState extends State<EventDetailPage> {
     );
   }
 
-  Widget _buildStatChip(BuildContext context, IconData icon, String value, String label) {
+  Widget _buildStatChip(
+    BuildContext context,
+    IconData icon,
+    String value,
+    String label,
+  ) {
     final theme = Theme.of(context);
     return Expanded(
       child: Container(
@@ -359,7 +381,9 @@ class _EventDetailPageState extends State<EventDetailPage> {
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.colorScheme.outline.withOpacity(0.1)),
+          border: Border.all(
+            color: theme.colorScheme.outline.withOpacity(0.1),
+          ),
         ),
         child: Column(
           children: [
@@ -382,7 +406,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
             ),
           ],
         ),
-      );
+      ),
+    );
   }
 
   String _getDateRange() {
@@ -393,8 +418,12 @@ class _EventDetailPageState extends State<EventDetailPage> {
           .whereType<DateTime>()
           .toList();
       if (dates.isEmpty) return '';
-      final earliest = dates.reduce((a, b) => a.isBefore(b) ? a : b);
-      final latest = dates.reduce((a, b) => a.isAfter(b) ? a : b);
+      final earliest = dates.reduce(
+        (a, b) => a.isBefore(b) ? a : b,
+      );
+      final latest = dates.reduce(
+        (a, b) => a.isAfter(b) ? a : b,
+      );
       final diff = latest.difference(earliest).inDays;
       if (diff == 0) return 'Today';
       if (diff == 1) return '1 day';
@@ -431,7 +460,11 @@ class _EventDetailPageState extends State<EventDetailPage> {
           children: [
             Row(
               children: [
-                Icon(Icons.source_rounded, color: theme.colorScheme.secondary, size: 22),
+                Icon(
+                  Icons.source_rounded,
+                  color: theme.colorScheme.secondary,
+                  size: 22,
+                ),
                 const SizedBox(width: 10),
                 Text(
                   AppLocalizations.of(context).translate('sources'),
@@ -456,7 +489,9 @@ class _EventDetailPageState extends State<EventDetailPage> {
                         ),
                         child: Center(
                           child: Text(
-                            entry.key.isNotEmpty ? entry.key[0].toUpperCase() : '?',
+                            entry.key.isNotEmpty
+                                ? entry.key[0].toUpperCase()
+                                : '?',
                             style: GoogleFonts.outfit(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -483,14 +518,19 @@ class _EventDetailPageState extends State<EventDetailPage> {
                               '${entry.value} ${AppLocalizations.of(context).translate('articles')}',
                               style: GoogleFonts.outfit(
                                 fontSize: 11,
-                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
                               ),
                             ),
                           ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: theme.colorScheme.primaryContainer,
                           borderRadius: BorderRadius.circular(12),
@@ -506,13 +546,18 @@ class _EventDetailPageState extends State<EventDetailPage> {
                       ),
                     ],
                   ),
-                ),
+                )),
           ],
         ),
-      );
+      ),
+    );
   }
 
-  Widget _buildArticleTimelineItem(BuildContext context, NewsModel article, int index) {
+  Widget _buildArticleTimelineItem(
+    BuildContext context,
+    NewsModel article,
+    int index,
+  ) {
     final theme = Theme.of(context);
     final isLast = index == _articles.length - 1;
 
@@ -521,7 +566,6 @@ class _EventDetailPageState extends State<EventDetailPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Timeline indicator
           Column(
             children: [
               Container(
@@ -530,7 +574,10 @@ class _EventDetailPageState extends State<EventDetailPage> {
                 decoration: BoxDecoration(
                   color: theme.colorScheme.primary,
                   shape: BoxShape.circle,
-                  border: Border.all(color: theme.colorScheme.surface, width: 3),
+                  border: Border.all(
+                    color: theme.colorScheme.surface,
+                    width: 3,
+                  ),
                 ),
               ),
               if (!isLast)
@@ -544,19 +591,22 @@ class _EventDetailPageState extends State<EventDetailPage> {
             ],
           ),
           const SizedBox(width: 16),
-          // Article card
           Expanded(
             child: GestureDetector(
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => NewsDetailPage(article: article)),
+                MaterialPageRoute(
+                  builder: (_) => NewsDetailPage(article: article),
+                ),
               ),
               child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: theme.colorScheme.outline.withOpacity(0.1)),
+                  border: Border.all(
+                    color: theme.colorScheme.outline.withOpacity(0.1),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.02),
@@ -576,15 +626,20 @@ class _EventDetailPageState extends State<EventDetailPage> {
                         child: article.imageUrl.isNotEmpty
                             ? CachedNewsImage(
                                 imageUrl: article.imageUrl,
+                                fallbackImageUrl:
+                                    NewsModel.getFallbackImage(article.category),
                                 width: 80,
                                 height: 80,
                                 fit: BoxFit.cover,
                               )
                             : Container(
-                                color: theme.colorScheme.surfaceContainerHighest,
+                                color:
+                                    theme.colorScheme.surfaceContainerHighest,
                                 child: Icon(
                                   Icons.image_not_supported_rounded,
-                                  color: theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
+                                  color: theme.colorScheme
+                                      .onSurfaceVariant
+                                      .withOpacity(0.5),
                                 ),
                               ),
                       ),
@@ -597,9 +652,13 @@ class _EventDetailPageState extends State<EventDetailPage> {
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest,
+                                  color:
+                                      theme.colorScheme.surfaceContainerHighest,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -607,7 +666,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                                   style: GoogleFonts.outfit(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w600,
-                                    color: theme.colorScheme.onSurfaceVariant,
+                                    color: theme.colorScheme
+                                        .onSurfaceVariant,
                                   ),
                                 ),
                               ),
@@ -629,17 +689,24 @@ class _EventDetailPageState extends State<EventDetailPage> {
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: theme.colorScheme.primaryContainer,
+                                  color:
+                                      theme.colorScheme.primaryContainer,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  article.sourceName.isNotEmpty ? article.sourceName : article.displaySourceName,
+                                  article.sourceName.isNotEmpty
+                                      ? article.sourceName
+                                      : article.displaySourceName,
                                   style: GoogleFonts.outfit(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w700,
-                                    color: theme.colorScheme.onPrimaryContainer,
+                                    color: theme.colorScheme
+                                        .onPrimaryContainer,
                                   ),
                                 ),
                               ),
@@ -652,8 +719,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -663,10 +730,11 @@ class _EventDetailPageState extends State<EventDetailPage> {
       final date = DateTime.parse(publishDate);
       final now = DateTime.now();
       final diff = now.difference(date);
-      if (diff.inDays > 0) return '${diff.inDays}d';
-      if (diff.inHours > 0) return '${diff.inHours}h';
-      if (diff.inMinutes > 0) return '${diff.inMinutes}m';
-      return 'now';
+      final l10n = AppLocalizations.of(context);
+      if (diff.inDays > 0) return '${diff.inDays} ${l10n.translate('timeDays')}';
+      if (diff.inHours > 0) return '${diff.inHours} ${l10n.translate('timeHours')}';
+      if (diff.inMinutes > 0) return '${diff.inMinutes} ${l10n.translate('timeMinutes')}';
+      return l10n.translate('timeNow');
     } catch (_) {
       return '';
     }

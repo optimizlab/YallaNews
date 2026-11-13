@@ -145,7 +145,7 @@ class _AboutUsPageState extends State<AboutUsPage> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: theme.scaffoldBackgroundColor,
+      backgroundColor: theme.colorScheme.surface,
       body: CustomScrollView(
         slivers: [
           // ─── Hero App Bar ─────────────────────────────────────────────
@@ -153,7 +153,7 @@ class _AboutUsPageState extends State<AboutUsPage> {
             expandedHeight: 320,
             pinned: true,
             stretch: true,
-            backgroundColor: theme.scaffoldBackgroundColor,
+            backgroundColor: theme.colorScheme.surface,
             leading: IconButton(
               icon: Container(
                 padding: const EdgeInsets.all(6),
@@ -172,7 +172,7 @@ class _AboutUsPageState extends State<AboutUsPage> {
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: BoxDecoration(
-                  color: theme.scaffoldBackgroundColor,
+                  color: theme.colorScheme.surface,
                 ),
                 child: SafeArea(
                   child: Column(

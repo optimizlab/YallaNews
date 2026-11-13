@@ -36,6 +36,11 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
   bool _showBottomBar = true;
   double _lastOffset = 0;
 
+  int? get _safeSelectedIndex {
+    if (widget.destinations.isEmpty) return null;
+    return widget.currentIndex.clamp(0, widget.destinations.length - 1);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,7 +105,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
     final bottomBar = SafeArea(
       top: false,
       child: BottomNavigationBar(
-        currentIndex: widget.currentIndex,
+        currentIndex: _safeSelectedIndex ?? 0,
         onTap: widget.onNavigationChanged,
         type: BottomNavigationBarType.fixed,
         backgroundColor: theme.colorScheme.surface,
@@ -111,8 +116,8 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
         unselectedFontSize: 11,
         items: widget.destinations.map((d) {
           return BottomNavigationBarItem(
-            icon: Icon(d.icon),
-            activeIcon: Icon(d.selectedIcon ?? d.icon),
+            icon: Icon(d.icon, size: 22),
+            activeIcon: Icon(d.selectedIcon ?? d.icon, size: 24),
             label: d.label,
           );
         }).toList(),
@@ -151,7 +156,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 NavigationRail(
-                  selectedIndex: widget.currentIndex,
+                  selectedIndex: _safeSelectedIndex,
                   onDestinationSelected: widget.onNavigationChanged,
                   labelType: NavigationRailLabelType.all,
                   minWidth: 80,
@@ -176,7 +181,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
                 Expanded(
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: isDesktop ? 1200 : 800),
+                      constraints: BoxConstraints(maxWidth: isDesktop ? 1400 : 900),
                       child: isDesktop && widget.desktopBody != null ? widget.desktopBody! : widget.body,
                     ),
                   ),
@@ -199,7 +204,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
                   floating: true,
                   pinned: false,
                 ),
-            SliverToBoxAdapter(child: widget.body),
+            SliverFillRemaining(child: widget.body),
           ],
         );
 

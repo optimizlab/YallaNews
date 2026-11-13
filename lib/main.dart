@@ -1,3 +1,4 @@
+import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +40,15 @@ Future<void> main() async {
     ),
   );
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    if (Platform.isWindows) {
+      try {
+        ffi.DynamicLibrary.open('sqlite3.dll');
+      } catch (_) {
+        ffi.DynamicLibrary.open(
+          '${Directory.current.path}/sqlite3.dll',
+        );
+      }
+    }
     sqfliteFfiInit();
   }
   if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {

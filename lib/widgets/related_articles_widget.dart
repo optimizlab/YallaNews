@@ -369,10 +369,11 @@ class _RelatedArticlesWidgetState extends State<RelatedArticlesWidget> {
     try {
       final date = DateTime.parse(publishDate);
       final diff = DateTime.now().difference(date);
-      if (diff.inDays > 0) return '${diff.inDays}d';
-      if (diff.inHours > 0) return '${diff.inHours}h';
-      if (diff.inMinutes > 0) return '${diff.inMinutes}m';
-      return 'now';
+      final l10n = AppLocalizations.of(context);
+      if (diff.inDays > 0) return '${diff.inDays} ${l10n.translate('timeDays')}';
+      if (diff.inHours > 0) return '${diff.inHours} ${l10n.translate('timeHours')}';
+      if (diff.inMinutes > 0) return '${diff.inMinutes} ${l10n.translate('timeMinutes')}';
+      return l10n.translate('timeNow');
     } catch (_) {
       return '';
     }

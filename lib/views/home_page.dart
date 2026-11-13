@@ -21,10 +21,13 @@ import '../widgets/shimmer_loading.dart';
 import '../widgets/custom_logo.dart';
 import '../widgets/banner_ad.dart';
 import '../widgets/cached_news_image.dart';
+import '../widgets/fact_check_widget.dart';
 import 'news_detail_page.dart';
 import 'explore_page.dart';
 import 'bookmarks_page.dart';
 import 'settings_page.dart';
+import 'daily_briefing_page.dart';
+import 'personalized_feed_page.dart';
 import 'auth/login_page.dart';
 import 'about_us_page.dart';
 import 'contact_page.dart';
@@ -526,7 +529,7 @@ class _HomePageState extends State<HomePage> {
 
       // If we have cached articles, show them immediately
       if (!skipCachedArticles && articleCount > 0 && mounted) {
-        final cachedArticles = await db.getAllArticles(limit: 100);
+        final cachedArticles = await db.getAllArticles(limit: 100, language: AppSettings.instance.locale?.languageCode);
         if (loadGeneration != _dataLoadGeneration) return;
         final validCached = _filterPolicyCompliantArticles(
           cachedArticles.where(_isValidArticle),
@@ -554,6 +557,7 @@ class _HomePageState extends State<HomePage> {
       );
       final trendingFuture = ServerApiService.getTrending(
         limit: 10,
+        language: AppSettings.instance.locale?.languageCode ?? 'ar',
       ).timeout(const Duration(seconds: 10)).catchError((_) => <NewsModel>[]);
 
       List<NewsModel> rawList = [];
@@ -746,7 +750,7 @@ class _HomePageState extends State<HomePage> {
         debugPrint(
           '[HOME] Server empty, loading ${articleCount} articles from local DB',
         );
-        final localArticles = await db.getAllArticles(limit: 100);
+        final localArticles = await db.getAllArticles(limit: 100, language: AppSettings.instance.locale?.languageCode);
         final validLocal = _filterPolicyCompliantArticles(
           localArticles.where(_isValidArticle),
         );
@@ -842,12 +846,12 @@ class _HomePageState extends State<HomePage> {
           label: l10n.translate('explore'),
         ),
         AdaptiveNavigationDestination(
-          icon: Icons.bookmark_rounded,
-          label: l10n.translate('bookmarks'),
+          icon: Icons.newspaper_rounded,
+          label: l10n.translate('dailyBriefing'),
         ),
         AdaptiveNavigationDestination(
-          icon: Icons.settings_rounded,
-          label: l10n.translate('settingsNav'),
+          icon: Icons.bookmark_rounded,
+          label: l10n.translate('bookmarks'),
         ),
       ],
       scaffoldKey: _scaffoldKey,
@@ -996,8 +1000,29 @@ class _HomePageState extends State<HomePage> {
       case 1:
         return const ExplorePage();
       case 2:
-        return const BookmarksPage();
+        return const DailyBriefingPage();
       case 3:
+        return const BookmarksPage();
+      case 4:
+        return const PersonalizedFeedPage(embedded: true);
+      case 5:
+        return FactCheckWidget(
+          article: NewsModel(
+            url: '',
+            title: '',
+            summary: '',
+            content: '',
+            imageUrl: '',
+            category: 'general',
+            sentiment: 0.0,
+            keywords: [],
+            logs: '',
+            author: '',
+            publishDate: '',
+          ),
+          autoCheck: true,
+        );
+      case 6:
         return const SettingsPage(embedded: true);
       default:
         return _buildHomeContent(context);
@@ -1013,13 +1038,15 @@ class _HomePageState extends State<HomePage> {
     if (_isSearchActive) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_searchQuery.isEmpty) _buildTrendingSearches(context),
-            if (_searchQuery.isNotEmpty)
-              ..._searchResults.map((article) => _buildArticleCard(article)),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_searchQuery.isEmpty) _buildTrendingSearches(context),
+              if (_searchQuery.isNotEmpty)
+                ..._searchResults.map((article) => _buildArticleCard(article)),
+            ],
+          ),
         ),
       );
     }
@@ -1885,8 +1912,8 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             _DrawerItem(
-              icon: Icons.bookmark_rounded,
-              label: l10n.translate('bookmarks'),
+              icon: Icons.newspaper_rounded,
+              label: l10n.translate('dailyBriefing'),
               isSelected: _currentIndex == 2,
               onTap: () {
                 Navigator.pop(context);
@@ -1894,12 +1921,35 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             _DrawerItem(
-              icon: Icons.settings_rounded,
-              label: l10n.translate('settingsNav'),
+              icon: Icons.bookmark_rounded,
+              label: l10n.translate('bookmarks'),
               isSelected: _currentIndex == 3,
               onTap: () {
                 Navigator.pop(context);
                 setState(() => _currentIndex = 3);
+              },
+            ),
+            Divider(
+              height: 24,
+              thickness: 1,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            _DrawerItem(
+              icon: Icons.psychology_rounded,
+              label: l10n.translate('personalizedFeed'),
+              isSelected: _currentIndex == 4,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() => _currentIndex = 4);
+              },
+            ),
+            _DrawerItem(
+              icon: Icons.verified_rounded,
+              label: l10n.translate('factCheck'),
+              isSelected: _currentIndex == 5,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() => _currentIndex = 5);
               },
             ),
             Divider(
@@ -1943,6 +1993,15 @@ class _HomePageState extends State<HomePage> {
               onTap: () {
                 Navigator.pop(context);
                 _openPublicPage('https://apps.inoov.com/yallanews/#terms');
+              },
+            ),
+            _DrawerItem(
+              icon: Icons.settings_rounded,
+              label: l10n.translate('settingsNav'),
+              isSelected: _currentIndex == 6,
+              onTap: () {
+                Navigator.pop(context);
+                setState(() => _currentIndex = 6);
               },
             ),
           ],

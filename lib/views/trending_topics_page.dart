@@ -10,6 +10,7 @@ import '../models/news_model.dart';
 import '../database/news_db.dart';
 import '../services/ai_service.dart';
 import '../services/category_service.dart';
+import '../services/app_settings.dart';
 import '../views/news_detail_page.dart';
 
 class TrendingTopicsPage extends StatefulWidget {
@@ -51,9 +52,15 @@ class _TrendingTopicsPageState extends State<TrendingTopicsPage>
       final timeWindowMs = _getTimeWindowMs(_selectedTimeWindow);
       final now = DateTime.now().millisecondsSinceEpoch;
       final cutoff = now - timeWindowMs;
+      final activeLanguage = AppSettings.instance.locale?.languageCode ?? '';
 
       String whereClause = 'crawled_at > ?';
       List<dynamic> whereArgs = [cutoff];
+
+      if (activeLanguage.isNotEmpty) {
+        whereClause += ' AND language = ?';
+        whereArgs.add(activeLanguage);
+      }
 
       if (_selectedCategory != 'all') {
         whereClause += ' AND category = ?';

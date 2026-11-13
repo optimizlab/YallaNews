@@ -24,10 +24,8 @@ else()
 endif()
 
 # ── Core Module ──
-add_subdirectory(core)
-
-# Source files - yalla_engine sources are in ../../../../../windows/yalla_engine/
 set(YALLA_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../windows/yalla_engine")
+add_subdirectory(core)
 
 file(GLOB_RECURSE YALLA_ENGINE_SOURCES
     "${YALLA_ENGINE_ROOT}/*.cpp"

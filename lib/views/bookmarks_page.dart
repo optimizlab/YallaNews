@@ -5,6 +5,7 @@ import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../database/news_db.dart';
 import '../services/category_service.dart';
+import '../services/app_settings.dart';
 import 'news_detail_page.dart';
 
 class BookmarksPage extends StatefulWidget {
@@ -28,7 +29,8 @@ class _BookmarksPageState extends State<BookmarksPage> {
     setState(() => _isLoading = true);
     try {
       final db = NewsDatabase.instance;
-      final articles = await db.getAllArticles(limit: 100);
+      final activeLanguage = AppSettings.instance.locale?.languageCode ?? '';
+      final articles = await db.getAllArticles(limit: 100, language: activeLanguage.isNotEmpty ? activeLanguage : null);
       final prefs = await SharedPreferences.getInstance();
       final offlineUrls = prefs.getStringList('offline_saved_urls') ?? const <String>[];
       setState(() {

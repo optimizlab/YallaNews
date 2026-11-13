@@ -358,6 +358,8 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
                     height: 100,
                     child: CachedNewsImage(
                       imageUrl: article.imageUrl,
+                      fallbackImageUrl:
+                          NewsModel.getFallbackImage(article.category),
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -438,9 +440,10 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
       if (timestamp != null) {
         final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
         final diff = DateTime.now().difference(date);
-        if (diff.inMinutes < 60) return '${diff.inMinutes} د';
-        if (diff.inHours < 24) return '${diff.inHours} س';
-        return '${diff.inDays} ي';
+        final l10n = AppLocalizations.of(context);
+        if (diff.inMinutes < 60) return '${diff.inMinutes} ${l10n.translate('timeMinutes')}';
+        if (diff.inHours < 24) return '${diff.inHours} ${l10n.translate('timeHours')}';
+        return '${diff.inDays} ${l10n.translate('timeDays')}';
       }
     } catch (_) {}
     return publishDate.split('T').first;

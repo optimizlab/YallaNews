@@ -58,7 +58,7 @@ struct PipelineArticle {
     std::string normalized_content;
     std::string ai_summary;
     std::unordered_map<std::string, std::string> translations; // lang -> text
-    std::vector<yalla::YallaEntity> entities;
+    std::vector<YallaEntity> entities;
     std::string subcategory;
     int32_t cluster_id = -1;
     bool is_duplicate = false;
@@ -108,9 +108,51 @@ struct PipelineArticle {
     }
 };
 
+void from_json(const json& j, PipelineArticle& a) {
+    a.url = j.value("url", "");
+    a.title = j.value("title", "");
+    a.summary = j.value("summary", "");
+    a.content = j.value("content", "");
+    a.image_url = j.value("image_url", "");
+    a.category = j.value("category", "");
+    a.sentiment = j.value("sentiment", 0.0);
+    a.keywords = j.value("keywords", std::vector<std::string>{});
+    a.language = j.value("language", "");
+    a.publish_date = j.value("publish_date", int64_t(0));
+    a.author = j.value("author", "");
+    a.source_url = j.value("source_url", "");
+    a.provider_id = j.value("provider_id", "");
+    a.provider_name = j.value("provider_name", "");
+    a.license = j.value("license", "");
+    a.attribution_url = j.value("attribution_url", "");
+    a.raw_provider_data = j.value("raw_provider_data", json{});
+    a.normalized_title = j.value("normalized_title", "");
+    a.normalized_content = j.value("normalized_content", "");
+    a.ai_summary = j.value("ai_summary", "");
+    a.translations = j.value("translations", std::unordered_map<std::string, std::string>{});
+    if (j.contains("entities") && j["entities"].is_array()) {
+        for (const auto& e : j["entities"]) {
+            YallaEntity entity{};
+            entity.type = e.value("type", "").c_str();
+            entity.value = e.value("value", "").c_str();
+            entity.canonical = e.value("canonical", "").c_str();
+            entity.language = e.value("language", "").c_str();
+            entity.confidence = e.value("confidence", 0.0);
+            a.entities.push_back(entity);
+        }
+    }
+    a.subcategory = j.value("subcategory", "");
+    a.cluster_id = j.value("cluster_id", -1);
+    a.is_duplicate = j.value("is_duplicate", false);
+    a.duplicate_similarity = j.value("duplicate_similarity", 0.0f);
+    a.verified = j.value("verified", false);
+    a.verification_source = j.value("verification_source", "");
+    a.relevance_score = j.value("relevance_score", 0.0f);
+}
+
 struct PipelineConfig {
     // Discovery
-    std::vector<yalla::YallaProviderConfig> providers;
+    std::vector<YallaProviderConfig> providers;
     int32_t max_articles_per_provider = 50;
     std::vector<std::string> rss_feeds;
     
@@ -189,8 +231,8 @@ struct NewsPipeline {
     std::unique_ptr<yalla::Classifier> classifier;
     std::unique_ptr<yalla::EntityExtractor> entity_extractor;
     std::unique_ptr<yalla::EventClusterer> clusterer;
-    std::unique_ptr<yalla::Summarizer> summarizer;
-    std::unique_ptr<yalla::Translator> translator;
+    YallaSummarizerHandle summarizer = nullptr;
+    YallaTranslatorHandle translator = nullptr;
     
     // AI components (optional)
     YallaInferenceEngineHandle inference_engine = nullptr;
@@ -206,6 +248,8 @@ struct NewsPipeline {
     NewsPipeline(const PipelineConfig& cfg) : config(cfg) {}
     
     ~NewsPipeline() {
+        if (summarizer) yalla_summarizer_destroy(summarizer);
+        if (translator) yalla_translator_destroy(translator);
         if (inference_engine) yalla_inference_engine_destroy(inference_engine);
         if (model_manager) yalla_model_manager_destroy(model_manager);
     }
@@ -234,10 +278,8 @@ struct NewsPipeline {
         
         // Initialize provider adapters
         for (const auto& provider_cfg : config.providers) {
-            auto adapter = yalla::ProviderAdapter(provider_cfg);
-            if (adapter) {
-                provider_adapters.push_back(std::move(adapter));
-            }
+            provider_adapters.push_back(
+                std::make_unique<yalla::ProviderAdapter>(provider_cfg));
         }
         
         // Initialize AI if enabled
@@ -250,8 +292,8 @@ struct NewsPipeline {
                         inference_engine, config.ai_model.c_str(), 
                         config.ai_context_size, 1);
                     if (loaded) {
-                        summarizer = std::make_unique<yalla::Summarizer>(inference_engine);
-                        translator = std::make_unique<yalla::Translator>(inference_engine);
+                        summarizer = yalla_summarizer_create(inference_engine);
+                        translator = yalla_translator_create(inference_engine);
                     }
                 }
             }
@@ -259,7 +301,7 @@ struct NewsPipeline {
         
         // Initialize fact-check adapter if enabled
         if (config.enable_factcheck) {
-            yalla::YallaProviderConfig fc_config{};
+            YallaProviderConfig fc_config{};
             fc_config.type = YALLA_PROVIDER_FACTCHECK;
             fc_config.provider_id = "factcheck";
             fc_config.api_key = ""; // Set from config
@@ -503,11 +545,12 @@ private:
         
         for (size_t i = 0; i < articles.size(); ++i) {
             auto& article = articles[i];
-            if (lang_detector && article.language.empty()) {
-                float confidence = 0;
-                auto lang = lang_detector->detect(article.title + " " + article.content, &confidence);
-                article.language = yalla_lang_to_string(lang);
-            }
+                if (lang_detector && article.language.empty()) {
+                    float confidence = 0;
+                    auto lang_result = lang_detector->detect(article.title + " " + article.content);
+                    article.language = yalla_lang_to_string(lang_result.first);
+                    confidence = lang_result.second;
+                }
             
             if (i % 20 == 0) {
                 report_progress("language_detection", (i * 100) / articles.size(),
@@ -538,7 +581,7 @@ private:
             auto& article = articles[i];
             
             // Convert to YallaArticle for deduplicator
-            yalla::YallaArticle yalla_art{};
+            YallaArticle yalla_art{};
             yalla_art.url = article.url.c_str();
             yalla_art.title = article.normalized_title.empty() ? article.title.c_str() : article.normalized_title.c_str();
             yalla_art.content = article.normalized_content.empty() ? article.content.c_str() : article.normalized_content.c_str();
@@ -582,11 +625,10 @@ private:
         for (size_t i = 0; i < articles.size(); ++i) {
             auto& article = articles[i];
             
-            float confidence = 0;
-            std::string category = classifier->classify(
-                article.title, article.content, article.summary, &confidence);
+            auto [category, confidence] = classifier->classify(
+                article.title, article.content, article.summary);
             article.category = category;
-            article.sentiment = confidence; // Using confidence as sentiment proxy
+            article.sentiment = confidence;
             
             std::string subcategory = classifier->get_subcategory(
                 article.title, article.content, article.summary);
@@ -617,15 +659,13 @@ private:
         for (size_t i = 0; i < articles.size(); ++i) {
             auto& article = articles[i];
             
-            int32_t count = 0;
             auto entities = entity_extractor->extract(
-                article.title, article.content, article.language, &count);
+                article.title, article.content, article.language);
             
             article.entities.clear();
-            for (int j = 0; j < count; ++j) {
-                article.entities.push_back(entities[j]);
+            for (const auto& e : entities) {
+                article.entities.push_back(e);
             }
-            entity_extractor->free_entities(entities.data(), count);
             
             // Extract keywords from entities + content
             article.keywords.clear();
@@ -668,10 +708,10 @@ private:
         }
         
         // Convert to YallaArticle array
-        std::vector<yalla::YallaArticle> yalla_articles;
+        std::vector<YallaArticle> yalla_articles;
         yalla_articles.reserve(articles.size());
         for (const auto& a : articles) {
-            yalla::YallaArticle ya{};
+            YallaArticle ya{};
             ya.url = a.url.c_str();
             ya.title = a.title.c_str();
             ya.content = a.content.c_str();
@@ -683,9 +723,9 @@ private:
             yalla_articles.push_back(ya);
         }
         
-        int32_t cluster_count = 0;
         auto clusters = clusterer->cluster_ex(
-            yalla_articles, config.cluster_algorithm, 0, config.cluster_eps, config.cluster_min_samples, &cluster_count);
+            yalla_articles, config.cluster_algorithm, 0, config.cluster_eps, config.cluster_min_samples);
+        int32_t cluster_count = static_cast<int32_t>(clusters.size());
         
         // Map cluster IDs back to articles
         std::unordered_map<std::string, int32_t> url_to_cluster;
@@ -703,8 +743,6 @@ private:
                 article.cluster_id = it->second;
             }
         }
-        
-        clusterer->free_clusters(clusters, cluster_count);
         
         result.articles_in = articles.size();
         result.articles_out = articles.size();
@@ -741,8 +779,11 @@ private:
             
             // Summarization
             if (config.enable_summarization && summarizer && !article.content.empty()) {
-                article.ai_summary = summarizer->summarize(
-                    article.title, article.content, article.language, config.summary_max_length);
+                const char* summary = yalla_summarizer_summarize(
+                    summarizer, article.title.c_str(), article.content.c_str(),
+                    article.language.c_str(), config.summary_max_length);
+                article.ai_summary = summary ? summary : "";
+                if (summary) yalla_free_string(summary);
             }
             
             // Translation
@@ -751,9 +792,12 @@ private:
                 for (const auto& target_lang_code : config.target_languages) {
                     if (target_lang_code == article.language) continue;
                     auto target_lang = string_to_yalla_lang(target_lang_code);
-                    std::string translated = translator->translate(
-                        article.content, source_lang, target_lang);
-                    article.translations[target_lang_code] = translated;
+                    const char* translated = yalla_translator_translate(
+                        translator, article.content.c_str(), source_lang, target_lang);
+                    if (translated) {
+                        article.translations[target_lang_code] = translated;
+                        yalla_free_string(translated);
+                    }
                 }
             }
             
@@ -797,7 +841,7 @@ private:
             
             // Search for fact-checks related to this article's key claims
             std::string query = article.title + " " + join_keywords(article.keywords);
-            auto factchecks = factcheck_adapter->fetch_articles(query, 5);
+            auto factchecks = factcheck_adapter->fetch(query, 5);
             
             if (!factchecks.empty()) {
                 article.verified = true;
@@ -952,7 +996,7 @@ YALLA_CORE_EXPORT NewsPipelineHandle yalla_pipeline_create(const char* config_js
         // Parse providers
         if (config.contains("providers") && config["providers"].is_array()) {
             for (const auto& p : config["providers"]) {
-                yalla::YallaProviderConfig pc{};
+                YallaProviderConfig pc{};
                 pc.type = static_cast<YallaProviderType>(p.value("type", 0));
                 pc.provider_id = strdup(p.value("provider_id", "").c_str());
                 pc.api_key = strdup(p.value("api_key", "").c_str());

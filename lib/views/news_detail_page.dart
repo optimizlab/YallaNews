@@ -586,39 +586,27 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     final datesIso = article.structuredData['dates_iso'] as List<dynamic>?;
     if (datesIso != null && datesIso.isNotEmpty) {
       final parsed = DateTime.tryParse(datesIso.first.toString());
-      if (parsed != null) return _formatArabicDate(parsed);
+      if (parsed != null) return _formatDate(parsed);
       return datesIso.first.toString();
     }
     final dates = article.structuredData['dates'] as List<dynamic>?;
     if (dates != null && dates.isNotEmpty) {
       final parsed = DateTime.tryParse(dates.first.toString());
-      if (parsed != null) return _formatArabicDate(parsed);
+      if (parsed != null) return _formatDate(parsed);
       return dates.first.toString();
     }
     if (article.publishDate.isNotEmpty) {
       final parsed = article.publicationDate;
-      if (parsed != null) return _formatArabicDate(parsed);
+      if (parsed != null) return _formatDate(parsed);
       return article.publishDate.split('T')[0];
     }
-    return 'Recent';
+    return AppLocalizations.of(context).translate('recent');
   }
 
-  String _formatArabicDate(DateTime date) {
-    final months = const [
-      'يناير',
-      'فبراير',
-      'مارس',
-      'أبريل',
-      'مايو',
-      'يونيو',
-      'يوليو',
-      'أغسطس',
-      'سبتمبر',
-      'أكتوبر',
-      'نوفمبر',
-      'ديسمبر',
-    ];
-    return '${date.day} ${months[date.month - 1]} ${date.year}';
+  String _formatDate(DateTime date) {
+    final l10n = AppLocalizations.of(context);
+    final month = l10n.translate('month${date.month}');
+    return '${date.day} ${month} ${date.year}';
   }
 
   /// Load like status and count from API.
@@ -1315,6 +1303,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                         children: [
                           CachedNewsImage(
                             imageUrl: article.imageUrl,
+                            fallbackImageUrl:
+                                NewsModel.getFallbackImage(article.category),
                             width: double.infinity,
                             fit: BoxFit.cover,
                             errorWidget: Container(
@@ -1788,6 +1778,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                                       imageUrl: rel.imageUrl.isNotEmpty
                                           ? rel.imageUrl
                                           : NewsModel.getFallbackImage(
+                                              rel.category,
+                                            ),
+                                      fallbackImageUrl:
+                                          NewsModel.getFallbackImage(
                                               rel.category,
                                             ),
                                       width: cardWidth,
@@ -2602,6 +2596,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         borderRadius: BorderRadius.circular(12),
         child: CachedNewsImage(
           imageUrl: imgUrl,
+          fallbackImageUrl: NewsModel.getFallbackImage(article.category),
           width: double.infinity,
           fit: BoxFit.cover,
           placeholder: _buildImagePlaceholder(article.category, size: 200),
@@ -3613,6 +3608,8 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
                               imageUrl: rel.imageUrl.isNotEmpty
                                   ? rel.imageUrl
                                   : NewsModel.getFallbackImage(rel.category),
+                              fallbackImageUrl:
+                                  NewsModel.getFallbackImage(rel.category),
                               width: 90,
                               height: 70,
                               fit: BoxFit.cover,
@@ -3691,24 +3688,12 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
     if (art.publishDate.isNotEmpty) {
       final parsed = DateTime.tryParse(art.publishDate.split('T').first);
       if (parsed != null) {
-        final months = const [
-          'يناير',
-          'فبراير',
-          'مارس',
-          'أبريل',
-          'مايو',
-          'يونيو',
-          'يوليو',
-          'أغسطس',
-          'سبتمبر',
-          'أكتوبر',
-          'نوفمبر',
-          'ديسمبر',
-        ];
-        return '${parsed.day} ${months[parsed.month - 1]} ${parsed.year}';
+        final l10n = AppLocalizations.of(context);
+        final month = l10n.translate('month${parsed.month}');
+        return '${parsed.day} $month ${parsed.year}';
       }
       return art.publishDate.split('T').first;
     }
-    return 'Recent';
+    return AppLocalizations.of(context).translate('recent');
   }
 }

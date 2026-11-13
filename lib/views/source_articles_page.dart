@@ -268,7 +268,7 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
         _isLoading = false;
       });
       try {
-        final saved = await NewsDatabase.instance.getArticlesBySource(widget.source.url);
+        final saved = await NewsDatabase.instance.getArticlesBySource(widget.source.url, language: AppSettings.instance.locale?.languageCode);
         if (mounted) {
           setState(() {
             _articles = saved;
