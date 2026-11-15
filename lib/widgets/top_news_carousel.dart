@@ -148,31 +148,57 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                     const Spacer(),
                     const SizedBox(width: 16),
                     if (totalPages > 1) ...[
-                      // Previous Page Arrow (Left arrow in LTR, Right arrow in RTL)
-                      _buildNavigationButton(
-                        icon: isRtl ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
-                        onPressed: activePage > 0
-                            ? () {
-                                _pageController.previousPage(
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOutCubic,
-                                );
-                              }
-                            : null,
-                      ),
-                      const SizedBox(width: 6),
-                      // Next Page Arrow (Right arrow in LTR, Left arrow in RTL)
-                      _buildNavigationButton(
-                        icon: isRtl ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
-                        onPressed: activePage < totalPages - 1
-                            ? () {
-                                _pageController.nextPage(
-                                  duration: const Duration(milliseconds: 400),
-                                  curve: Curves.easeInOutCubic,
-                                );
-                              }
-                            : null,
-                      ),
+                      if (isRtl) ...[
+                        // RTL: Next button on the left (points left), Previous on the right (points right)
+                        _buildNavigationButton(
+                          icon: Icons.chevron_left_rounded,
+                          onPressed: activePage < totalPages - 1
+                              ? () {
+                                  _pageController.nextPage(
+                                    duration: const Duration(milliseconds: 400),
+                                    curve: Curves.easeInOutCubic,
+                                  );
+                                }
+                              : null,
+                        ),
+                        const SizedBox(width: 6),
+                        _buildNavigationButton(
+                          icon: Icons.chevron_right_rounded,
+                          onPressed: activePage > 0
+                              ? () {
+                                  _pageController.previousPage(
+                                    duration: const Duration(milliseconds: 400),
+                                    curve: Curves.easeInOutCubic,
+                                  );
+                                }
+                              : null,
+                        ),
+                      ] else ...[
+                        // LTR: Previous button on the left (points left), Next on the right (points right)
+                        _buildNavigationButton(
+                          icon: Icons.chevron_left_rounded,
+                          onPressed: activePage > 0
+                              ? () {
+                                  _pageController.previousPage(
+                                    duration: const Duration(milliseconds: 400),
+                                    curve: Curves.easeInOutCubic,
+                                  );
+                                }
+                              : null,
+                        ),
+                        const SizedBox(width: 6),
+                        _buildNavigationButton(
+                          icon: Icons.chevron_right_rounded,
+                          onPressed: activePage < totalPages - 1
+                              ? () {
+                                  _pageController.nextPage(
+                                    duration: const Duration(milliseconds: 400),
+                                    curve: Curves.easeInOutCubic,
+                                  );
+                                }
+                              : null,
+                        ),
+                      ],
                     ],
                   ],
                 ),

@@ -1,11 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../database/news_db.dart';
 import '../l10n/app_localizations.dart';
@@ -17,6 +15,9 @@ import '../services/server_api_service.dart';
 import '../services/auth_service.dart';
 import '../services/category_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/device_benchmark.dart';
+import '../services/news_api_service.dart';
+import '../services/ollama_service.dart';
 import '../widgets/shimmer_loading.dart';
 import '../widgets/custom_logo.dart';
 import '../widgets/banner_ad.dart';
@@ -33,9 +34,7 @@ import 'about_us_page.dart';
 import 'contact_page.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/top_news_carousel.dart';
-import '../arabic_news_processor.dart';
 import '../services/news_blender_service.dart';
-import '../services/arabic_normalizer.dart';
 
 String _getSentimentLabel(double sentiment, AppLocalizations l10n) {
   if (sentiment >= 0.3) return l10n.translate('positive');
@@ -45,11 +44,10 @@ String _getSentimentLabel(double sentiment, AppLocalizations l10n) {
 
 bool _isValidArticle(NewsModel article) {
   final title = article.title.trim();
-  final image = article.imageUrl.trim();
   final url = article.url.trim();
   final content = article.content.trim();
 
-  if (title.isEmpty || image.isEmpty) {
+  if (title.isEmpty) {
     debugPrint('[HOME VALIDATION] Rejected: empty title/image');
     return false;
   }
@@ -143,80 +141,13 @@ bool _isValidArticle(NewsModel article) {
   return true;
 }
 
-double _arabicCharRatio(String text) {
-  if (text.isEmpty) return 0.0;
-  final letters = text.runes.where((r) {
-    final c = String.fromCharCode(r);
-    return RegExp(
-      r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]',
-    ).hasMatch(c);
-  }).length;
-  final total = text.runes.where((r) {
-    final c = String.fromCharCode(r);
-    return RegExp(
-      r'[\w\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]',
-    ).hasMatch(c);
-  }).length;
-  return total == 0 ? 0.0 : letters / total;
-}
-
 class HomePage extends StatefulWidget {
   final YallaEngineService engineService;
 
-  const HomePage({Key? key, required this.engineService}) : super(key: key);
+  const HomePage({super.key, required this.engineService});
 
   @override
   State<HomePage> createState() => _HomePageState();
-}
-
-class _ValidationInput {
-  final List<Map<String, dynamic>> articles;
-  const _ValidationInput(this.articles);
-}
-
-bool _validateArticleIsolate(Map<String, dynamic> map) {
-  final article = NewsModel(
-    url: (map['url'] as String?) ?? '',
-    title: (map['title'] as String?) ?? '',
-    summary: (map['summary'] as String?) ?? '',
-    content: (map['content'] as String?) ?? '',
-    imageUrl: (map['imageUrl'] as String?) ?? '',
-    category: (map['category'] as String?) ?? 'general',
-    sentiment: (map['sentiment'] as num?)?.toDouble() ?? 0.0,
-    keywords:
-        (map['keywords'] as List<dynamic>?)
-            ?.map((e) => e.toString())
-            .toList() ??
-        const [],
-    logs: (map['logs'] as String?) ?? '',
-    author: (map['author'] as String?) ?? '',
-    publishDate: (map['publishDate'] as String?) ?? '',
-    eventType: (map['eventType'] as String?) ?? 'general',
-    subcategory: (map['subcategory'] as String?) ?? 'general',
-    entities: const [],
-    structuredData:
-        (map['structuredData'] as Map<String, dynamic>?) ?? const {},
-    intelligenceJson: (map['intelligenceJson'] as String?) ?? '',
-    metaTags: (map['metaTags'] as Map<String, dynamic>?) ?? const {},
-    hashtags: (map['hashtags'] as String?) ?? '',
-    youtubeVideoId: (map['youtubeVideoId'] as String?) ?? '',
-    instagramVideoId: (map['instagramVideoId'] as String?) ?? '',
-    twitterVideoUrl: (map['twitterVideoUrl'] as String?) ?? '',
-    imageId: (map['imageId'] as String?) ?? '',
-    sourceCount: (map['sourceCount'] as int?) ?? 1,
-    sources:
-        (map['sources'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
-        const [],
-  );
-  return _isValidArticle(article);
-}
-
-List<String> _validateArticlesIsolate(_ValidationInput input) {
-  final valid = <String>[];
-  for (final map in input.articles) {
-    if (_validateArticleIsolate(map)) valid.add(map['url'] as String);
-  }
-  return valid;
 }
 
 class _HomePageState extends State<HomePage> {
@@ -231,10 +162,12 @@ class _HomePageState extends State<HomePage> {
   bool _isSearchActive = false;
   String _selectedCategory = 'all';
   bool _waitingForInitialCrawl = false;
-  bool _isOfflineMode = false;
   Locale? _lastLocale;
   int _dataLoadGeneration = 0;
   int _languageReloadGeneration = 0;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   StreamSubscription<NewsModel>? _articleSubscription;
@@ -242,6 +175,11 @@ class _HomePageState extends State<HomePage> {
   final List<NewsModel> _pendingArticles = [];
   Timer? _crawlerFlushTimer;
   Timer? _crawlerBlendTimer;
+  Timer? _searchDebounce;
+  List<NewsModel> _cachedSearchResults = const [];
+  String _lastSearchQuery = '';
+  int? _lastFeedHash;
+  List<List<Widget>> _feedRows = [];
 
   @override
   void initState() {
@@ -251,6 +189,7 @@ class _HomePageState extends State<HomePage> {
     AuthService.instance.addListener(_onAuthChanged);
     _lastLocale = AppSettings.instance.locale;
     _loadData();
+    _scrollController.addListener(_onScroll);
   }
 
   @override
@@ -258,6 +197,8 @@ class _HomePageState extends State<HomePage> {
     _articleSubscription?.cancel();
     _crawlerFlushTimer?.cancel();
     _crawlerBlendTimer?.cancel();
+    _searchDebounce?.cancel();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     CategoryService.instance.removeListener(_onCategoriesChanged);
     AppSettings.instance.removeListener(_onSettingsChanged);
@@ -320,67 +261,6 @@ class _HomePageState extends State<HomePage> {
     await _loadData(skipCachedArticles: true);
   }
 
-  Future<bool> _getIsWifi() async {
-    try {
-      final connectivityResult = await (Connectivity().checkConnectivity());
-      if (connectivityResult.contains(ConnectivityResult.wifi)) {
-        return true;
-      }
-      if (connectivityResult.contains(ConnectivityResult.mobile)) {
-        return false;
-      }
-      return false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  List<NewsModel> _demoArticles() {
-    final now = DateTime.now().toIso8601String();
-    return [
-      NewsModel(
-        url: 'https://example.yallanews.ma/demo/1',
-        title: 'دليل شامل لأحدث التقنيات في العالم العربي',
-        summary:
-            'نستعرض في هذا المقال أبرز الاتجاهات التكنولوجية التي تشهدها المنطقة.',
-        content: 'محتوى تجريبي لمعاينة التطبيق ولقطات الشاشة.',
-        imageUrl: NewsModel.getFallbackImage('tech'),
-        category: 'تقنية',
-        sentiment: 0.2,
-        keywords: const ['تقنية', 'عربي'],
-        logs: '',
-        author: 'فريق يالا نيوز',
-        publishDate: now,
-      ),
-      NewsModel(
-        url: 'https://example.yallanews.ma/demo/2',
-        title: 'تطورات الساحة الرياضية محلياً ودولياً',
-        summary: 'آخر مستجدات البطولات الرياضية والأندية.',
-        content: 'محتوى تجريبي لمعاينة التطبيق ولقطات الشاشة.',
-        imageUrl: NewsModel.getFallbackImage('sport'),
-        category: 'رياضة',
-        sentiment: 0.1,
-        keywords: const ['رياضة', 'كرة قدم'],
-        logs: '',
-        author: 'فريق يالا نيوز',
-        publishDate: now,
-      ),
-      NewsModel(
-        url: 'https://example.yallanews.ma/demo/3',
-        title: 'أخبار العالم في لمحة',
-        summary: 'أهم الأحداث الدولية الجارية.',
-        content: 'محتوى تجريبي لمعاينة التطبيق ولقطات الشاشة.',
-        imageUrl: NewsModel.getFallbackImage('world'),
-        category: 'عالم',
-        sentiment: 0.0,
-        keywords: const ['عالم', 'أخبار'],
-        logs: '',
-        author: 'فريق يالا نيوز',
-        publishDate: now,
-      ),
-    ];
-  }
-
   Future<void> _applyBlendedArticles(List<NewsModel> rawList) async {
     if (!mounted) return;
     final compliantArticles = _filterPolicyCompliantArticles(rawList);
@@ -392,6 +272,38 @@ class _HomePageState extends State<HomePage> {
     });
 
     unawaited(_updateCategoryCountsAsync(compliantArticles));
+    unawaited(_ensureArticleImages(compliantArticles));
+  }
+
+  /// Fetches a main image for every article that lacks one, using MSN/Bing
+  /// image search on the article title + category. Updates state as each
+  /// image is resolved so the feed never shows an article without an image.
+  Future<void> _ensureArticleImages(List<NewsModel> articles) async {
+    final needImage = articles.where((a) => a.imageUrl.isEmpty).toList();
+    if (needImage.isEmpty) return;
+    final updates = <int, NewsModel>{};
+    for (final a in needImage) {
+      if (!mounted) return;
+      final updated = await NewsModel.ensureImage(a);
+      if (updated.imageUrl == a.imageUrl) continue;
+      final idx = _articles.indexWhere((x) => x.url == a.url);
+      if (idx >= 0) updates[idx] = updated;
+      final allIdx = _allArticles.indexWhere((x) => x.url == a.url);
+      if (allIdx >= 0) {
+        _allArticles[allIdx] = updated;
+      }
+      final rawIdx = _rawArticles.indexWhere((x) => x.url == a.url);
+      if (rawIdx >= 0) {
+        _rawArticles[rawIdx] = updated;
+      }
+    }
+    if (updates.isNotEmpty && mounted) {
+      setState(() {
+        updates.forEach((idx, updated) {
+          _articles[idx] = updated;
+        });
+      });
+    }
   }
 
   /// News and Magazines policy requires current content and clear publisher
@@ -462,8 +374,8 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {}
   }
 
-  Map<String, int> _categoryCounts = {};
-  int _blendedCount = 0;
+  final Map<String, int> _categoryCounts = {};
+  final int _blendedCount = 0;
 
   static List<Map<String, dynamic>> _updateCategoryCountsIsolate(
     List<Map<String, dynamic>> articlesJson,
@@ -515,6 +427,8 @@ class _HomePageState extends State<HomePage> {
     final loadGeneration = ++_dataLoadGeneration;
     debugPrint('[HOME] _loadData started');
     _waitingForInitialCrawl = false;
+    _currentPage = 1;
+    _hasMore = true;
 
     try {
       // Clean up invalid articles from DB on startup
@@ -524,61 +438,101 @@ class _HomePageState extends State<HomePage> {
         debugPrint('[HOME] Removed $removedCount invalid articles from DB');
       }
 
-      final articleCount = await db.getArticleCount();
-      if (loadGeneration != _dataLoadGeneration) return;
+      final locale = AppSettings.instance.locale;
+      final language = locale?.languageCode;
 
-      // If we have cached articles, show them immediately
-      if (!skipCachedArticles && articleCount > 0 && mounted) {
-        final cachedArticles = await db.getAllArticles(limit: 100, language: AppSettings.instance.locale?.languageCode);
-        if (loadGeneration != _dataLoadGeneration) return;
-        final validCached = _filterPolicyCompliantArticles(
-          cachedArticles.where(_isValidArticle),
-        );
-        if (validCached.isNotEmpty) {
-          _rawArticles = validCached;
-          _allArticles = List.from(validCached);
-          _articles = List.from(validCached);
-          setState(() {
-            _isLoading = false;
-            _selectedCategory = 'all';
-            _categories = CategoryService.instance.categories;
-          });
-          _applyBlendedArticles(validCached);
-          CategoryService.instance.updateCategoryCounts(validCached);
-          debugPrint(
-            '[HOME] Loaded ${validCached.length} articles from local cache',
-          );
-        }
-      }
-
-      // Start all independent operations in parallel
-      final articlesFuture = _loadArticles().timeout(
-        const Duration(seconds: 20),
-      );
-      final trendingFuture = ServerApiService.getTrending(
-        limit: 10,
-        language: AppSettings.instance.locale?.languageCode ?? 'ar',
-      ).timeout(const Duration(seconds: 10)).catchError((_) => <NewsModel>[]);
-
-      List<NewsModel> rawList = [];
-      List<NewsModel> trending = [];
+      // ─── 1. Load from our server API first ───
+      List<NewsModel> serverArticles = <NewsModel>[];
       try {
-        final results = await Future.wait([articlesFuture, trendingFuture]);
-        if (loadGeneration != _dataLoadGeneration) return;
-        rawList = _filterPolicyCompliantArticles(results[0] as List<NewsModel>);
-        trending = results[1] as List<NewsModel>;
+        serverArticles = await ServerApiService.getNews(
+          limit: 20,
+          page: 1,
+          language: language,
+        ).timeout(const Duration(seconds: 20));
+        debugPrint('[HOME] Server returned ${serverArticles.length} articles');
       } catch (e) {
-        debugPrint('[HOME] API load failed: $e');
+        debugPrint('[HOME] Server API load failed: $e');
       }
       if (loadGeneration != _dataLoadGeneration) return;
 
-      debugPrint('[HOME] Loaded ${rawList.length} articles from API');
+      // Stored news always updates when we find responses from the server API.
+      List<NewsModel> rawList;
+      if (serverArticles.isNotEmpty) {
+        final validServer = _filterPolicyCompliantArticles(serverArticles);
+        // Persist server articles to local DB so the cache stays fresh.
+        await _saveArticlesToLocalDb(validServer);
+        rawList = validServer;
+      } else if (!skipCachedArticles) {
+        // Fall back to stored local DB when the server has no news.
+        final articleCount = await db.getArticleCount();
+        if (loadGeneration != _dataLoadGeneration) return;
+        if (articleCount > 0 && mounted) {
+          final cachedArticles = await db.getAllArticles(
+            limit: 100,
+            language: language,
+          );
+          if (loadGeneration != _dataLoadGeneration) return;
+          final validCached = _filterPolicyCompliantArticles(
+            cachedArticles.where(_isValidArticle),
+          );
+          rawList = validCached;
+          debugPrint('[HOME] Loaded ${validCached.length} articles from local cache');
+        } else {
+          rawList = <NewsModel>[];
+        }
+      } else {
+        rawList = <NewsModel>[];
+      }
 
-      // Show articles immediately if available
-      if (mounted && rawList.isNotEmpty) {
-        _rawArticles = rawList;
-        _allArticles = rawList;
-        _articles = rawList;
+      // ─── 2. Merge NewsAPI.org headlines (real-world sources) ───
+      final newsApiArticles = await _fetchNewsApiArticles();
+      if (newsApiArticles.isNotEmpty) {
+        final existingUrls = rawList.map((a) => a.url).toSet();
+        final freshNewsApi =
+            newsApiArticles.where((a) => !existingUrls.contains(a.url)).toList();
+        widget.engineService.addLog(
+          '[NEWSAPI] Merge: ${newsApiArticles.length} fetched, ${freshNewsApi.length} new (${existingUrls.length} already present)',
+        );
+        rawList.addAll(freshNewsApi);
+      } else {
+        widget.engineService.addLog('[NEWSAPI] Merge: 0 articles fetched');
+      }
+
+      // ─── 3. Filter policy-compliant ───
+      rawList = _filterPolicyCompliantArticles(rawList);
+
+      // ─── 4. Validate + LLM regenerate (Ollama where available) ───
+      final validatedArticles = await _validateAndRegenerateArticles(rawList);
+
+      // ─── 5. Blend + LLM synthesize across sources ───
+      final blendedArticles = await NewsBlenderService.instance.blendArticlesAsync(
+        validatedArticles,
+      );
+
+      // ─── 6. Push new/blended articles to our server ───
+      await _pushArticlesToApi(blendedArticles);
+
+      // ─── 7. Trending ───
+      List<NewsModel> trending = <NewsModel>[];
+      try {
+        trending = await ServerApiService.getTrending(
+          limit: 10,
+          language: language ?? 'ar',
+        ).timeout(const Duration(seconds: 10));
+      } catch (_) {
+        trending = <NewsModel>[];
+      }
+      if (loadGeneration != _dataLoadGeneration) return;
+
+      debugPrint(
+        '[HOME] Loaded ${rawList.length} articles (blended: ${blendedArticles.length})',
+      );
+
+      // Show articles immediately
+      if (mounted && blendedArticles.isNotEmpty) {
+        _rawArticles = blendedArticles;
+        _allArticles = List.from(blendedArticles);
+        _articles = List.from(blendedArticles);
         setState(() {
           _selectedCategory = 'all';
           _categories = CategoryService.instance.categories;
@@ -588,8 +542,8 @@ class _HomePageState extends State<HomePage> {
               .toList();
           _isLoading = false;
         });
-        _applyBlendedArticles(rawList);
-        CategoryService.instance.updateCategoryCounts(rawList);
+        _applyBlendedArticles(blendedArticles);
+        CategoryService.instance.updateCategoryCounts(blendedArticles);
       } else if (mounted && _rawArticles.isEmpty) {
         setState(() {
           _isLoading = false;
@@ -598,11 +552,11 @@ class _HomePageState extends State<HomePage> {
         });
       }
 
-      // Handle local DB and crawler in background
+      // ─── 8. Crawler: WiFi-based smart trigger ───
       if (!kIsWeb) {
         unawaited(
           _setupLocalDbAndCrawler(
-            rawList,
+            blendedArticles,
             trending,
             loadGeneration: loadGeneration,
             allowCachedFallback: !skipCachedArticles,
@@ -617,6 +571,44 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Persists [articles] received from our server API into the local DB so the
+  /// stored cache always stays fresh when the server returns news.
+  Future<void> _saveArticlesToLocalDb(List<NewsModel> articles) async {
+    if (articles.isEmpty) return;
+    try {
+      await NewsDatabase.instance.saveCrawledArticles(articles, '');
+    } catch (e) {
+      debugPrint('[HOME] Failed to save server articles to local DB: $e');
+    }
+  }
+
+  /// Validates and regenerates article content using the local LLM (Ollama)
+  /// when available. Keeps articles unchanged when no LLM is reachable so the
+  /// feed never stalls waiting for regeneration.
+  Future<List<NewsModel>> _validateAndRegenerateArticles(
+    List<NewsModel> articles,
+  ) async {
+    if (articles.isEmpty) return const [];
+    final ollama = OllamaService.instance;
+    final available = await ollama.isOllamaAvailable();
+    if (!available) return articles;
+
+    final result = <NewsModel>[];
+    for (final a in articles) {
+      try {
+        final cleaned = await ollama.cleanNewsContent(a.title, a.content);
+        if (cleaned != null && cleaned.isNotEmpty) {
+          result.add(a.copyWith(content: cleaned, summary: cleaned));
+        } else {
+          result.add(a);
+        }
+      } catch (_) {
+        result.add(a);
+      }
+    }
+    return result;
+  }
+
   Future<void> _pushArticlesToApi(List<NewsModel> articles) async {
     try {
       final uploadable = articles
@@ -627,8 +619,12 @@ class _HomePageState extends State<HomePage> {
           '[HOME] Skipped ${articles.length - uploadable.length} cached articles without a known language',
         );
       }
+
+      // Validate + LLM regenerate each article before saving to our server.
+      final cleaned = await _validateAndRegenerateArticles(uploadable);
+
       int pushed = 0;
-      for (final article in uploadable) {
+      for (final article in cleaned) {
         try {
           await ServerApiService.saveArticle(
             article,
@@ -639,7 +635,7 @@ class _HomePageState extends State<HomePage> {
         }
         await Future.delayed(const Duration(milliseconds: 200));
       }
-      debugPrint('[HOME] Pushed $pushed/${uploadable.length} articles to API');
+      debugPrint('[HOME] Pushed $pushed/${cleaned.length} articles to API');
     } catch (_) {}
   }
 
@@ -720,6 +716,9 @@ class _HomePageState extends State<HomePage> {
             },
           ),
         );
+        // On Wi-Fi, crawl sources immediately so the server and the feed are
+        // fed with the latest news instead of stale cached articles.
+        unawaited(_refreshNewsNow());
         unawaited(
           BackgroundCrawlerService.instance.startSilentCrawl(
             engineService: widget.engineService,
@@ -748,7 +747,7 @@ class _HomePageState extends State<HomePage> {
           serverEmpty &&
           articleCount > 0) {
         debugPrint(
-          '[HOME] Server empty, loading ${articleCount} articles from local DB',
+          '[HOME] Server empty, loading $articleCount articles from local DB',
         );
         final localArticles = await db.getAllArticles(limit: 100, language: AppSettings.instance.locale?.languageCode);
         final validLocal = _filterPolicyCompliantArticles(
@@ -771,14 +770,15 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {}
   }
 
-  Future<List<NewsModel>> _loadArticles() async {
+  Future<List<NewsModel>> _loadArticles({int page = 1, int limit = 20}) async {
     try {
-      debugPrint('[HOME] Loading articles from server API...');
+      debugPrint('[HOME] Loading articles from server API (page $page)...');
       final locale = AppSettings.instance.locale;
       final language = locale?.languageCode;
       if (language == null || language.isEmpty) return [];
       final serverArticles = await ServerApiService.getNews(
-        limit: 100,
+        limit: limit,
+        page: page,
         language: language,
       ).timeout(const Duration(seconds: 20));
       debugPrint('[HOME] Server returned ${serverArticles.length} articles');
@@ -789,20 +789,187 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _onRefresh() async {
+  /// Fetches the latest headlines from NewsAPI.org and merges them into the
+  /// feed alongside crawled/server articles. Requires a configured API key
+  /// (set in Settings); returns an empty list when no key is configured or the
+  /// request fails, so it never blocks the feed.
+  Future<List<NewsModel>> _fetchNewsApiArticles() async {
     try {
-      final rawRefreshed = _filterPolicyCompliantArticles(
-        await _loadArticles(),
+      await NewsApiService.init();
+      final key = NewsApiService.apiKey;
+      widget.engineService.addLog('[NEWSAPI] init done; key=${key == null || key.isEmpty ? 'missing' : key.substring(0, 8)}...');
+      if (key == null || key.isEmpty) {
+        widget.engineService.addLog('[NEWSAPI] No API key configured — skipping NewsAPI fetch.');
+        return <NewsModel>[];
+      }
+      final locale = AppSettings.instance.locale;
+      final language = locale?.languageCode;
+      widget.engineService.addLog(
+        '[NEWSAPI] Fetching top-headlines language=$language pageSize=30',
       );
-      if (mounted) {
-        _rawArticles = rawRefreshed;
+      final articles = await NewsApiService.fetchArticles(
+        language: language ?? 'ar',
+        pageSize: 30,
+      ).timeout(const Duration(seconds: 15));
+      final compliant = _filterPolicyCompliantArticles(articles);
+      widget.engineService.addLog(
+        '[NEWSAPI] Received ${articles.length} articles, ${compliant.length} passed policy filter',
+      );
+      return compliant;
+    } catch (e) {
+      widget.engineService.addLog('[NEWSAPI] Fetch failed: $e');
+      debugPrint('[HOME] NewsAPI fetch failed: $e');
+      return <NewsModel>[];
+    }
+  }
+
+  /// Crawl news sources right now when the device is on Wi-Fi and push fresh
+  /// articles to the local DB and the server so users always see the latest
+  /// news instead of stale cached stories. Safe to call repeatedly; the
+  /// crawler guards against concurrent runs and skips when not on Wi-Fi or on
+  /// small-memory devices.
+  Future<void> _refreshNewsNow() async {
+    // NewsAPI headlines refresh on any connection — never Wi-Fi gated — so the
+    // feed always gets the latest real-world news immediately.
+    widget.engineService.addLog('[NEWSAPI] Refresh starting NewsAPI fetch');
+    final newsApiArticles = await _fetchNewsApiArticles();
+    if (newsApiArticles.isNotEmpty && mounted) {
+      final existingUrls = _rawArticles.map((a) => a.url).toSet();
+      final fresh = newsApiArticles.where((a) => !existingUrls.contains(a.url)).toList();
+      widget.engineService.addLog(
+        '[NEWSAPI] Refresh: ${newsApiArticles.length} fetched, ${fresh.length} new',
+      );
+      if (fresh.isNotEmpty) {
         setState(() {
-          _articles = rawRefreshed;
+          _rawArticles.insertAll(0, fresh);
+          _allArticles = List.from(_rawArticles);
+          _articles = List.from(_rawArticles);
         });
-        _applyBlendedArticles(rawRefreshed);
+        unawaited(_applyBlendedArticles(_rawArticles));
+      }
+    } else {
+      widget.engineService.addLog('[NEWSAPI] Refresh: 0 articles fetched');
+    }
+
+    final isWifi = await ConnectivityService.isWifi();
+    if (!isWifi) return;
+
+    // Crawl when we have no news, or when existing news is stale for the
+    // current connection quality/speed. Otherwise skip (silent, no-op).
+    final hasNews = _rawArticles.isNotEmpty;
+    final newest = hasNews
+        ? _rawArticles
+            .map((a) => a.publicationDate ?? DateTime.now())
+            .reduce((a, b) => a.isAfter(b) ? a : b)
+        : null;
+
+    if (!_isStale(newest)) return;
+
+    await BackgroundCrawlerService.instance.forceRefresh(
+      engineService: widget.engineService,
+      onComplete: () {
+        if (mounted && _pendingArticles.isNotEmpty) {
+          _flushPendingArticles();
+        }
+      },
+    );
+  }
+
+  /// True when the newest article is older than the freshness window derived
+  /// from connection quality/speed (better connection → shorter window).
+  bool _isStale(DateTime? newest) {
+    if (newest == null) return true;
+    final now = DateTime.now();
+    final age = now.difference(newest);
+    final benchmark = DeviceBenchmark.instance;
+    final tier = benchmark.hasValidBenchmark
+        ? benchmark.lastResult!.tier
+        : DeviceTier.medium;
+    final maxAge = switch (tier) {
+      DeviceTier.high => const Duration(hours: 6),
+      DeviceTier.medium => const Duration(hours: 12),
+      DeviceTier.low => const Duration(hours: 24),
+    };
+    return age > maxAge;
+  }
+
+  void _onScroll() {
+    if (!_isLoadingMore &&
+        _hasMore &&
+        !_isSearchActive &&
+        _selectedCategory == 'all' &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200) {
+      unawaited(_loadMoreArticles());
+    }
+  }
+
+  Future<void> _loadMoreArticles() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final nextPage = _currentPage + 1;
+      final more = await _loadArticles(page: nextPage, limit: 20);
+      if (!mounted) return;
+      if (more.isEmpty) {
+        _hasMore = false;
+      } else {
+        _currentPage = nextPage;
+        final newArticles = more.where(
+          (a) => !_articles.any((e) => e.url == a.url),
+        ).toList();
+        setState(() {
+          _articles.addAll(newArticles);
+          _allArticles.addAll(newArticles);
+          _rawArticles.addAll(newArticles);
+        });
+        CategoryService.instance.updateCategoryCounts(newArticles);
+        unawaited(_blendInBackground(List.from(_articles)));
+        unawaited(_ensureArticleImages(newArticles));
       }
     } catch (e) {
+      debugPrint('[HOME] Load more failed: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
+  Future<void> _onRefresh() async {
+    _currentPage = 1;
+    _hasMore = true;
+    if (mounted) setState(() => _isLoading = true);
+    try {
+      final rawRefreshed = _filterPolicyCompliantArticles(
+        await _loadArticles(page: 1, limit: 20),
+      );
+      if (!mounted) return;
+      _rawArticles = rawRefreshed;
+      _allArticles = List.from(rawRefreshed);
+      await _applyBlendedArticles(rawRefreshed);
+      setState(() {
+        _articles = _allArticles;
+        _isLoading = false;
+      });
+      CategoryService.instance.updateCategoryCounts(rawRefreshed);
+      // Refresh trending searches too
+      try {
+        final trending = await ServerApiService.getTrending(
+          limit: 10,
+          language: AppSettings.instance.locale?.languageCode ?? 'ar',
+        ).timeout(const Duration(seconds: 10));
+        setState(() {
+          _trendingSearches = trending
+              .map((t) => t.title)
+              .where((q) => q.isNotEmpty)
+              .toList();
+        });
+        // On Wi-Fi, also crawl sources immediately so the refreshed feed gets
+        // the latest stories instead of only what the cached API returned.
+        unawaited(_refreshNewsNow());
+      } catch (_) {}
+    } catch (e) {
       debugPrint('[HOME] _onRefresh failed: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -817,17 +984,32 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  List<NewsModel> get _searchResults {
-    if (_searchQuery.isEmpty) return const [];
-    final q = _searchQuery.toLowerCase();
-    return _allArticles
-        .where(
-          (a) =>
-              a.title.toLowerCase().contains(q) ||
-              a.summary.toLowerCase().contains(q),
-        )
-        .toList();
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      final q = value.trim();
+      if (_lastSearchQuery == q) return;
+      _lastSearchQuery = q;
+      if (q.isEmpty) {
+        _cachedSearchResults = const [];
+      } else {
+        final query = q.toLowerCase();
+        _cachedSearchResults = _allArticles
+            .where(
+              (a) =>
+                  a.title.toLowerCase().contains(query) ||
+                  a.summary.toLowerCase().contains(query),
+            )
+            .toList();
+      }
+      setState(() {
+        _searchQuery = value;
+      });
+    });
   }
+
+  List<NewsModel> get _searchResults => _cachedSearchResults;
 
   @override
   Widget build(BuildContext context) {
@@ -853,6 +1035,18 @@ class _HomePageState extends State<HomePage> {
           icon: Icons.bookmark_rounded,
           label: l10n.translate('bookmarks'),
         ),
+        AdaptiveNavigationDestination(
+          icon: Icons.person_rounded,
+          label: l10n.translate('personalizedFeed'),
+        ),
+        AdaptiveNavigationDestination(
+          icon: Icons.fact_check_rounded,
+          label: l10n.translate('factCheck'),
+        ),
+        AdaptiveNavigationDestination(
+          icon: Icons.settings_rounded,
+          label: l10n.translate('settings'),
+        ),
       ],
       scaffoldKey: _scaffoldKey,
       onRefresh: _onRefresh,
@@ -873,7 +1067,7 @@ class _HomePageState extends State<HomePage> {
                 width: MediaQuery.of(context).size.width * 0.7,
                 child: TextField(
                   autofocus: true,
-                  onChanged: (value) => setState(() => _searchQuery = value),
+                  onChanged: _onSearchChanged,
                   decoration: InputDecoration(
                     hintText: l10n.translate('searchHint'),
                     hintStyle: GoogleFonts.outfit(
@@ -895,6 +1089,7 @@ class _HomePageState extends State<HomePage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.search_rounded),
+            iconSize: 24,
             onPressed: _activateSearch,
           ),
           AnimatedBuilder(
@@ -904,6 +1099,7 @@ class _HomePageState extends State<HomePage> {
               if (!isLoggedIn) {
                 return IconButton(
                   icon: const Icon(Icons.person_add_rounded),
+                  iconSize: 24,
                   onPressed: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const LoginPage()),
@@ -912,7 +1108,7 @@ class _HomePageState extends State<HomePage> {
               }
               return IconButton(
                 icon: CircleAvatar(
-                  radius: 14,
+                  radius: 12,
                   backgroundColor: Theme.of(context).colorScheme.primary,
                   child: Text(
                     'U',
@@ -922,6 +1118,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 ),
+                iconSize: 24,
                 onPressed: () async {
                   showModalBottomSheet(
                     context: context,
@@ -1029,6 +1226,79 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Builds the feed rows with randomized banner ad placement and count.
+  ///
+  /// Ads use [BannerAdWidget] (real ad unit id `ca-app-pub-2951683509728611/4930663860`)
+  /// and are inserted into random gaps between news items, styled to look like
+  /// a news item (placement `banner_1`). The layout is cached per article set
+  /// so ads don't jump around on every rebuild.
+  List<List<Widget>> _buildFeedRows(List<NewsModel> articles, bool isWide) {
+    final hash = articles.map((a) => a.url).join('\n').hashCode;
+    if (_lastFeedHash == hash && _feedRows.isNotEmpty) {
+      return _feedRows;
+    }
+    _lastFeedHash = hash;
+    _feedRows = [];
+
+    if (articles.isEmpty) return _feedRows;
+
+    final random = Random(hash);
+    final n = articles.length;
+
+    // Randomized ad count: at least one banner ad when there are multiple news
+    // items, up to roughly one ad per two news items, capped at 4. Placement
+    // (which gaps) is also randomized, but an ad is never inserted before the
+    // first 5 news items, and at least 4 news items separate any two ads.
+    final validGapCount = (n - 5).clamp(0, n - 1);
+    final maxAds = ((validGapCount + 4) / 5).floor().clamp(1, 4);
+    final adCount = validGapCount <= 0
+        ? 0
+        : (1 + random.nextInt(maxAds)).clamp(1, validGapCount);
+
+    // Eligible gaps are after at least 5 news items (index i >= 4).
+    final eligibleGaps = List<int>.generate(
+      validGapCount,
+      (idx) => 4 + idx,
+    )..shuffle(random);
+
+    // Enforce min 4 news items between any two banner ads (gap difference >= 5).
+    final adGaps = <int>{};
+    for (final gap in eligibleGaps) {
+      if (adGaps.length >= adCount) break;
+      if (adGaps.any((g) => (gap - g).abs() < 5)) continue;
+      adGaps.add(gap);
+    }
+
+    // Flat interleaved list of news cards and banner ads.
+    final flat = <Widget>[];
+    for (var i = 0; i < n; i++) {
+      flat.add(_buildArticleCard(articles[i]));
+      if (i < n - 1 && adGaps.contains(i)) {
+        flat.add(const BannerAdWidget(placement: 'banner_1'));
+      }
+    }
+
+    // Group into rows: banner ads render full-width, news cards pair up on wide
+    // screens to preserve the existing two-column feed layout.
+    var j = 0;
+    while (j < flat.length) {
+      final first = flat[j];
+      if (first is BannerAdWidget) {
+        _feedRows.add([first]);
+        j++;
+      } else if (isWide &&
+          j + 1 < flat.length &&
+          flat[j + 1] is! BannerAdWidget) {
+        _feedRows.add([first, flat[j + 1]]);
+        j += 2;
+      } else {
+        _feedRows.add([first]);
+        j++;
+      }
+    }
+    return _feedRows;
+  }
+
   Widget _buildHomeContent(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     if (_isLoading) {
@@ -1038,15 +1308,14 @@ class _HomePageState extends State<HomePage> {
     if (_isSearchActive) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (_searchQuery.isEmpty) _buildTrendingSearches(context),
-              if (_searchQuery.isNotEmpty)
-                ..._searchResults.map((article) => _buildArticleCard(article)),
-            ],
-          ),
+        child: ListView.builder(
+          itemCount: _searchQuery.isEmpty ? 1 : _searchResults.length,
+          itemBuilder: (context, index) {
+            if (_searchQuery.isEmpty) {
+              return _buildTrendingSearches(context);
+            }
+            return _buildArticleCard(_searchResults[index]);
+          },
         ),
       );
     }
@@ -1141,13 +1410,10 @@ class _HomePageState extends State<HomePage> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 750;
-        final topArticles = _articles.take(9).toList();
+        final topArticles = _sortCarouselArticles(_articles).take(9).toList();
         final remainingArticles = _articles.length > 3
             ? _articles.sublist(3)
             : _articles;
-        final pairsCount = isWide
-            ? (remainingArticles.length / 2).ceil()
-            : remainingArticles.length;
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1193,7 +1459,7 @@ class _HomePageState extends State<HomePage> {
                             const SizedBox(width: 8),
                             Text(
                               _selectedCategory == 'all'
-                                  ? 'الكل'
+                                  ? l10n.translate('all')
                                   : _getCategoryName(
                                       _selectedCategory,
                                       context,
@@ -1210,43 +1476,42 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 10),
                     ],
                   ),
-                  ...List.generate(pairsCount, (articleRowIndex) {
-                    if (isWide) {
-                      final idx1 = articleRowIndex * 2;
-                      final idx2 = idx1 + 1;
-                      final art1 = remainingArticles[idx1];
-                      final art2 = idx2 < remainingArticles.length
-                          ? remainingArticles[idx2]
-                          : null;
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: _buildArticleCard(art1)),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: art2 != null
-                                  ? _buildArticleCard(art2)
-                                  : const SizedBox.shrink(),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
+                  ..._buildFeedRows(remainingArticles, isWide).map((row) {
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 14),
-                      child: _buildArticleCard(
-                        remainingArticles[articleRowIndex],
-                      ),
+                      child: isWide && row.length == 2
+                          ? Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: row[0]),
+                                const SizedBox(width: 14),
+                                Expanded(child: row[1]),
+                              ],
+                            )
+                          : row.first,
                     );
                   }),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: BannerAdWidget(),
-                  ),
+                  if (_isLoadingMore)
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 32,
+                              height: 32,
+                              child: CircularProgressIndicator(strokeWidth: 3),
+                            ),
+                            SizedBox(height: 12),
+                              Text(
+                                l10n.translate('loadingMore'),
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ],
             ),
@@ -1258,6 +1523,33 @@ class _HomePageState extends State<HomePage> {
 
   bool _matchesCategory(String articleCat, String selectedCat) {
     return CategoryService.matchesCategory(articleCat, selectedCat);
+  }
+
+  /// Sorts articles for the carousel by a blend of recency and popularity
+  /// (read count). Most-read recent articles surface first; ties break by
+  /// newest publish date.
+  List<NewsModel> _sortCarouselArticles(List<NewsModel> articles) {
+    final now = DateTime.now();
+    final sorted = List<NewsModel>.from(articles);
+    sorted.sort((a, b) {
+      final aDate = a.publicationDate ?? DateTime.now();
+      final bDate = b.publicationDate ?? DateTime.now();
+      // Recency score: newer = higher (decays over days).
+      final aDays = now.difference(aDate).inDays.toDouble();
+      final bDays = now.difference(bDate).inDays.toDouble();
+      final aRecency = (1.0 / (aDays + 1)).clamp(0.0, 1.0);
+      final bRecency = (1.0 / (bDays + 1)).clamp(0.0, 1.0);
+      // Popularity score from read count (log-scaled so a single viral article
+      // doesn't dwarf everything else).
+      final aPopularity = (1 + log(a.readCount + 1)) /
+          (1 + log(101));
+      final bPopularity = (1 + log(b.readCount + 1)) /
+          (1 + log(101));
+      final aScore = aRecency * 0.6 + aPopularity * 0.4;
+      final bScore = bRecency * 0.6 + bPopularity * 0.4;
+      return bScore.compareTo(aScore);
+    });
+    return sorted;
   }
 
   Widget _buildCategoryChips(BuildContext context) {
@@ -1432,163 +1724,6 @@ class _HomePageState extends State<HomePage> {
           }).toList(),
         ),
       ],
-    );
-  }
-
-  Widget _buildFeaturedArticle(NewsModel article) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => NewsDetailPage(article: article)),
-        );
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF1E2A4A)
-              : Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.black.withOpacity(0.2)
-                  : Colors.black.withOpacity(0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(20),
-                  ),
-                  child: CachedNewsImage(
-                    imageUrl: article.imageUrl.isEmpty
-                        ? 'https://placehold.co/800x220/1A1A2E/C62828?text=${_getCategoryName(article.category, context)}'
-                        : article.imageUrl,
-                    width: double.infinity,
-                    height: 220,
-                    fit: BoxFit.cover,
-                    errorWidget: Container(
-                      height: 220,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF1A1A2E), Color(0xFFC62828)],
-                          begin: Alignment.topRight,
-                          end: Alignment.bottomLeft,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFC62828),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      AppLocalizations.of(context).translate('urgent'),
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.surface.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _getCategoryName(article.category, context),
-                      style: GoogleFonts.outfit(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    article.title,
-                    style: GoogleFonts.outfit(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: Theme.of(context).colorScheme.onSurface,
-                      height: 1.3,
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.access_time_rounded,
-                        size: 14,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _getReadTime(article, context),
-                        style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const Spacer(),
-                      Expanded(
-                        child: Text(
-                          article.displaySourceName,
-                          textAlign: TextAlign.end,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -2020,33 +2155,10 @@ class _HomePageState extends State<HomePage> {
             AppLocalizations.of(context).translate('contactWebsiteError'),
           ),
         ),
-      );
-    }
-  }
-
-  void _showAboutDialog(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    showAboutDialog(
-      context: context,
-      applicationName: l10n.translate('appName'),
-      applicationVersion: 'v1.0.0',
-      applicationIcon: Icon(
-        Icons.newspaper_rounded,
-        size: 48,
-        color: Theme.of(context).colorScheme.primary,
-      ),
-      children: [
-        Text(
-          l10n.translate('appDescription'),
-          style: GoogleFonts.outfit(
-            fontSize: 14,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
     );
   }
+}
+
 }
 
 class _DrawerItem extends StatelessWidget {
@@ -2070,7 +2182,7 @@ class _DrawerItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
           color: isSelected
-              ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.12)
+              ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.12)
               : Colors.transparent,
         ),
         child: Row(

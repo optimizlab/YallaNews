@@ -36,11 +36,6 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
   bool _showBottomBar = true;
   double _lastOffset = 0;
 
-  int? get _safeSelectedIndex {
-    if (widget.destinations.isEmpty) return null;
-    return widget.currentIndex.clamp(0, widget.destinations.length - 1);
-  }
-
   @override
   void initState() {
     super.initState();
@@ -102,10 +97,14 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
   Widget _buildMobileShell(BuildContext context, Widget scrollable) {
     final theme = Theme.of(context);
 
+    final safeIndex = widget.destinations.isEmpty
+        ? 0
+        : widget.currentIndex.clamp(0, widget.destinations.length - 1);
+
     final bottomBar = SafeArea(
       top: false,
       child: BottomNavigationBar(
-        currentIndex: _safeSelectedIndex ?? 0,
+        currentIndex: safeIndex,
         onTap: widget.onNavigationChanged,
         type: BottomNavigationBarType.fixed,
         backgroundColor: theme.colorScheme.surface,
@@ -116,8 +115,8 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
         unselectedFontSize: 11,
         items: widget.destinations.map((d) {
           return BottomNavigationBarItem(
-            icon: Icon(d.icon, size: 22),
-            activeIcon: Icon(d.selectedIcon ?? d.icon, size: 24),
+            icon: Icon(d.icon),
+            activeIcon: Icon(d.selectedIcon ?? d.icon),
             label: d.label,
           );
         }).toList(),
@@ -156,7 +155,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 NavigationRail(
-                  selectedIndex: _safeSelectedIndex,
+                  selectedIndex: widget.currentIndex,
                   onDestinationSelected: widget.onNavigationChanged,
                   labelType: NavigationRailLabelType.all,
                   minWidth: 80,
@@ -181,7 +180,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
                 Expanded(
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: isDesktop ? 1400 : 900),
+                      constraints: BoxConstraints(maxWidth: isDesktop ? 1200 : 800),
                       child: isDesktop && widget.desktopBody != null ? widget.desktopBody! : widget.body,
                     ),
                   ),
@@ -204,7 +203,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
                   floating: true,
                   pinned: false,
                 ),
-            SliverFillRemaining(child: widget.body),
+            SliverToBoxAdapter(child: widget.body),
           ],
         );
 

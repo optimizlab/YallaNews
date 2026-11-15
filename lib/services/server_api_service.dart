@@ -5,7 +5,6 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/news_model.dart';
 import 'news_intelligence.dart';
-import 'app_settings.dart';
 import 'tiny_llm_service.dart';
 import 'yalla_engine_service.dart';
 
@@ -581,7 +580,63 @@ class ServerApiService {
       // freshness filtering treats as stale instead of "now".
       'publishedAt': publishedAt,
       'status': 'published',
+      'read_count': article.readCount,
+      'comment_count': article.commentCount,
+      'like_count': article.likeCount,
     });
+  }
+
+  /// Increment the read count for [articleId] on the server.
+  static Future<int> incrementReadCount(String articleId) async {
+    final data = await postJson('stats/read.php', {
+      'article_id': articleId,
+    });
+    return (data['read_count'] as num?)?.toInt() ?? 0;
+  }
+
+  /// Top articles by read count from the server.
+  static Future<List<NewsModel>> getTopRead({
+    int limit = 10,
+    String? language,
+  }) async {
+    final query = <String, String>{
+      'limit': limit.toString(),
+      if (language != null && language.isNotEmpty) 'language': language,
+    };
+    final data = await getJson('stats/top_read.php', query: query);
+    if (data['success'] != true) return <NewsModel>[];
+    final articles = data['articles'] as List<dynamic>? ?? <dynamic>[];
+    return articles.map((a) => _parseArticle(Map<String, dynamic>.from(a as Map))).toList();
+  }
+
+  /// Top articles by like count from the server.
+  static Future<List<NewsModel>> getTopLiked({
+    int limit = 10,
+    String? language,
+  }) async {
+    final query = <String, String>{
+      'limit': limit.toString(),
+      if (language != null && language.isNotEmpty) 'language': language,
+    };
+    final data = await getJson('stats/top_liked.php', query: query);
+    if (data['success'] != true) return <NewsModel>[];
+    final articles = data['articles'] as List<dynamic>? ?? <dynamic>[];
+    return articles.map((a) => _parseArticle(Map<String, dynamic>.from(a as Map))).toList();
+  }
+
+  /// Top articles by comment count from the server.
+  static Future<List<NewsModel>> getTopCommented({
+    int limit = 10,
+    String? language,
+  }) async {
+    final query = <String, String>{
+      'limit': limit.toString(),
+      if (language != null && language.isNotEmpty) 'language': language,
+    };
+    final data = await getJson('stats/top_commented.php', query: query);
+    if (data['success'] != true) return <NewsModel>[];
+    final articles = data['articles'] as List<dynamic>? ?? <dynamic>[];
+    return articles.map((a) => _parseArticle(Map<String, dynamic>.from(a as Map))).toList();
   }
 
   static int _toEpochMilliseconds(String value) {
@@ -726,17 +781,35 @@ class ServerApiService {
 
   static Timer? _heartbeatTimer;
   static String? _sessionId;
+  static bool _freshInstall = false;
 
-  /// Stable per-install session id shared with the analytics pipeline.
-  static String get sessionId {
-    _sessionId ??=
-        'session_${DateTime.now().millisecondsSinceEpoch}_${(1000 + (DateTime.now().microsecondsSinceEpoch % 9000))}';
+  static const String _installIdKey = 'yn_install_id';
+
+  /// Stable per-install id persisted in SharedPreferences. App restarts reuse
+  /// the same id so the server install count reflects unique installs, not
+  /// app opens.
+  static Future<String> get sessionId async {
+    if (_sessionId != null) return _sessionId!;
+    final prefs = await SharedPreferences.getInstance();
+    _sessionId = prefs.getString(_installIdKey);
+    if (_sessionId == null || _sessionId!.isEmpty) {
+      _sessionId =
+          'install_${DateTime.now().millisecondsSinceEpoch}_${(1000 + (DateTime.now().microsecondsSinceEpoch % 9000))}';
+      await prefs.setString(_installIdKey, _sessionId!);
+      _freshInstall = true;
+    }
     return _sessionId!;
   }
+
+  /// True only for the very first ping of a fresh install.
+  static bool get isFreshInstall => _freshInstall;
 
   /// Send a live ping to api/stats/ping.php
   static Future<void> sendPing() async {
     try {
+      final sid = await sessionId;
+      final isNewInstall = isFreshInstall;
+
       final os = Platform.isAndroid
           ? 'android'
           : Platform.isIOS
@@ -760,18 +833,18 @@ class ServerApiService {
         }
       } catch (_) {}
 
-      bool isNewInstall = false;
       try {
-        isNewInstall = await AppSettings.instance.isFirstRun();
-      } catch (_) {}
-
-      await postJson('stats/ping.php', {
-        'sessionId': _sessionId,
-        'deviceOs': os,
-        'appVersion': '1.0.0',
-        'countryCode': countryCode,
-        'isNewInstall': isNewInstall ? 1 : 0,
-      });
+        await postJson('stats/ping.php', {
+          'sessionId': sid,
+          'deviceOs': os,
+          'appVersion': '1.0.0',
+          'countryCode': countryCode,
+          'isNewInstall': isNewInstall ? 1 : 0,
+        });
+        _freshInstall = false;
+      } catch (_) {
+        // Silent in background
+      }
     } catch (_) {
       // Silent in background
     }

@@ -56,7 +56,17 @@ class _ExplorePageState extends State<ExplorePage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final categories = _categories;
+    // Deduplicate categories by resolved display name so the same category
+    // (e.g. "الكل") isn't rendered multiple times when the server returns
+    // different IDs that map to one translated name.
+    final categories = <Map<String, dynamic>>[];
+    final seenNames = <String>{};
+    for (final cat in _categories) {
+      final name = CategoryService.getCategoryDisplayName(cat, context);
+      if (seenNames.add(name)) {
+        categories.add(cat);
+      }
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 24),
@@ -190,7 +200,7 @@ class _ExplorePageState extends State<ExplorePage> {
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -203,14 +213,14 @@ class _ExplorePageState extends State<ExplorePage> {
                 ),
                 child: Icon(icon, size: 28, color: color),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Text(
                 title,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 l10n.translate('newsCount').replaceAll('{count}', count),
                 maxLines: 1,

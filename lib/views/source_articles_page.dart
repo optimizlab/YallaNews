@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // For compute
@@ -32,6 +33,10 @@ class SourceArticlesPage extends StatefulWidget {
 class _SourceArticlesPageState extends State<SourceArticlesPage> {
   List<NewsModel> _articles = [];
   bool _isLoading = false;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  int _currentPage = 1;
+  final ScrollController _scrollController = ScrollController();
   bool _showConsole = true;
   final ScrollController _consoleScrollController = ScrollController();
 
@@ -39,14 +44,27 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
   void initState() {
     super.initState();
     _loadArticles();
+    _scrollController.addListener(_onScroll);
     widget.engineService.addListener(_onEngineUpdate);
   }
 
   @override
   void dispose() {
     widget.engineService.removeListener(_onEngineUpdate);
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _consoleScrollController.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_isLoadingMore &&
+        _hasMore &&
+        _scrollController.hasClients &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200) {
+      unawaited(_loadMoreArticles());
+    }
   }
 
   void _onEngineUpdate() {
@@ -71,16 +89,25 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
   Future<void> _loadArticles() async {
     setState(() {
       _isLoading = true;
+      _currentPage = 1;
+      _hasMore = true;
+      _articles = [];
     });
 
     try {
       final db = NewsDatabase.instance;
-      final cached = await db.getArticlesBySource(widget.source.url);
+      final cached = await db.getArticlesBySourcePaginated(
+        widget.source.url,
+        page: 1,
+        limit: 20,
+      );
 
       if (cached.isNotEmpty) {
+        final total = await db.getArticlesBySourceCount(widget.source.url);
         setState(() {
           _articles = cached;
           _isLoading = false;
+          _hasMore = _articles.length < total;
         });
         widget.engineService.addLog("[SYSTEM] Loaded ${cached.length} articles from offline database for ${widget.source.name}.");
       } else {
@@ -92,6 +119,40 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _loadMoreArticles() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final nextPage = _currentPage + 1;
+      final more = await NewsDatabase.instance.getArticlesBySourcePaginated(
+        widget.source.url,
+        page: nextPage,
+        limit: 20,
+      );
+      if (!mounted) return;
+      if (more.isEmpty) {
+        _hasMore = false;
+      } else {
+        _currentPage = nextPage;
+        setState(() {
+          _articles.addAll(more);
+        });
+        final total = await NewsDatabase.instance.getArticlesBySourceCount(
+          widget.source.url,
+        );
+        if (mounted) {
+          setState(() {
+            _hasMore = _articles.length < total;
+          });
+        }
+      }
+    } catch (e) {
+      widget.engineService.addLog("[ERROR] Load more articles failed: $e");
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
@@ -266,12 +327,23 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
     } finally {
       setState(() {
         _isLoading = false;
+        _currentPage = 1;
+        _hasMore = true;
+        _articles = [];
       });
       try {
-        final saved = await NewsDatabase.instance.getArticlesBySource(widget.source.url, language: AppSettings.instance.locale?.languageCode);
+        final saved = await NewsDatabase.instance.getArticlesBySourcePaginated(
+          widget.source.url,
+          page: 1,
+          limit: 20,
+        );
+        final total = await NewsDatabase.instance.getArticlesBySourceCount(
+          widget.source.url,
+        );
         if (mounted) {
           setState(() {
             _articles = saved;
+            _hasMore = saved.length < total;
           });
         }
       } catch (e) {
@@ -326,9 +398,20 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
                   : _articles.isEmpty
                       ? _buildEmptyState()
                       : ListView.builder(
+                          controller: _scrollController,
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          itemCount: _articles.length,
+                          itemCount: _articles.length + (_hasMore ? 1 : 0),
                           itemBuilder: (context, index) {
+                            if (index == _articles.length) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                child: Center(
+                                  child: _isLoadingMore
+                                      ? const CircularProgressIndicator()
+                                      : const SizedBox.shrink(),
+                                ),
+                              );
+                            }
                             final article = _articles[index];
                             final sentimentScore = article.sentiment;
                             

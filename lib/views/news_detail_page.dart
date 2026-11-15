@@ -1,12 +1,14 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/gestures.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import 'package:flutter/foundation.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/tts_service.dart';
@@ -17,6 +19,7 @@ import '../services/comment_service.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
 import '../services/connectivity_service.dart';
+import '../services/reward_ad_service.dart';
 import '../widgets/cached_news_image.dart';
 import '../widgets/reward_ad.dart';
 import '../services/server_api_service.dart';
@@ -192,6 +195,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   // ─── Comment refresh key ─────────────────────────────────────────────────────
   int _commentRefreshKey = 0;
 
+  // ─── Reward ad tracking ──────────────────────────────────────────────
+  int? _articleReadStartTime;
+
   String get effectiveContent =>
       _enrichedContent.isNotEmpty ? _enrichedContent : article.content;
   String get effectiveImageUrl =>
@@ -202,12 +208,23 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     super.initState();
     _scrollController = ScrollController();
     _scrollController.addListener(_scrollListener);
+    _articleReadStartTime = DateTime.now().millisecondsSinceEpoch;
     _enrichArticleIfNeeded();
     _loadKnowledge();
     _loadLikeState();
     _loadOfflineSavedState();
     _loadRelatedArticles();
+    _trackRead();
     AuthService.instance.addListener(_onAuthChanged);
+  }
+
+  /// Track that this article was read: increment locally and on the server so
+  /// the carousel / trending can rank by read count.
+  Future<void> _trackRead() async {
+    try {
+      await NewsDatabase.instance.incrementReadCount(article.url);
+      unawaited(ServerApiService.incrementReadCount(article.url));
+    } catch (_) {}
   }
 
   void _onAuthChanged() {
@@ -274,12 +291,16 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   Future<void> _shareArticle() async {
-    await SharePlus.instance.share(
-      ShareParams(
-        text: '${article.title}\n\n${article.url}',
-        subject: article.title,
-      ),
-    );
+    final shareText = '${article.title}\n\n${article.url}';
+    await Clipboard.setData(ClipboardData(text: shareText));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Link copied to clipboard'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Future<void> _reportArticle() async {
@@ -353,6 +374,19 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     _scrollController.removeListener(_scrollListener);
     _scrollController.dispose();
     TTSService.instance.stop();
+
+    // Record article read and show reward ad when thresholds are met.
+    // RewardedInterstitialAd.show() does not require a BuildContext, so it is
+    // safe to fire from dispose().
+    if (_articleReadStartTime != null) {
+      final spentMs = DateTime.now().millisecondsSinceEpoch - _articleReadStartTime!;
+      if (spentMs >= 1000) {
+        Future<void>.microtask(() => RewardAdService.instance.recordArticleRead(
+          null,
+          placement: 'news_detail_read',
+        ));
+      }
+    }
     super.dispose();
   }
 
@@ -1680,9 +1714,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             ),
             const Divider(height: 14),
             ..._buildRichContent(context, effectiveContent),
-            const SizedBox(height: 20),
-            const DetailNativeAdWidget(),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
             _buildBlendedSourcesSection(context),
             const SizedBox(height: 20),
             _buildReadAlsoSection(context),
@@ -2295,7 +2327,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ? user.displayName
         : ((user != null && user.email.isNotEmpty)
             ? user.email.split('@').first
-            : 'مستخدم');
+            : l10n.translate('guestUser'));
     final hasUser = user != null || AuthService.instance.isLoggedIn;
     await showDialog(
       context: context,
@@ -2515,7 +2547,64 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     }
 
     debugPrint('Total widgets generated: ${widgets.length}');
-    return widgets;
+
+    // Embed native ads between content paragraphs. The number of ads is
+    // randomly chosen relative to the article content length, and ads are
+    // placed at random positions between paragraphs.
+    return _embedNativeAds(widgets, effectiveContent);
+  }
+
+  List<Widget> _embedNativeAds(List<Widget> widgets, String content) {
+    if (widgets.isEmpty) return widgets;
+
+    final adCount = _nativeAdCount(content.length);
+    if (adCount <= 0) return widgets;
+
+    // Identify paragraph widgets (Text / RichText) that can be followed by an
+    // ad. Exclude the final widget so ads stay strictly between paragraphs.
+    final paragraphIndices = <int>[];
+    for (int i = 0; i < widgets.length - 1; i++) {
+      final w = widgets[i];
+      if (w is Text || w is RichText) {
+        paragraphIndices.add(i);
+      }
+    }
+
+    if (paragraphIndices.isEmpty) return widgets;
+
+    final random = Random();
+    paragraphIndices.shuffle(random);
+    final selected = paragraphIndices
+        .take(adCount.clamp(0, paragraphIndices.length))
+        .toList()
+        ..sort();
+
+    final result = <Widget>[];
+    int selIdx = 0;
+    for (int i = 0; i < widgets.length; i++) {
+      final w = widgets[i];
+      result.add(w);
+      if (selIdx < selected.length && selected[selIdx] == i) {
+        result.add(const DetailNativeAdWidget());
+        result.add(const SizedBox(height: 16));
+        // Skip the SizedBox separator that follows this paragraph to avoid
+        // double spacing; the ad carries its own gap.
+        if (i + 1 < widgets.length && widgets[i + 1] is SizedBox) {
+          i++;
+        }
+        selIdx++;
+      }
+    }
+
+    debugPrint('Embedded $adCount native ad(s) in content');
+    return result;
+  }
+
+  int _nativeAdCount(int contentLength) {
+    if (contentLength < 800) return 0;
+    if (contentLength < 1800) return Random().nextInt(2); // 0 or 1
+    if (contentLength < 3000) return 1 + Random().nextInt(2); // 1 or 2
+    return 2 + Random().nextInt(2); // 2 or 3
   }
 
   List<String> _splitIntoParagraphs(String text) {

@@ -94,6 +94,14 @@ try {
         [$sessionId, $userId, $deviceOs, $appVersion, $ip, $countryName, $countryCode, $isNewInstall]
     );
 
+    // A brand-new row means this is a real new install (one row per install id).
+    // Force the flag server-side so old clients that always sent is_new_install=1
+    // don't inflate the new-install count.
+    $isFreshInsert = $stmt->rowCount() === 1;
+    if ($isFreshInsert) {
+        $db->query("UPDATE yn_active_sessions SET is_new_install = 1 WHERE session_id = ?", [$sessionId]);
+    }
+
     // Count live active sessions within the last 2 minutes
     $liveStmt = $db->query("SELECT COUNT(*) as live_count FROM yn_active_sessions WHERE last_ping >= NOW() - INTERVAL 120 SECOND");
     $liveCount = intval($liveStmt->fetch()['live_count'] ?? 1);

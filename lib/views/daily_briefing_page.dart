@@ -3,7 +3,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
@@ -12,8 +11,10 @@ import '../services/tiny_llm_service.dart';
 import '../services/background_crawler_service.dart';
 import '../services/news_grouping_service.dart';
 import '../services/app_settings.dart';
+import '../services/server_api_service.dart';
 import '../views/news_detail_page.dart';
 import '../widgets/cached_news_image.dart';
+import '../widgets/shimmer_loading.dart';
 
 class DailyBriefingPage extends StatefulWidget {
   const DailyBriefingPage({super.key});
@@ -56,70 +57,153 @@ class _DailyBriefingPageState extends State<DailyBriefingPage> {
     debugPrint('[DAILY BRIEFING] _loadBriefing started');
     setState(() => _isLoading = true);
 
+    List<Map<String, dynamic>> allArticles = [];
+
     try {
-      final db = await NewsDatabase.instance.database;
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final dayAgo = now - (24 * 60 * 60 * 1000);
       final activeLanguage = AppSettings.instance.locale?.languageCode ?? '';
 
-      String whereClause = 'crawled_at > ?';
-      List<dynamic> whereArgs = [dayAgo];
-      if (activeLanguage.isNotEmpty) {
-        whereClause += ' AND language = ?';
-        whereArgs.add(activeLanguage);
+      // ─── 1. Fetch latest news from the server (so every device gets content) ───
+      List<NewsModel> serverArticles = <NewsModel>[];
+      try {
+        serverArticles = await ServerApiService.getNews(
+          limit: 20,
+          language: activeLanguage.isNotEmpty ? activeLanguage : null,
+          sort: 'published_at',
+          order: 'DESC',
+        );
+        debugPrint('[DAILY BRIEFING] Server articles ($activeLanguage): ${serverArticles.length}');
+      } catch (e) {
+        debugPrint('[DAILY BRIEFING] Server fetch ($activeLanguage) failed: $e');
+        // Fallback: any language so the briefing is never empty
+        try {
+          serverArticles = await ServerApiService.getNews(
+            limit: 20,
+            sort: 'published_at',
+            order: 'DESC',
+          );
+          debugPrint('[DAILY BRIEFING] Server articles (any lang): ${serverArticles.length}');
+        } catch (e2) {
+          debugPrint('[DAILY BRIEFING] Server fetch (any lang) failed: $e2');
+        }
       }
 
-      final allArticles = (await db.query(
-        'crawled_articles',
-        where: whereClause,
-        whereArgs: whereArgs,
+      // Persist server articles to the local DB so they survive restarts and
+      // are available offline on every device.
+      if (serverArticles.isNotEmpty) {
+        try {
+          await NewsDatabase.instance.saveCrawledArticles(serverArticles, 'server_api');
+          debugPrint('[DAILY BRIEFING] Saved ${serverArticles.length} server articles to local DB');
+        } catch (e) {
+          debugPrint('[DAILY BRIEFING] Failed to save server articles: $e');
+        }
+      }
+      allArticles.addAll(serverArticles.map((a) => a.toJson()));
+
+      // ─── 2. Fall back to the local app DB (existing fallback chain) ───
+      final db = await NewsDatabase.instance.database;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final weekAgo = now - (7 * 24 * 60 * 60 * 1000);
+
+      // Try recent articles (7 days) in the active language first
+      List<Map<String, dynamic>> localArticles = await _queryArticles(
+        db,
+        where: 'crawled_at > ? AND language = ?',
+        whereArgs: [weekAgo, activeLanguage],
         orderBy: 'crawled_at DESC',
         limit: 50,
-      )).cast<Map<String, dynamic>>();
-      debugPrint(
-          '[DAILY BRIEFING] Retrieved ${allArticles.length} articles from DB');
+      );
+      debugPrint('[DAILY BRIEFING] Local recent language-matched: ${localArticles.length}');
 
-      if (allArticles.isEmpty) {
-        // Fallback: load any articles regardless of age
-        String fallbackWhere = '1';
-        List<dynamic> fallbackArgs = [];
-        if (activeLanguage.isNotEmpty) {
-          fallbackWhere = 'language = ?';
-          fallbackArgs = [activeLanguage];
-        }
-        final fallbackArticles = (await db.query(
-          'crawled_articles',
-          where: fallbackWhere,
-          whereArgs: fallbackArgs,
+      // Fallback 1: recent articles in any language
+      if (localArticles.isEmpty) {
+        localArticles = await _queryArticles(
+          db,
+          where: 'crawled_at > ?',
+          whereArgs: [weekAgo],
           orderBy: 'crawled_at DESC',
           limit: 50,
-        )).cast<Map<String, dynamic>>();
-        debugPrint(
-            '[DAILY BRIEFING] Fallback retrieved ${fallbackArticles.length} articles');
-
-        if (fallbackArticles.isNotEmpty) {
-          await _generateAndSetBriefing(fallbackArticles);
-        } else {
-          if (mounted) {
-            final l10n = AppLocalizations.of(context);
-            setState(() {
-              _topStories = [];
-              _briefingText = l10n.translate('noArticles');
-              _isLoading = false;
-              _briefingGenerated = true;
-            });
-          }
-        }
-        return;
+        );
+        debugPrint('[DAILY BRIEFING] Local recent any-language: ${localArticles.length}');
       }
 
-      await _generateAndSetBriefing(allArticles);
+      // Fallback 2: any articles in the active language
+      if (localArticles.isEmpty && activeLanguage.isNotEmpty) {
+        localArticles = await _queryArticles(
+          db,
+          where: 'language = ?',
+          whereArgs: [activeLanguage],
+          orderBy: 'crawled_at DESC',
+          limit: 50,
+        );
+        debugPrint('[DAILY BRIEFING] Local any language-matched: ${localArticles.length}');
+      }
+
+      // Fallback 3: any articles at all
+      if (localArticles.isEmpty) {
+        localArticles = await _queryArticles(
+          db,
+          where: '1',
+          whereArgs: [],
+          orderBy: 'crawled_at DESC',
+          limit: 50,
+        );
+        debugPrint('[DAILY BRIEFING] Local any articles: ${localArticles.length}');
+      }
+
+      // Merge: server (latest) first, then local, deduplicated by url.
+      final seenUrls = <String>{};
+      final merged = <Map<String, dynamic>>[];
+      void addArticle(Map<String, dynamic> article) {
+        final url = (article['url'] ?? article['source_url'] ?? '').toString();
+        if (url.isNotEmpty && seenUrls.add(url)) {
+          merged.add(article);
+        }
+      }
+      for (final a in allArticles) {
+        addArticle(a);
+      }
+      for (final a in localArticles) {
+        addArticle(a);
+      }
+      allArticles = merged;
+
+      debugPrint('[DAILY BRIEFING] Total merged articles: ${allArticles.length}');
     } catch (e) {
       debugPrint('[DAILY BRIEFING] Error: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
     }
+
+    if (allArticles.isEmpty) {
+      // No real data available from server or local DB — never invent mock content.
+      if (mounted) {
+        final l10n = AppLocalizations.of(context);
+        setState(() {
+          _topStories = [];
+          _briefingText = l10n.translate('noArticles');
+          _isLoading = false;
+          _briefingGenerated = true;
+        });
+      }
+      return;
+    }
+
+    await _generateAndSetBriefing(allArticles);
+  }
+
+  Future<List<Map<String, dynamic>>> _queryArticles(
+    Database db, {
+    required String where,
+    required List<dynamic> whereArgs,
+    required String orderBy,
+    required int limit,
+  }) async {
+    final maps = (await db.query(
+      'crawled_articles',
+      where: where,
+      whereArgs: whereArgs,
+      orderBy: orderBy,
+      limit: limit,
+    )).cast<Map<String, dynamic>>();
+    return maps;
   }
 
   Future<void> _generateAndSetBriefing(List<Map<String, dynamic>> articles) async {
@@ -157,6 +241,7 @@ class _DailyBriefingPageState extends State<DailyBriefingPage> {
 
       final locale = AppSettings.instance.locale;
       final language = locale?.languageCode.toLowerCase() ?? 'ar';
+      final l10n = AppLocalizations.of(context);
 
       String briefingText = '';
       try {
@@ -168,15 +253,7 @@ class _DailyBriefingPageState extends State<DailyBriefingPage> {
         debugPrint('[DAILY BRIEFING] TinyLLM error: $e');
         final top3 = articles.take(3).map((a) => a['title']?.toString() ?? 'Untitled');
         final headline = top3.join('; ');
-        if (language == 'ar') {
-          briefingText = 'نشرة الأخبار اليومية: أهم عناوين اليوم تشمل $headline.';
-        } else if (language == 'fr') {
-          briefingText = 'Briefing quotidien: Les titres principaux incluent $headline.';
-        } else if (language == 'tr') {
-          briefingText = 'Günlük özet: Başlıklar arasında $headline yer alıyor.';
-        } else {
-          briefingText = 'Daily Briefing: Top stories include $headline.';
-        }
+        briefingText = l10n.translate('dailyBriefingPrefix').replaceAll('{headline}', headline);
       }
 
       if (mounted) {
@@ -194,9 +271,8 @@ class _DailyBriefingPageState extends State<DailyBriefingPage> {
   Widget _buildBriefingCard(BuildContext context, AppLocalizations l10n) {
     final theme = Theme.of(context);
     return Card(
-      margin: const EdgeInsets.all(16),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -230,12 +306,12 @@ class _DailyBriefingPageState extends State<DailyBriefingPage> {
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: theme.colorScheme.outline.withOpacity(0.1),
+                  color: theme.colorScheme.outline.withValues(alpha: 0.1),
                 ),
               ),
               child: Text(
@@ -479,37 +555,7 @@ class _DailyBriefingPageState extends State<DailyBriefingPage> {
   }
 
   Widget _buildSkeleton(BuildContext context) {
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: List.generate(3, (i) => Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 16,
-                    width: 200,
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    height: 120,
-                    width: double.infinity,
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  ),
-                ],
-              ),
-            )),
-        ),
-      ),
-    );
+    return const ShimmerLoadingList(count: 3);
   }
 
   @override

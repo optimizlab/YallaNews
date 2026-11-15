@@ -7,8 +7,10 @@ import 'package:flutter/services.dart' show rootBundle;
 import '../models/news_model.dart';
 import '../models/news_source.dart';
 import 'server_api_service.dart';
+import 'news_api_service.dart';
 import 'news_uri_parser.dart';
 import 'arabic_normalizer.dart';
+import 'tiny_llm_service.dart';
 import 'yalla_engine_service.dart';
 
 typedef ArticleValidator = bool Function(NewsModel article);
@@ -39,6 +41,7 @@ class NewsCrawlerService {
       _validateContentLength,
       _validateSourceUrl,
       _validateImageUrl,
+      _validateNonNewsEntry,
     ]);
 
     _transformers.addAll(<ArticleTransformer>[
@@ -287,6 +290,21 @@ class NewsCrawlerService {
     return succeeded == articles.length;
   }
 
+  Future<List<NewsModel>> _fetchNewsApiArticles({
+    String? language,
+  }) async {
+    await NewsApiService.init();
+    try {
+      return await NewsApiService.fetchArticles(
+        language: language ?? 'ar',
+        pageSize: 30,
+      );
+    } catch (_) {
+      if (kDebugMode) _log('[CRAWLER] NewsAPI fetch failed');
+      return <NewsModel>[];
+    }
+  }
+
   Future<Map<String, dynamic>> runCrawlCycle({
     String? countryCode,
     String? language,
@@ -377,6 +395,53 @@ class NewsCrawlerService {
       (report['errors'] as List<String>).add('Global: $e');
     }
 
+    // ── NewsAPI.org integration ──
+    try {
+      _log('[CRAWLER] Fetching articles from NewsAPI.org');
+      final newsApiArticles = await _fetchNewsApiArticles(language: language);
+
+      if (newsApiArticles.isNotEmpty) {
+        final globalKnownHashes = await _loadKnownArticleHashes();
+
+        final newArticles = <NewsModel>[];
+        for (final article in newsApiArticles) {
+          final hash = article.urlHash.isNotEmpty
+              ? article.urlHash
+              : NewsModel.hashUrl(article.url);
+          if (globalKnownHashes.contains(hash)) continue;
+          globalKnownHashes.add(hash);
+          newArticles.add(article);
+        }
+
+        if (newArticles.isNotEmpty) {
+          final deduped = await deduplicateArticles(newArticles);
+          report['articlesConsidered'] =
+              (report['articlesConsidered'] as int) + newArticles.length;
+          report['duplicatesSkipped'] =
+              (report['duplicatesSkipped'] as int) +
+              (newArticles.length - deduped.length);
+
+          if (deduped.isNotEmpty && autoPush) {
+            final pushed = await pushArticlesToServer(deduped);
+            if (pushed) {
+              report['articlesPushed'] =
+                  (report['articlesPushed'] as int) + deduped.length;
+            } else {
+              (report['errors'] as List<String>).add(
+                'Push failed for NewsAPI.org',
+              );
+            }
+          }
+
+          report['sources'] = List<String>.from(report['sources'] as List)
+            ..add('NewsAPI.org');
+        }
+      }
+    } catch (e) {
+      (report['errors'] as List<String>).add('NewsAPI.org: $e');
+      if (kDebugMode) _log('[CRAWLER] NewsAPI.org crawl failed: $e');
+    }
+
     report['finishedAt'] = DateTime.now().toIso8601String();
     report['success'] = (report['errors'] as List<String>).isEmpty;
     return report;
@@ -440,6 +505,17 @@ class NewsCrawlerService {
   bool _validateImageUrl(NewsModel article) {
     if (article.imageUrl.isEmpty) return true;
     return Uri.tryParse(article.imageUrl)?.hasAbsolutePath ?? false;
+  }
+
+  /// Reject section headers, category pages, nav links and year digests that
+  /// crawled URLs sometimes resolve to (e.g. "الأخبار تقنية",
+  /// "حصاد عام 2026", "Futures & Commodities").
+  bool _validateNonNewsEntry(NewsModel article) {
+    return !TinyLLMService.isNonNewsEntry(
+      title: article.title,
+      content: article.content,
+      summary: article.summary,
+    );
   }
 
   NewsModel _normalizeTextFields(NewsModel article) {

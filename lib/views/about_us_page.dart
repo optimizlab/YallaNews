@@ -733,32 +733,26 @@ class _AboutUsPageState extends State<AboutUsPage> {
                           context,
                           title: l10n.translate('terms'),
                           icon: Icons.article_outlined,
-                          sections: const [
+                          sections: [
                             _LegalSection(
-                              heading:
-                                  '1. إخلاء مسؤولية المطوّر التقني (INOOV)',
-                              body:
-                                  'شركة INOOV (Inoov Software Engineering) هي المطوّر التقني للأنظمة والبرمجيات فقط، ولا تتحمل أي مسؤولية قانونية أو مدنية أو أخلاقية عن أي محتوى إخباري أو مقالات أو وسائط أو تعليقات منشورة داخل التطبيق، حيث تعود كامل المسؤولية لمصادر الأخبار الأصلية والناشرين وأصحاب التعليقات.',
+                              heading: l10n.translate('legalHeading1'),
+                              body: l10n.translate('legalBody1'),
                             ),
                             _LegalSection(
-                              heading: '2. شروط الاستخدام والخدمة',
-                              body:
-                                  'باستخدامك لتطبيق يلا نيوز، فإنك توافق على الالتزام بكافة الشروط والأحكام الموضحة هنا.',
+                              heading: l10n.translate('legalHeading2'),
+                              body: l10n.translate('legalBody2'),
                             ),
                             _LegalSection(
-                              heading: '3. حقوق الملكية الفكرية للأخبار',
-                              body:
-                                  'جميع المقالات والمحتويات الإخبارية والصور المعروضة تعود ملكيتها الفكرية وحقوق النشر إلى مصادرها الأصلية، ويقوم التطبيق بتنسيقها وعرضها مع ذكر المصدر الأصلي.',
+                              heading: l10n.translate('legalHeading3'),
+                              body: l10n.translate('legalBody3'),
                             ),
                             _LegalSection(
-                              heading: '4. الاستخدام المقبول',
-                              body:
-                                  'يُسمح باستخدام هذا التطبيق للأغراض الشخصية والإعلامية غير التجارية. يُمنع منعاً باتاً استغلال التطبيق في أي أنشطة تنتهك القوانين أو حقوق الآخرين.',
+                              heading: l10n.translate('legalHeading4'),
+                              body: l10n.translate('legalBody4'),
                             ),
                             _LegalSection(
-                              heading: '5. التحديثات والتعديلات',
-                              body:
-                                  'يحتفظ فريق التطوير بالحق في تعديل هذه الشروط أو تحسين ميزات التطبيق في أي وقت لتحسين تجربة المستخدم.',
+                              heading: l10n.translate('legalHeading5'),
+                              body: l10n.translate('legalBody5'),
                             ),
                           ],
                         ),

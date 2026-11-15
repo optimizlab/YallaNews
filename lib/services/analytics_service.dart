@@ -239,7 +239,7 @@ class AnalyticsService {
       } catch (_) {}
 
       await ServerApiService.postJson('stats/event.php', {
-        'sessionId': ServerApiService.sessionId,
+        'sessionId': await ServerApiService.sessionId,
         'userId': userId,
         'deviceOs': _deviceOs(),
         'appVersion': '1.0.0',

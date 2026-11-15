@@ -467,7 +467,7 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
             ),
             const SizedBox(height: 16),
             Text(
-              l10n.translate('noArticles') ?? 'لا توجد أخبار في هذا القسم حالياً',
+              l10n.translate('noArticles'),
               style: GoogleFonts.outfit(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/news_source.dart';
@@ -42,10 +43,10 @@ class NewsDatabase {
     }
 
     try {
-      final db = await openDatabase(
-        dbPath,
-        version: 22, // v22: AI content tables, event clusters with source refs, user interests
-        onCreate: (Database db, int version) async {
+    final db = await openDatabase(
+      dbPath,
+      version: 23, // v23: read/comment/like counts for trending & carousel ranking
+      onCreate: (Database db, int version) async {
           await _createSchema(db);
           try {
             await _createFtsIndex(db);
@@ -308,6 +309,24 @@ class NewsDatabase {
             await db.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id)');
             await db.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_article ON bookmarks(article_url)');
           }
+          // v23: read/comment/like counts for trending & carousel ranking
+          if (oldVersion < 23) {
+            try {
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN read_count INTEGER NOT NULL DEFAULT 0',
+              );
+            } catch (_) {}
+            try {
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN comment_count INTEGER NOT NULL DEFAULT 0',
+              );
+            } catch (_) {}
+            try {
+              await db.execute(
+                'ALTER TABLE crawled_articles ADD COLUMN like_count INTEGER NOT NULL DEFAULT 0',
+              );
+            } catch (_) {}
+          }
         },
         onOpen: (Database db) async {
           // Older installations may already be at the current schema version
@@ -340,7 +359,7 @@ class NewsDatabase {
       }
       final db = await openDatabase(
         dbPath,
-        version: 22,
+        version: 23,
         onCreate: (Database db, int version) async {
           await _createSchema(db);
           await _createFtsIndex(db);
@@ -387,7 +406,10 @@ class NewsDatabase {
         language TEXT NOT NULL DEFAULT '',
         meta_tags TEXT NOT NULL DEFAULT '{}',
         source_count INTEGER NOT NULL DEFAULT 1,
-        sources TEXT NOT NULL DEFAULT ''
+        sources TEXT NOT NULL DEFAULT '',
+        read_count INTEGER NOT NULL DEFAULT 0,
+        comment_count INTEGER NOT NULL DEFAULT 0,
+        like_count INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -787,6 +809,55 @@ class NewsDatabase {
     return maps.map((map) => NewsSource.fromMap(map)).toList();
   }
 
+  Future<List<NewsSource>> getAllSourcesPaginated({
+    int page = 1,
+    int limit = 20,
+    bool syncApi = true,
+  }) async {
+    final db = await database;
+
+    if (syncApi) {
+      try {
+        final apiSources = await ServerApiService.getSources();
+        if (apiSources.isNotEmpty) {
+          final batch = db.batch();
+          for (final s in apiSources) {
+            batch.insert('sources', {
+              'country': s['country'] ?? 'Morocco',
+              'country_code': s['country_code'] ?? s['countryCode'] ?? 'MA',
+              'name': s['name'] ?? '',
+              'url': s['url'] ?? '',
+              'category': s['category'] ?? 'general_news',
+              'type': s['type'] ?? 'digital_news',
+              'language': s['language'] is List
+                  ? (s['language'] as List).join(',')
+                  : (s['language'] ?? 'ar').toString(),
+              'rank': s['rank'] ?? 0,
+            }, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+          await batch.commit(noResult: true);
+        }
+      } catch (_) {
+        // Fallback to local DB if API unavailable
+      }
+    }
+
+    final offset = (page - 1) * limit;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'sources',
+      limit: limit,
+      offset: offset,
+      orderBy: 'id DESC',
+    );
+    return maps.map((map) => NewsSource.fromMap(map)).toList();
+  }
+
+  Future<int> getSourcesCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as count FROM sources');
+    return int.tryParse(result.first['count']?.toString() ?? '0') ?? 0;
+  }
+
   Future<void> addSource(NewsSource source) async {
     final db = await database;
     final map = source.toMap();
@@ -852,6 +923,9 @@ class NewsDatabase {
         'meta_tags': jsonEncode(art.metaTags),
         'source_count': art.sourceCount,
         'sources': art.sources.join(','),
+        'read_count': art.readCount,
+        'comment_count': art.commentCount,
+        'like_count': art.likeCount,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
@@ -894,6 +968,9 @@ class NewsDatabase {
             .split(',')
             .where((s) => s.isNotEmpty)
             .toList(),
+        readCount: (map['read_count'] as int?) ?? 0,
+        commentCount: (map['comment_count'] as int?) ?? 0,
+        likeCount: (map['like_count'] as int?) ?? 0,
       );
     }).toList();
   }
@@ -1048,6 +1125,9 @@ class NewsDatabase {
             .split(',')
             .where((s) => s.isNotEmpty)
             .toList(),
+        readCount: (map['read_count'] as int?) ?? 0,
+        commentCount: (map['comment_count'] as int?) ?? 0,
+        likeCount: (map['like_count'] as int?) ?? 0,
       );
     }).toList();
   }
@@ -1088,8 +1168,74 @@ class NewsDatabase {
         logs: map['logs'] as String,
         author: map['author'] as String? ?? '',
         publishDate: map['publish_date'] as String? ?? '',
+        readCount: (map['read_count'] as int?) ?? 0,
+        commentCount: (map['comment_count'] as int?) ?? 0,
+        likeCount: (map['like_count'] as int?) ?? 0,
       );
     }).toList();
+  }
+
+  Future<List<NewsModel>> getArticlesBySourcePaginated(
+    String sourceUrl, {
+    int page = 1,
+    int limit = 20,
+    String? language,
+  }) async {
+    final db = await database;
+    final offset = (page - 1) * limit;
+    final List<Map<String, dynamic>> maps = await db.query(
+      'crawled_articles',
+      where: language != null && language.isNotEmpty
+          ? 'source_url = ? AND language = ?'
+          : 'source_url = ?',
+      whereArgs: language != null && language.isNotEmpty
+          ? [sourceUrl, language]
+          : [sourceUrl],
+      orderBy: 'crawled_at DESC, id DESC',
+      limit: limit,
+      offset: offset,
+    );
+    return maps.map((map) {
+      return NewsModel(
+        url: map['url'] as String,
+        urlHash: map['url_hash'] as String? ?? '',
+        title: map['title'] as String,
+        summary: map['summary'] as String,
+        content: map['content'] as String,
+        imageUrl: map['image_url'] as String,
+        category: map['category'] as String,
+        sentiment: (map['sentiment'] as num).toDouble(),
+        keywords: (map['keywords'] as String)
+            .split(',')
+            .where((k) => k.isNotEmpty)
+            .toList(),
+        logs: map['logs'] as String,
+        author: map['author'] as String? ?? '',
+        publishDate: map['publish_date'] as String? ?? '',
+        readCount: (map['read_count'] as int?) ?? 0,
+        commentCount: (map['comment_count'] as int?) ?? 0,
+        likeCount: (map['like_count'] as int?) ?? 0,
+      );
+    }).toList();
+  }
+
+  Future<int> getArticlesBySourceCount(
+    String sourceUrl, {
+    String? language,
+  }) async {
+    final db = await database;
+    if (language != null && language.isNotEmpty) {
+      final result = await db.rawQuery(
+        'SELECT COUNT(*) as count FROM crawled_articles WHERE source_url = ? AND language = ?',
+        [sourceUrl, language],
+      );
+      return int.tryParse(result.first['count']?.toString() ?? '0') ?? 0;
+    }
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM crawled_articles WHERE source_url = ?',
+      [sourceUrl],
+    );
+    return int.tryParse(result.first['count']?.toString() ?? '0') ?? 0;
   }
 
   Future<void> clearArticlesForSource(String sourceUrl) async {
@@ -1146,6 +1292,20 @@ class NewsDatabase {
   Future<void> clearAllArticles() async {
     final db = await database;
     await db.delete('crawled_articles');
+  }
+
+  Future<void> clearAllSavedNews() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUrls = prefs.getStringList('offline_saved_urls') ?? const <String>[];
+    if (savedUrls.isNotEmpty) {
+      final db = await database;
+      final batch = db.batch();
+      for (final url in savedUrls) {
+        batch.delete('crawled_articles', where: 'url = ?', whereArgs: [url]);
+      }
+      await batch.commit(noResult: true);
+    }
+    await prefs.setStringList('offline_saved_urls', const <String>[]);
   }
 
   /// Returns the timestamp of the most recent article crawled for this source.
@@ -1249,5 +1409,129 @@ class NewsDatabase {
       whereArgs: [cutoff],
     );
     return result;
+  }
+
+  /// Increment the read count for [url] locally (and return the new count).
+  Future<int> incrementReadCount(String url) async {
+    final db = await database;
+    await db.rawUpdate(
+      'UPDATE crawled_articles SET read_count = read_count + 1 WHERE url = ?',
+      [url],
+    );
+    final res = await db.query(
+      'crawled_articles',
+      columns: ['read_count'],
+      where: 'url = ?',
+      whereArgs: [url],
+      limit: 1,
+    );
+    return (res.isNotEmpty ? (res.first['read_count'] as int?) : 0) ?? 0;
+  }
+
+  /// Increment the like count for [url] locally (and return the new count).
+  Future<int> incrementLikeCount(String url) async {
+    final db = await database;
+    await db.rawUpdate(
+      'UPDATE crawled_articles SET like_count = like_count + 1 WHERE url = ?',
+      [url],
+    );
+    final res = await db.query(
+      'crawled_articles',
+      columns: ['like_count'],
+      where: 'url = ?',
+      whereArgs: [url],
+      limit: 1,
+    );
+    return (res.isNotEmpty ? (res.first['like_count'] as int?) : 0) ?? 0;
+  }
+
+  /// Increment the comment count for [url] locally (and return the new count).
+  Future<int> incrementCommentCount(String url) async {
+    final db = await database;
+    await db.rawUpdate(
+      'UPDATE crawled_articles SET comment_count = comment_count + 1 WHERE url = ?',
+      [url],
+    );
+    final res = await db.query(
+      'crawled_articles',
+      columns: ['comment_count'],
+      where: 'url = ?',
+      whereArgs: [url],
+      limit: 1,
+    );
+    return (res.isNotEmpty ? (res.first['comment_count'] as int?) : 0) ?? 0;
+  }
+
+  /// Top articles by read count, newest-first tiebreak.
+  Future<List<NewsModel>> getTopReadArticles({int limit = 10, String? language}) async {
+    final db = await database;
+    final maps = await db.query(
+      'crawled_articles',
+      where: language != null && language.isNotEmpty ? 'language = ?' : null,
+      whereArgs: language != null && language.isNotEmpty ? [language] : null,
+      orderBy: 'read_count DESC, crawled_at DESC, id DESC',
+      limit: limit,
+    );
+    return _mapsToNewsModels(maps);
+  }
+
+  /// Top articles by like count, newest-first tiebreak.
+  Future<List<NewsModel>> getTopLikedArticles({int limit = 10, String? language}) async {
+    final db = await database;
+    final maps = await db.query(
+      'crawled_articles',
+      where: language != null && language.isNotEmpty ? 'language = ?' : null,
+      whereArgs: language != null && language.isNotEmpty ? [language] : null,
+      orderBy: 'like_count DESC, crawled_at DESC, id DESC',
+      limit: limit,
+    );
+    return _mapsToNewsModels(maps);
+  }
+
+  /// Top articles by comment count, newest-first tiebreak.
+  Future<List<NewsModel>> getTopCommentedArticles({int limit = 10, String? language}) async {
+    final db = await database;
+    final maps = await db.query(
+      'crawled_articles',
+      where: language != null && language.isNotEmpty ? 'language = ?' : null,
+      whereArgs: language != null && language.isNotEmpty ? [language] : null,
+      orderBy: 'comment_count DESC, crawled_at DESC, id DESC',
+      limit: limit,
+    );
+    return _mapsToNewsModels(maps);
+  }
+
+  List<NewsModel> _mapsToNewsModels(List<Map<String, dynamic>> maps) {
+    return maps.map((map) {
+      return NewsModel(
+        url: map['url'] as String,
+        urlHash: map['url_hash'] as String? ?? '',
+        title: map['title'] as String,
+        summary: map['summary'] as String,
+        content: map['content'] as String,
+        imageUrl: map['image_url'] as String,
+        category: map['category'] as String,
+        sentiment: (map['sentiment'] as num).toDouble(),
+        keywords: (map['keywords'] as String)
+            .split(',')
+            .where((k) => k.isNotEmpty)
+            .toList(),
+        logs: map['logs'] as String,
+        author: map['author'] as String? ?? '',
+        publishDate: map['publish_date'] as String? ?? '',
+        language: map['language'] as String? ?? '',
+        metaTags: map['meta_tags'] != null
+            ? Map<String, dynamic>.from(jsonDecode(map['meta_tags'] as String))
+            : const {},
+        sourceCount: (map['source_count'] as int?) ?? 1,
+        sources: (map['sources'] as String? ?? '')
+            .split(',')
+            .where((s) => s.isNotEmpty)
+            .toList(),
+        readCount: (map['read_count'] as int?) ?? 0,
+        commentCount: (map['comment_count'] as int?) ?? 0,
+        likeCount: (map['like_count'] as int?) ?? 0,
+      );
+    }).toList();
   }
 }

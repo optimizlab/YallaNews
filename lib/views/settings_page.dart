@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../database/news_db.dart';
 import '../services/app_settings.dart';
 import '../services/tts_service.dart';
 import '../l10n/app_localizations.dart';
@@ -172,6 +173,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 12),
                 _buildTtsVoiceOption(),
+                const SizedBox(height: 24),
+                _buildClearSavedNewsOption(),
                 const SizedBox(height: 96),
               ],
             ),
@@ -201,19 +204,19 @@ class _SettingsPageState extends State<SettingsPage> {
 
     switch (languageCode) {
       case 'ar':
-        title = 'العربية';
+        title = l10n.translate('languageArabic');
         subtitle = l10n.translate('arabicLanguage');
         break;
       case 'en':
-        title = 'English';
+        title = l10n.translate('languageEnglish');
         subtitle = l10n.translate('secondaryLtr');
         break;
       case 'fr':
-        title = 'Français';
+        title = l10n.translate('languageFrench');
         subtitle = l10n.translate('french');
         break;
       case 'tr':
-        title = 'Türkçe';
+        title = l10n.translate('languageTurkish');
         subtitle = l10n.translate('turkish');
         break;
       default:
@@ -366,6 +369,66 @@ class _SettingsPageState extends State<SettingsPage> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _clearAllSavedNews() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.translate('clearSavedNews')),
+        content: Text(l10n.translate('clearSavedNewsConfirm')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.translate('cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.translate('confirm')),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await NewsDatabase.instance.clearAllSavedNews();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.translate('savedNewsCleared'))),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to clear saved news: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _buildClearSavedNewsOption() {
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _clearAllSavedNews,
+          icon: const Icon(Icons.delete_outline_rounded, size: 20),
+          label: Text(
+            l10n.translate('clearSavedNews'),
+            style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+          ),
+        ),
       ),
     );
   }

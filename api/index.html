@@ -788,6 +788,16 @@
       padding-right: 40px;
     }
 
+    /* ─── Pagination Bar ─── */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
     /* ─── Modals ─── */
     .modal-backdrop {
       position: fixed;
@@ -1594,20 +1604,20 @@
               <div class="filter-bar">
                 <div class="search-box">
                   <i class="fa-solid fa-magnifying-glass"></i>
-                  <input type="text" id="news-search" class="form-control" placeholder="بحث في العناوين أو المحتوى..." oninput="debounce(loadNews, 400)()">
+                  <input type="text" id="news-search" class="form-control" placeholder="بحث في العناوين أو المحتوى..." oninput="STATE.newsPage = 1; debounce(loadNews, 400)()">
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                  <select id="news-cat-filter" class="form-control" style="width: auto;" onchange="loadNews()">
+                  <select id="news-cat-filter" class="form-control" style="width: auto;" onchange="STATE.newsPage = 1; loadNews()">
                     <option value="">جميع التصنيفات</option>
                   </select>
-                  <select id="news-language-filter" class="form-control" style="width: auto;" onchange="populateCategorySelects(); loadNews()">
+                  <select id="news-language-filter" class="form-control" style="width: auto;" onchange="STATE.newsPage = 1; populateCategorySelects(); loadNews()">
                     <option value="">جميع اللغات</option>
                     <option value="ar">العربية</option>
                     <option value="en">English</option>
                     <option value="fr">Français</option>
                     <option value="tr">Türkçe</option>
                   </select>
-                  <select id="news-sort-filter" class="form-control" style="width: auto;" onchange="loadNews()">
+                  <select id="news-sort-filter" class="form-control" style="width: auto;" onchange="STATE.newsPage = 1; loadNews()">
                     <option value="published_at_desc">📅 الأحدث أولاً</option>
                     <option value="published_at_asc">📅 الأقدم أولاً</option>
                     <option value="views_desc">🔥 الأكثر قراءة ومشاهدة</option>
@@ -1619,6 +1629,12 @@
                     <i class="fa-solid fa-rotate"></i>
                   </button>
                 </div>
+              </div>
+
+              <div class="pagination-bar" id="news-pagination-top" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="changeNewsPage(-1)" id="news-prev-btn-top">‹ السابقة</button>
+                <span id="news-page-info-top" style="margin: 0 10px; color: var(--text-muted); font-size: 13px; font-weight: 600;">صفحة 1 من 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="changeNewsPage(1)" id="news-next-btn-top">التالي ›</button>
               </div>
 
               <div class="table-container">
@@ -1640,6 +1656,11 @@
                     <tr><td colspan="9" style="text-align: center; padding: 30px;">جارٍ تحميل الأخبار...</td></tr>
                   </tbody>
                 </table>
+              </div>
+              <div class="pagination-bar" id="news-pagination" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="changeNewsPage(-1)" id="news-prev-btn">‹ السابقة</button>
+                <span id="news-page-info" style="margin: 0 10px; color: var(--text-muted); font-size: 13px; font-weight: 600;">صفحة 1 من 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="changeNewsPage(1)" id="news-next-btn">التالي ›</button>
               </div>
             </div>
           </div>
@@ -1700,8 +1721,14 @@
               <div class="filter-bar">
                 <div class="search-box">
                   <i class="fa-solid fa-magnifying-glass"></i>
-                  <input type="text" id="comment-search" class="form-control" placeholder="بحث بنص التعليق أو اسم المعلق..." oninput="debounce(loadComments, 400)()">
+                  <input type="text" id="comment-search" class="form-control" placeholder="بحث بنص التعليق أو اسم المعلق..." oninput="STATE.commentsPage = 1; debounce(loadComments, 400)()">
                 </div>
+              </div>
+
+              <div class="pagination-bar" id="comments-pagination-top" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="changeCommentsPage(-1)" id="comments-prev-btn-top">‹ السابقة</button>
+                <span id="comments-page-info-top" style="margin: 0 10px; color: var(--text-muted); font-size: 13px; font-weight: 600;">صفحة 1 من 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="changeCommentsPage(1)" id="comments-next-btn-top">التالي ›</button>
               </div>
 
               <div class="table-container">
@@ -1720,6 +1747,11 @@
                   </tbody>
                 </table>
               </div>
+              <div class="pagination-bar" id="comments-pagination" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="changeCommentsPage(-1)" id="comments-prev-btn">‹ السابقة</button>
+                <span id="comments-page-info" style="margin: 0 10px; color: var(--text-muted); font-size: 13px; font-weight: 600;">صفحة 1 من 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="changeCommentsPage(1)" id="comments-next-btn">التالي ›</button>
+              </div>
             </div>
           </div>
         </section>
@@ -1737,8 +1769,14 @@
               <div class="filter-bar">
                 <div class="search-box">
                   <i class="fa-solid fa-magnifying-glass"></i>
-                  <input type="text" id="user-search" class="form-control" placeholder="بحث بالبريد أو الاسم..." oninput="debounce(loadUsers, 400)()">
+                  <input type="text" id="user-search" class="form-control" placeholder="بحث بالبريد أو الاسم..." oninput="STATE.usersPage = 1; debounce(loadUsers, 400)()">
                 </div>
+              </div>
+
+              <div class="pagination-bar" id="users-pagination-top" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="changeUsersPage(-1)" id="users-prev-btn-top">‹ السابقة</button>
+                <span id="users-page-info-top" style="margin: 0 10px; color: var(--text-muted); font-size: 13px; font-weight: 600;">صفحة 1 من 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="changeUsersPage(1)" id="users-next-btn-top">التالي ›</button>
               </div>
 
               <div class="table-container">
@@ -1756,6 +1794,11 @@
                     <tr><td colspan="5" style="text-align: center; padding: 30px;">جارٍ تحميل المستخدمين...</td></tr>
                   </tbody>
                 </table>
+              </div>
+              <div class="pagination-bar" id="users-pagination" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="changeUsersPage(-1)" id="users-prev-btn">‹ السابقة</button>
+                <span id="users-page-info" style="margin: 0 10px; color: var(--text-muted); font-size: 13px; font-weight: 600;">صفحة 1 من 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="changeUsersPage(1)" id="users-next-btn">التالي ›</button>
               </div>
             </div>
           </div>
@@ -1924,7 +1967,14 @@
       charts: {},
       livePulseData: [],
       livePulseLabels: [],
-      livePulseSeeded: false
+      livePulseSeeded: false,
+      // Pagination state
+      newsPage: 1,
+      newsTotalPages: 1,
+      commentsPage: 1,
+      commentsTotalPages: 1,
+      usersPage: 1,
+      usersTotalPages: 1
     };
 
     // Global helper: Never use Eastern Arabic numerals in dashboard statistics
@@ -3182,7 +3232,7 @@
       tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin"></i> جارٍ التحميل...</td></tr>';
 
       try {
-        const params = new URLSearchParams({ limit: 40, include_all: '1' });
+        const params = new URLSearchParams({ limit: 20, page: STATE.newsPage, include_all: '1' });
         if (search) params.append('search', search);
         if (cat) params.append('category', cat);
         if (language) params.append('language', language);
@@ -3204,12 +3254,18 @@
         if (!res.ok || data.success !== true) {
           throw new Error(data.error || `HTTP ${res.status}`);
         }
-        if (!Array.isArray(data.articles) || data.articles.length === 0) {
+        const articles = data.articles || [];
+        const pagination = data.pagination || {};
+        STATE.newsTotalPages = pagination.totalPages || 1;
+        STATE.newsPage = pagination.page || 1;
+
+        if (articles.length === 0) {
           tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 30px;">لا توجد أخبار مطابقة</td></tr>';
+          renderNewsPagination();
           return;
         }
 
-        tbody.innerHTML = data.articles.map(a => `
+        tbody.innerHTML = articles.map(a => `
           <tr>
             <td>
               <img src="${a.imageUrl || 'https://placehold.co/100x80/1e293b/fff?text=News'}" class="article-thumb" onerror="this.src='https://placehold.co/100x80/1e293b/fff?text=News'">
@@ -3247,9 +3303,43 @@
           </tr>
         `).join('');
 
+        renderNewsPagination();
+
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--danger); padding: 30px;">تعذر تحميل الأخبار: ${escapeHtml(err.message)}</td></tr>`;
       }
+    }
+
+    function changeNewsPage(delta) {
+      const next = STATE.newsPage + delta;
+      if (next < 1 || next > STATE.newsTotalPages) return;
+      STATE.newsPage = next;
+      loadNews();
+    }
+
+    function renderNewsPagination() {
+      const bar = document.getElementById('news-pagination');
+      const barTop = document.getElementById('news-pagination-top');
+      const info = document.getElementById('news-page-info');
+      const infoTop = document.getElementById('news-page-info-top');
+      const prev = document.getElementById('news-prev-btn');
+      const prevTop = document.getElementById('news-prev-btn-top');
+      const next = document.getElementById('news-next-btn');
+      const nextTop = document.getElementById('news-next-btn-top');
+      if (!bar && !barTop) return;
+      if (STATE.newsTotalPages <= 1) {
+        if (bar) bar.style.display = 'none';
+        if (barTop) barTop.style.display = 'none';
+        return;
+      }
+      if (bar) bar.style.display = 'flex';
+      if (barTop) barTop.style.display = 'flex';
+      if (info) info.innerText = `صفحة ${STATE.newsPage} من ${STATE.newsTotalPages}`;
+      if (infoTop) infoTop.innerText = `صفحة ${STATE.newsPage} من ${STATE.newsTotalPages}`;
+      if (prev) prev.disabled = STATE.newsPage <= 1;
+      if (prevTop) prevTop.disabled = STATE.newsPage <= 1;
+      if (next) next.disabled = STATE.newsPage >= STATE.newsTotalPages;
+      if (nextTop) nextTop.disabled = STATE.newsPage >= STATE.newsTotalPages;
     }
 
     function presetYallaNewsSource() {
@@ -3391,15 +3481,20 @@
       tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin"></i> جارٍ التحميل...</td></tr>';
 
       try {
-        const params = new URLSearchParams({ limit: 40 });
+        const params = new URLSearchParams({ limit: 20, page: STATE.commentsPage });
         if (search) params.append('search', search);
 
         const res = await fetch(`${API_BASE}/comments/list.php?${params.toString()}`, { credentials: 'include' });
         const data = await res.json();
         if (!data.success || !data.comments || data.comments.length === 0) {
           tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 30px;">لا توجد تعليقات بعد</td></tr>';
+          renderCommentsPagination();
           return;
         }
+
+        const pagination = data.pagination || {};
+        STATE.commentsTotalPages = pagination.totalPages || 1;
+        STATE.commentsPage = pagination.page || 1;
 
         tbody.innerHTML = data.comments.map(c => `
           <tr>
@@ -3416,9 +3511,44 @@
             </td>
           </tr>
         `).join('');
+
+        renderCommentsPagination();
+
       } catch (err) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger); padding: 30px;">فشل تحميل التعليقات</td></tr>';
       }
+    }
+
+    function changeCommentsPage(delta) {
+      const next = STATE.commentsPage + delta;
+      if (next < 1 || next > STATE.commentsTotalPages) return;
+      STATE.commentsPage = next;
+      loadComments();
+    }
+
+    function renderCommentsPagination() {
+      const bar = document.getElementById('comments-pagination');
+      const barTop = document.getElementById('comments-pagination-top');
+      const info = document.getElementById('comments-page-info');
+      const infoTop = document.getElementById('comments-page-info-top');
+      const prev = document.getElementById('comments-prev-btn');
+      const prevTop = document.getElementById('comments-prev-btn-top');
+      const next = document.getElementById('comments-next-btn');
+      const nextTop = document.getElementById('comments-next-btn-top');
+      if (!bar && !barTop) return;
+      if (STATE.commentsTotalPages <= 1) {
+        if (bar) bar.style.display = 'none';
+        if (barTop) barTop.style.display = 'none';
+        return;
+      }
+      if (bar) bar.style.display = 'flex';
+      if (barTop) barTop.style.display = 'flex';
+      if (info) info.innerText = `صفحة ${STATE.commentsPage} من ${STATE.commentsTotalPages}`;
+      if (infoTop) infoTop.innerText = `صفحة ${STATE.commentsPage} من ${STATE.commentsTotalPages}`;
+      if (prev) prev.disabled = STATE.commentsPage <= 1;
+      if (prevTop) prevTop.disabled = STATE.commentsPage <= 1;
+      if (next) next.disabled = STATE.commentsPage >= STATE.commentsTotalPages;
+      if (nextTop) nextTop.disabled = STATE.commentsPage >= STATE.commentsTotalPages;
     }
 
     async function deleteComment(id) {
@@ -3444,15 +3574,20 @@
       tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin"></i> جارٍ التحميل...</td></tr>';
 
       try {
-        const params = new URLSearchParams({ limit: 40 });
+        const params = new URLSearchParams({ limit: 20, page: STATE.usersPage });
         if (search) params.append('search', search);
 
         const res = await fetch(`${API_BASE}/users/list.php?${params.toString()}`, { credentials: 'include' });
         const data = await res.json();
         if (!data.success || !data.users || data.users.length === 0) {
           tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 30px;">لا يوجد مستخدمون مطابقة</td></tr>';
+          renderUsersPagination();
           return;
         }
+
+        const pagination = data.pagination || {};
+        STATE.usersTotalPages = pagination.totalPages || 1;
+        STATE.usersPage = pagination.page || 1;
 
         tbody.innerHTML = data.users.map(u => `
           <tr>
@@ -3478,9 +3613,44 @@
             </td>
           </tr>
         `).join('');
+
+        renderUsersPagination();
+
       } catch (err) {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--danger); padding: 30px;">فشل تحميل المستخدمين</td></tr>';
       }
+    }
+
+    function changeUsersPage(delta) {
+      const next = STATE.usersPage + delta;
+      if (next < 1 || next > STATE.usersTotalPages) return;
+      STATE.usersPage = next;
+      loadUsers();
+    }
+
+    function renderUsersPagination() {
+      const bar = document.getElementById('users-pagination');
+      const barTop = document.getElementById('users-pagination-top');
+      const info = document.getElementById('users-page-info');
+      const infoTop = document.getElementById('users-page-info-top');
+      const prev = document.getElementById('users-prev-btn');
+      const prevTop = document.getElementById('users-prev-btn-top');
+      const next = document.getElementById('users-next-btn');
+      const nextTop = document.getElementById('users-next-btn-top');
+      if (!bar && !barTop) return;
+      if (STATE.usersTotalPages <= 1) {
+        if (bar) bar.style.display = 'none';
+        if (barTop) barTop.style.display = 'none';
+        return;
+      }
+      if (bar) bar.style.display = 'flex';
+      if (barTop) barTop.style.display = 'flex';
+      if (info) info.innerText = `صفحة ${STATE.usersPage} من ${STATE.usersTotalPages}`;
+      if (infoTop) infoTop.innerText = `صفحة ${STATE.usersPage} من ${STATE.usersTotalPages}`;
+      if (prev) prev.disabled = STATE.usersPage <= 1;
+      if (prevTop) prevTop.disabled = STATE.usersPage <= 1;
+      if (next) next.disabled = STATE.usersPage >= STATE.usersTotalPages;
+      if (nextTop) nextTop.disabled = STATE.usersPage >= STATE.usersTotalPages;
     }
 
     async function deleteUser(id) {

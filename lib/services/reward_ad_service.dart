@@ -8,7 +8,7 @@ class RewardAdService {
   RewardAdService._internal();
   static final RewardAdService instance = RewardAdService._internal();
 
-  static const String _adUnitId = 'ca-app-pub-2951683509728611/3219485811';
+  static const String _adUnitId = 'ca-app-pub-2951683509728611/3533646704';
 
   static const String _prefsKeyLastAdTime = 'reward_ad_last_show_time';
   static const String _prefsKeyAdsShownToday = 'reward_ads_shown_today';
@@ -16,33 +16,51 @@ class RewardAdService {
   static const String _prefsKeyUserEngagementScore = 'reward_ad_engagement_score';
   static const String _prefsKeyTotalAdsShown = 'reward_ads_total_shown';
   static const String _prefsKeyTotalRewardsEarned = 'reward_ads_total_rewards';
+  static const String _prefsKeyArticlesReadCount = 'reward_ad_articles_read_count';
+  static const String _prefsKeyAppStartTime = 'reward_ad_app_start_time';
 
   static const int _minIntervalBetweenAdsMinutes = 5;
   static const int _maxAdsPerDay = 10;
-  static const int _minEngagementScoreForAd = 30;
+  static const int _minEngagementScoreForAd = 0;
   static const int _engagementBoostPerArticleRead = 10;
   static const int _engagementBoostPerAction = 5;
   static const int _engagementDecayPerHour = 2;
 
-  RewardedAd? _rewardedAd;
+  // ── Reward ad trigger thresholds ──────────────────────────────────────────
+  static const int _minArticlesReadBeforeRewardAd = 1;
+  static const int _minSecondsSpentBeforeRewardAd = 5;
+
+  RewardedInterstitialAd? _rewardedInterstitialAd;
   bool _isAdLoading = false;
   bool _isInitialized = false;
   int _engagementScore = 0;
   int _adsShownToday = 0;
   int _totalAdsShown = 0;
   int _totalRewardsEarned = 0;
+  int _articlesReadCount = 0;
+  int? _sessionStartTime;
 
   final StreamController<RewardAdEvent> _eventController =
       StreamController<RewardAdEvent>.broadcast();
 
   Stream<RewardAdEvent> get events => _eventController.stream;
 
-  bool get isAdReady => _rewardedAd != null;
+  bool get isAdReady => _rewardedInterstitialAd != null;
   bool get isLoading => _isAdLoading;
   int get engagementScore => _engagementScore;
   int get adsShownToday => _adsShownToday;
   int get totalAdsShown => _totalAdsShown;
   int get totalRewardsEarned => _totalRewardsEarned;
+  int get articlesReadCount => _articlesReadCount;
+
+  /// Returns true when enough articles have been read and enough time has
+  /// been spent in the app to warrant showing a reward ad.
+  bool get shouldShowRewardAdOnRead {
+    if (_articlesReadCount < _minArticlesReadBeforeRewardAd) return false;
+    if (_sessionStartTime == null) return false;
+    final elapsed = DateTime.now().millisecondsSinceEpoch - _sessionStartTime!;
+    return elapsed >= _minSecondsSpentBeforeRewardAd * 1000;
+  }
 
   Future<void> initialize() async {
     if (_isInitialized) return;
@@ -51,7 +69,33 @@ class RewardAdService {
     await _loadPersistedData();
     await _resetDailyCountersIfNeeded();
     _startEngagementDecayTimer();
+    _sessionStartTime ??= DateTime.now().millisecondsSinceEpoch;
     _preloadAd();
+  }
+
+  /// Call when the user finishes reading an article. Increments the read count
+  /// and shows a reward ad when thresholds are met.
+  ///
+  /// [context] is unused — [RewardedInterstitialAd.show] does not require a
+  /// BuildContext. It is accepted for API compatibility.
+  Future<void> recordArticleRead(BuildContext? context, {
+    required String placement,
+    VoidCallback? onRewardEarned,
+    VoidCallback? onAdDismissed,
+  }) async {
+    _articlesReadCount++;
+    trackUserEngagement(EngagementType.articleRead);
+    await _persistData();
+    debugPrint(
+      '[REWARD AD] Articles read: $_articlesReadCount, engagement=$_engagementScore, shouldShow=${shouldShowRewardAdOnRead}',
+    );
+    if (shouldShowRewardAdOnRead) {
+      await showAdIfAppropriate(
+        placement: placement,
+        onRewardEarned: onRewardEarned,
+        onAdDismissed: onAdDismissed,
+      );
+    }
   }
 
   Future<void> _loadPersistedData() async {
@@ -61,6 +105,7 @@ class RewardAdService {
       _adsShownToday = prefs.getInt(_prefsKeyAdsShownToday) ?? 0;
       _totalAdsShown = prefs.getInt(_prefsKeyTotalAdsShown) ?? 0;
       _totalRewardsEarned = prefs.getInt(_prefsKeyTotalRewardsEarned) ?? 0;
+      _articlesReadCount = prefs.getInt(_prefsKeyArticlesReadCount) ?? 0;
     } catch (_) {}
   }
 
@@ -71,6 +116,7 @@ class RewardAdService {
       await prefs.setInt(_prefsKeyAdsShownToday, _adsShownToday);
       await prefs.setInt(_prefsKeyTotalAdsShown, _totalAdsShown);
       await prefs.setInt(_prefsKeyTotalRewardsEarned, _totalRewardsEarned);
+      await prefs.setInt(_prefsKeyArticlesReadCount, _articlesReadCount);
     } catch (_) {}
   }
 
@@ -115,48 +161,67 @@ class RewardAdService {
     _maybePreloadAd();
   }
 
-  bool _shouldShowAdNow() {
-    if (_adsShownToday >= _maxAdsPerDay) return false;
-    if (_engagementScore < _minEngagementScoreForAd) return false;
+  Future<bool> _shouldShowAdNow() async {
+    debugPrint(
+      '[REWARD AD] _shouldShowAdNow: adsShownToday=$_adsShownToday (max=$_maxAdsPerDay), engagement=$_engagementScore (min=$_minEngagementScoreForAd)',
+    );
+    if (_adsShownToday >= _maxAdsPerDay) {
+      debugPrint('[REWARD AD] Blocked: daily limit reached');
+      return false;
+    }
+    if (_engagementScore < _minEngagementScoreForAd) {
+      debugPrint('[REWARD AD] Blocked: engagement too low');
+      return false;
+    }
 
     try {
-      final prefs = SharedPreferences.getInstance();
-      prefs.then((p) {
-        final lastTime = p.getInt(_prefsKeyLastAdTime) ?? 0;
-        final now = DateTime.now().millisecondsSinceEpoch;
-        final minutesSinceLastAd = (now - lastTime) / (1000 * 60);
-        if (minutesSinceLastAd < _minIntervalBetweenAdsMinutes) return false;
-      });
+      final prefs = await SharedPreferences.getInstance();
+      final lastTime = prefs.getInt(_prefsKeyLastAdTime) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final minutesSinceLastAd = (now - lastTime) / (1000 * 60);
+      debugPrint(
+        '[REWARD AD] Last ad time: $lastTime, minutes since: $minutesSinceLastAd',
+      );
+      if (minutesSinceLastAd < _minIntervalBetweenAdsMinutes) {
+        debugPrint('[REWARD AD] Blocked: interval not elapsed');
+        return false;
+      }
     } catch (_) {}
 
+    debugPrint('[REWARD AD] All criteria met');
     return true;
   }
 
   void _maybePreloadAd() {
     if (!_isInitialized) return;
-    if (_shouldShowAdNow() && !_isAdLoading && _rewardedAd == null) {
+    if (!_isAdLoading && _rewardedInterstitialAd == null) {
       _preloadAd();
     }
   }
 
   Future<void> _preloadAd() async {
-    if (_isAdLoading || _rewardedAd != null) return;
+    if (_isAdLoading || _rewardedInterstitialAd != null) return;
     _isAdLoading = true;
+
+    debugPrint('[REWARD AD] Preloading reward interstitial ad: $_adUnitId');
 
     try {
       final adUnitId = _adUnitId;
 
-      await RewardedAd.load(
+      await RewardedInterstitialAd.load(
         adUnitId: adUnitId,
         request: const AdRequest(),
-        rewardedAdLoadCallback: RewardedAdLoadCallback(
-          onAdLoaded: (RewardedAd ad) {
-            _rewardedAd = ad;
+        rewardedInterstitialAdLoadCallback:
+            RewardedInterstitialAdLoadCallback(
+          onAdLoaded: (RewardedInterstitialAd ad) {
+            _rewardedInterstitialAd = ad;
             _isAdLoading = false;
+            debugPrint('[REWARD AD] Reward interstitial ad loaded successfully');
             _eventController.add(const RewardAdEvent.loaded());
           },
           onAdFailedToLoad: (LoadAdError error) {
             _isAdLoading = false;
+            debugPrint('[REWARD AD] Reward interstitial ad failed to load: $error');
             _eventController.add(RewardAdEvent.failedToLoad(error.toString()));
             Future.delayed(const Duration(minutes: 2), _preloadAd);
           },
@@ -168,20 +233,23 @@ class RewardAdService {
   }
 
   Future<bool> showAdIfAppropriate({
-    required BuildContext context,
+    BuildContext? context,
     required String placement,
     VoidCallback? onRewardEarned,
     VoidCallback? onAdDismissed,
   }) async {
-    if (!_shouldShowAdNow()) {
+    debugPrint(
+      '[REWARD AD] showAdIfAppropriate: placement=$placement, adsShownToday=$_adsShownToday, engagement=$_engagementScore, rewardedAd==null=${_rewardedInterstitialAd == null}',
+    );
+    if (!await _shouldShowAdNow()) {
       _eventController.add(RewardAdEvent.notShown('Criteria not met'));
       return false;
     }
 
-    if (_rewardedAd == null) {
+    if (_rewardedInterstitialAd == null) {
       await _preloadAd();
       await Future.delayed(const Duration(seconds: 3));
-      if (_rewardedAd == null) {
+      if (_rewardedInterstitialAd == null) {
         _eventController.add(RewardAdEvent.notShown('Ad not ready'));
         return false;
       }
@@ -189,13 +257,14 @@ class RewardAdService {
 
     final completer = Completer<bool>();
 
-    _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+    _rewardedInterstitialAd!.fullScreenContentCallback =
+        FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
         _eventController.add(RewardAdEvent.shown(placement));
       },
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
-        _rewardedAd = null;
+        _rewardedInterstitialAd = null;
         _recordAdShown();
         _preloadAd();
         onAdDismissed?.call();
@@ -203,22 +272,26 @@ class RewardAdService {
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         ad.dispose();
-        _rewardedAd = null;
+        _rewardedInterstitialAd = null;
         _eventController.add(RewardAdEvent.failedToShow(error.toString()));
         _preloadAd();
         completer.complete(false);
       },
     );
 
-    _rewardedAd!.show(
+    _rewardedInterstitialAd!.show(
       onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
         _totalRewardsEarned++;
         _persistData();
-        _eventController.add(RewardAdEvent.rewardEarned(placement, reward.amount.toInt()));
+        _eventController.add(
+          RewardAdEvent.rewardEarned(placement, reward.amount.toInt()),
+        );
+        debugPrint('[REWARD AD] Reward earned: ${reward.amount}');
         onRewardEarned?.call();
       },
     );
 
+    debugPrint('[REWARD AD] Interstitial ad shown: $placement');
     return completer.future;
   }
 
@@ -239,52 +312,55 @@ class RewardAdService {
   }
 
   Future<void> forceShowAd({
-    required BuildContext context,
+    BuildContext? context,
     required String placement,
     VoidCallback? onRewardEarned,
     VoidCallback? onAdDismissed,
   }) async {
-    if (_rewardedAd == null) {
+    if (_rewardedInterstitialAd == null) {
       await _preloadAd();
       await Future.delayed(const Duration(seconds: 5));
     }
 
-    if (_rewardedAd == null) {
+    if (_rewardedInterstitialAd == null) {
       _eventController.add(RewardAdEvent.notShown('Ad not loaded'));
       return;
     }
 
-    _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+    _rewardedInterstitialAd!.fullScreenContentCallback =
+        FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
         _eventController.add(RewardAdEvent.shown(placement));
       },
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
-        _rewardedAd = null;
+        _rewardedInterstitialAd = null;
         _recordAdShown();
         _preloadAd();
         onAdDismissed?.call();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         ad.dispose();
-        _rewardedAd = null;
+        _rewardedInterstitialAd = null;
         _eventController.add(RewardAdEvent.failedToShow(error.toString()));
         _preloadAd();
       },
     );
 
-    _rewardedAd!.show(
+    _rewardedInterstitialAd!.show(
       onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
         _totalRewardsEarned++;
         _persistData();
-        _eventController.add(RewardAdEvent.rewardEarned(placement, reward.amount.toInt()));
+        _eventController.add(
+          RewardAdEvent.rewardEarned(placement, reward.amount.toInt()),
+        );
         onRewardEarned?.call();
       },
     );
   }
 
   void dispose() {
-    _rewardedAd?.dispose();
+    _rewardedInterstitialAd?.dispose();
     _eventController.close();
     _isInitialized = false;
   }

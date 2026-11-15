@@ -46,17 +46,17 @@ try {
                                   ORDER BY count DESC LIMIT 10");
         $countriesStats = $countryStmt->fetchAll();
 
-        // New installs today (unique devices flagged as first-run)
-        $newInstallsStmt = $db->query("SELECT COUNT(*) as c FROM yn_active_sessions WHERE is_new_install = 1");
+        // New installs today (installs created today, one row per unique install)
+        $newInstallsStmt = $db->query("SELECT COUNT(*) as c FROM yn_active_sessions WHERE DATE(created_at) = CURDATE()");
         $newInstallsToday = intval($newInstallsStmt->fetch()['c'] ?? 0);
 
-        // Daily activity trend (past 7 days)
-        $dailyStmt = $db->query("SELECT DATE(last_ping) as date, 
+        // Daily activity trend (past 7 days) — installs & active sessions per day
+        $dailyStmt = $db->query("SELECT DATE(created_at) as date, 
                                         COUNT(DISTINCT session_id) as active_count,
-                                        SUM(CASE WHEN is_new_install = 1 THEN 1 ELSE 0 END) as installs_count
+                                        COUNT(*) as installs_count
                                  FROM yn_active_sessions 
-                                 WHERE last_ping >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-                                 GROUP BY DATE(last_ping)
+                                 WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                                 GROUP BY DATE(created_at)
                                  ORDER BY date ASC");
         $dailyStats = $dailyStmt->fetchAll();
 

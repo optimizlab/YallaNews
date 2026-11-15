@@ -161,6 +161,12 @@ class TinyLLMService {
     required String content,
     required String summary,
   }) async {
+    // Never run the LLM on non-news entries (section headers, category pages,
+    // year digests, nav links). Skip native inference entirely.
+    if (isNonNewsEntry(title: title, content: content, summary: summary)) {
+      return NewsLLMResult.fallback('non-news entry skipped');
+    }
+
     final currentModel = _model;
     if (currentModel == null) {
       throw StateError('Model not loaded. ${_error ?? 'Download pending.'}');
@@ -359,12 +365,88 @@ DAILY BRIEFING:''';
     return words.take(20).toList();
   }
 
-  /// Validate if an article is valid news (not spam, navigation, cookie disclaimer, or ad)
+  /// Section headers, category labels, nav links and digests that must never
+  /// be treated as news articles.
+  static final Set<String> _nonNewsTitles = {
+    // Arabic section / category labels
+    'الأخبار التقنية', 'الأخبار الاقتصادية', 'الأخبار الرياضية',
+    'الأخبار السياسية', 'الأخبار العامة', 'الأخبار المحلية',
+    'الأخبار العالمية', 'الأخبار', 'أخبار', 'تقنية', 'تكنولوجيا',
+    'تكنلوجيا', 'اقتصاد', 'اقتصادية', 'أعمال', 'سياسة', 'رياضة', 'فن',
+    'ثقافة', 'منوعات', 'عالم', 'دولي', 'محليات', 'محلي', 'صحة', 'علوم',
+    'سفر', 'سياحة', 'ألعاب', 'تعليم', 'حوادث', 'ميديا', 'فيديو', 'صور',
+    'بث مباشر', 'مباشر', 'عاجل', 'حصري', 'رأي', 'مقالات', 'تحقيقات',
+    'main', 'home', 'homepage', 'index',
+    // English section / category labels
+    'news', 'markets', 'business', 'tech', 'technology', 'world', 'sports',
+    'health', 'science', 'culture', 'entertainment', 'features', 'opinion',
+    'analysis', 'review', 'reviews', 'lifestyle', 'travel', 'fashion', 'food',
+    'cars', 'automobile', 'property', 'real estate', 'futures', 'commodities',
+    'stocks', 'shares', 'finance', 'economy',
+  };
+
+  /// Round-up / digest / best-of signals that describe a period rather than a
+  /// single news event and must not be treated as news.
+  static final List<String> _nonNewsRoundupSignals = <String>[
+    'حصاد عام', 'حصاد السنة', 'مراجعة عام', 'ملخص عام', 'أهم الأخبار',
+    'أبرز الأحداث', 'year in review', 'year roundup', 'roundup', 'best of',
+    'top stories', 'award winners', 'awards',
+  ];
+
+  /// True when [title] / [content] / [summary] describe a section header,
+  /// category page, navigation link, or digest rather than a news article.
+  static bool isNonNewsEntry({
+    required String title,
+    required String content,
+    String summary = '',
+  }) {
+    final t = title.trim();
+    if (t.isEmpty) return true;
+
+    final lower = t.toLowerCase();
+
+    // 1. Exact section-header match (e.g. "الأخبار التقنية").
+    if (_nonNewsTitles.contains(lower)) return true;
+
+    // 2. Pure category label: short title where every word is a known
+    //    section word (e.g. "Futures & Commodities").
+    final words =
+        t.split(RegExp(r'[\s&]+')).where((w) => w.isNotEmpty).toList();
+    if (words.length >= 1 && words.length <= 4) {
+      final allSection = words.every((w) {
+        final wl =
+            w.toLowerCase().replaceAll(RegExp(r'[^\w\u0600-\u06FF]'), '');
+        return wl.isNotEmpty && _nonNewsTitles.contains(wl);
+      });
+      if (allSection) return true;
+    }
+
+    // 3. Year round-up / digest / best-of (not a single news event).
+    if (_nonNewsRoundupSignals.any((s) => lower.contains(s))) return true;
+
+    // 4. Short title with no real body -> category / nav page.
+    final body = '${summary.trim()} ${content.trim()}';
+    if (t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length <= 4 &&
+        body.trim().length < 40) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /// Validate if an article is valid news (not spam, navigation, cookie
+  /// disclaimer, ad, section header, category page, or year digest).
   Future<bool> validateArticle({
     required String title,
     required String content,
+    String summary = '',
   }) async {
-    return true; // Fallback to true since LLM is removed
+    // Offline deterministic check so non-news entries are rejected even when
+    // the optional native model is not installed.
+    if (isNonNewsEntry(title: title, content: content, summary: summary)) {
+      return false;
+    }
+    return true;
   }
 
   // ── Cache to avoid repeating analysis ──────────────────────────────────────
@@ -378,6 +460,12 @@ DAILY BRIEFING:''';
   ) async {
     final key = url.isEmpty || url.contains('simulated') ? title : url;
     if (_analysisCache.containsKey(key)) return _analysisCache[key]!;
+
+    // Never run the LLM on non-news entries; do not cache them either.
+    if (isNonNewsEntry(title: title, content: content, summary: summary)) {
+      return NewsLLMResult.fallback('non-news entry skipped');
+    }
+
     final result = await analyzeArticle(title: title, content: content, summary: summary);
     _analysisCache[key] = result;
     return result;

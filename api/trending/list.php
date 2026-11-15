@@ -5,17 +5,20 @@ require_once __DIR__ . '/../db.php';
 cache_headers(1800);
 
 $language = sanitize_string($_GET['language'] ?? 'ar', 8);
-$limit = min(50, max(1, intval($_GET['limit'] ?? 10)));
+list($page, $limit, $offset) = get_pagination_params();
 
 try {
     $db = Database::getInstance();
+
+    $countStmt = $db->query("SELECT COUNT(*) as total FROM yn_trending_searches WHERE language = ?", [$language]);
+    $total = intval($countStmt->fetch()['total'] ?? 0);
 
     $sql = "SELECT id, query, count, language, created_at 
             FROM yn_trending_searches 
             WHERE language = ? 
             ORDER BY count DESC 
-            LIMIT ?";
-    $stmt = $db->query($sql, [$language, $limit]);
+            LIMIT ? OFFSET ?";
+    $stmt = $db->query($sql, [$language, $limit, $offset]);
     $trending = $stmt->fetchAll();
 
     $formatted = array_map(function($t) {
@@ -30,7 +33,13 @@ try {
 
     json_response([
         'success' => true,
-        'trending' => $formatted
+        'trending' => $formatted,
+        'pagination' => [
+            'page' => $page,
+            'limit' => $limit,
+            'total' => $total,
+            'totalPages' => (int) ceil($total / $limit)
+        ]
     ]);
 
 } catch (Exception $e) {

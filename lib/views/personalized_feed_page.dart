@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../database/news_db.dart';
 import '../services/category_service.dart';
+import '../services/server_api_service.dart';
 import '../services/background_crawler_service.dart';
 import '../services/app_settings.dart';
 import '../widgets/cached_news_image.dart';
@@ -34,6 +35,12 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
   String _sortBy = 'relevance';
   Map<String, double> _userInterests = {};
   Map<String, int> _interactionCounts = {};
+  final ScrollController _scrollController = ScrollController();
+  int _offset = 0;
+  int _limit = 20;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String? _loadMoreError;
   Timer? _refreshTimer;
   StreamSubscription<NewsModel>? _crawlerSubscription;
 
@@ -44,6 +51,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     _loadUserInterests();
     _loadFeed();
     _listenToCrawler();
+    _scrollController.addListener(_onScroll);
     _refreshTimer = Timer.periodic(const Duration(minutes: 10), (_) => _loadFeed());
     debugPrint('[PERSONALIZED FEED] Page initialized');
   }
@@ -53,6 +61,8 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     _crawlerSubscription?.cancel();
     _tabController.dispose();
     _refreshTimer?.cancel();
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -85,28 +95,21 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
   }
 
   Future<void> _loadFeed() async {
-      debugPrint('[PERSONALIZED FEED] _loadFeed started');
+    debugPrint('[PERSONALIZED FEED] _loadFeed started');
+    _offset = 0;
+    _hasMore = true;
     setState(() => _isLoading = true);
 
     try {
-      final db = await NewsDatabase.instance.database;
-      final activeLanguage = AppSettings.instance.locale?.languageCode ?? '';
+      final locale = AppSettings.instance.locale;
+      final language = locale?.languageCode;
+      final fetched = await ServerApiService.getNews(
+        limit: _limit,
+        page: 1,
+        language: language,
+      ).timeout(const Duration(seconds: 20));
 
-      final allArticles = (await db.query(
-        'crawled_articles',
-        where: activeLanguage.isNotEmpty ? 'language = ?' : null,
-        whereArgs: activeLanguage.isNotEmpty ? [activeLanguage] : null,
-        orderBy: 'crawled_at DESC',
-        limit: 200,
-      )).cast<Map<String, dynamic>>();
-      debugPrint('[PERSONALIZED FEED] Retrieved ${allArticles.length} articles from DB');
-
-      final articlesList = allArticles.map((row) => NewsModel.fromJson(
-        Map<String, dynamic>.from(row),
-        row['url'] as String,
-      )).toList();
-
-      final ranked = _rankArticles(articlesList);
+      final ranked = _rankArticles(fetched);
 
       switch (_sortBy) {
         case 'recent':
@@ -125,8 +128,9 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
 
       if (mounted) {
         setState(() {
-          _allArticles = articlesList;
+          _allArticles = fetched;
           _feed = ranked;
+          _hasMore = fetched.length >= _limit;
           _isLoading = false;
         });
         debugPrint('[PERSONALIZED FEED] Loaded ${_feed.length} articles');
@@ -135,6 +139,126 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
       debugPrint('[PERSONALIZED FEED] Error: $e');
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _onScroll() {
+    if (!_isLoadingMore &&
+        _hasMore &&
+        !_isLoading &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200) {
+      unawaited(_loadMoreFeed());
+    }
+  }
+
+  Future<void> _loadMoreFeed() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final locale = AppSettings.instance.locale;
+      final language = locale?.languageCode;
+      final nextPage = (_offset ~/ _limit) + 1;
+      final fetched = await ServerApiService.getNews(
+        limit: _limit,
+        page: nextPage,
+        language: language,
+      ).timeout(const Duration(seconds: 20));
+
+      if (mounted) {
+        setState(() {
+          _offset += _limit;
+          final existingUrls = _feed.map((a) => a.url).toSet();
+          final newArticles = <NewsModel>[];
+          for (final a in fetched) {
+            if (!existingUrls.contains(a.url)) {
+              newArticles.add(a);
+              existingUrls.add(a.url);
+            }
+          }
+          _feed.addAll(_rankArticles(newArticles));
+          _hasMore = fetched.length >= _limit;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[PERSONALIZED FEED] Load more error: $e');
+      if (mounted) setState(() {
+        _isLoadingMore = false;
+        _loadMoreError = e.toString();
+      });
+    }
+  }
+
+  Widget _buildLoadMoreIndicator(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    if (_loadMoreError != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.error_outline_rounded,
+                size: 40,
+                color: theme.colorScheme.error,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                l10n.translate('loadMoreFailed'),
+                style: GoogleFonts.outfit(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.error,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: () {
+                  setState(() => _loadMoreError = null);
+                  unawaited(_loadMoreFeed());
+                },
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(
+                  l10n.translate('retry'),
+                  style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.errorContainer,
+                  foregroundColor: theme.colorScheme.onErrorContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              l10n.translate('loadingMore'),
+              style: GoogleFonts.outfit(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   double _calculateRelevance(NewsModel article) {
@@ -284,9 +408,13 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     return RefreshIndicator(
       onRefresh: _loadFeed,
       child: ListView.builder(
+        controller: _scrollController,
         padding: const EdgeInsets.all(16),
-        itemCount: _feed.length,
+        itemCount: _feed.length + (_isLoadingMore ? 1 : 0),
         itemBuilder: (context, index) {
+          if (index == _feed.length) {
+            return _buildLoadMoreIndicator(context);
+          }
           final article = _feed[index];
           final relevance = (article.structuredData['relevance_score'] as num?)?.toDouble() ?? 0.5;
           return _buildFeedCard(context, article, index, relevance);

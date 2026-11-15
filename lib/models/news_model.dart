@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:yallanews/services/ai_language_ext.dart';
+import 'package:yallanews/services/msn_image_fetcher.dart';
 
 class NewsModel {
   final String url;
@@ -34,6 +35,15 @@ class NewsModel {
   final List<String> sources;
   final bool
   isFresh; // true if publish date is within last 3 months (News & Magazines policy)
+
+  /// Number of times this article has been read (tracked locally + synced to server).
+  final int readCount;
+
+  /// Number of comments on this article.
+  final int commentCount;
+
+  /// Number of likes on this article.
+  final int likeCount;
 
   /// Original publisher name (source_name). Never fabricated: empty when unknown.
   final String sourceName;
@@ -98,6 +108,9 @@ class NewsModel {
     this.sourceCount = 1,
     this.sources = const [],
     this.isFresh = true,
+    this.readCount = 0,
+    this.commentCount = 0,
+    this.likeCount = 0,
     this.sourceName = '',
     this.sourceUrl = '',
     this.authorName = '',
@@ -431,6 +444,43 @@ class NewsModel {
     return resolved.toString();
   }
 
+  /// Ensures the article always has a usable main image.
+  /// If [article.imageUrl] is empty, fetches one from MSN/Bing image search
+  /// using the article title + category. Falls back to the category placeholder
+  /// when no search result is available. Never returns an empty URL.
+  static Future<NewsModel> ensureImage(NewsModel article) async {
+    if (article.imageUrl.isNotEmpty &&
+        !article.imageUrl.contains('placehold.co') &&
+        !article.imageUrl.contains('placeholder')) {
+      return article;
+    }
+
+    final query = '${article.title.trim()} ${article.category.trim()}'.trim();
+    String? found;
+    if (query.isNotEmpty) {
+      try {
+        found = await MsnImageFetcher.fetchRandomImage(query)
+            .timeout(const Duration(seconds: 10));
+      } catch (_) {}
+    }
+
+    final imageUrl = (found != null && found.isNotEmpty)
+        ? found
+        : getFallbackImage(article.category);
+
+    return article.copyWith(imageUrl: imageUrl);
+  }
+
+  /// Ensures every article in [articles] has an image. Articles that already
+  /// have one are left untouched. Returns a new list with the same ordering.
+  static Future<List<NewsModel>> ensureImages(List<NewsModel> articles) async {
+    final result = <NewsModel>[];
+    for (final a in articles) {
+      result.add(await ensureImage(a));
+    }
+    return result;
+  }
+
   factory NewsModel.fromJson(Map<String, dynamic> json, String url) {
     final cat = json['category'] ?? 'General';
     final rawHash = json['url_hash'] as String?;
@@ -489,6 +539,9 @@ class NewsModel {
       sourceCount: (json['source_count'] as num?)?.toInt() ?? 1,
       sources: _parseStringList(json['sources']),
       isFresh: computeFreshness(pubDate),
+      readCount: (json['read_count'] as num?)?.toInt() ?? 0,
+      commentCount: (json['comment_count'] as num?)?.toInt() ?? 0,
+      likeCount: (json['like_count'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -552,6 +605,9 @@ class NewsModel {
       'source_count': sourceCount,
       'sources': sources,
       'is_fresh': isFresh,
+      'read_count': readCount,
+      'comment_count': commentCount,
+      'like_count': likeCount,
       'source_name': sourceName,
       'source_url': sourceUrl,
       'author_name': authorName,
@@ -596,6 +652,9 @@ class NewsModel {
     List<String>? sources,
     String? intelligenceJson,
     bool? isFresh,
+    int? readCount,
+    int? commentCount,
+    int? likeCount,
     String? sourceName,
     String? sourceUrl,
     String? authorName,
@@ -646,6 +705,9 @@ class NewsModel {
       imageSourceUrl: imageSourceUrl ?? this.imageSourceUrl,
       intelligenceJson: intelligenceJson ?? this.intelligenceJson,
       isFresh: isFresh ?? this.isFresh,
+      readCount: readCount ?? this.readCount,
+      commentCount: commentCount ?? this.commentCount,
+      likeCount: likeCount ?? this.likeCount,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       aiSummary: aiSummary ?? this.aiSummary,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
@@ -14,25 +15,85 @@ class ManageSourcesPage extends StatefulWidget {
 class _ManageSourcesPageState extends State<ManageSourcesPage> {
   List<NewsSource> _sources = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  int _currentPage = 1;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _loadSources();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_isLoadingMore &&
+        _hasMore &&
+        _scrollController.hasClients &&
+        _scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200) {
+      unawaited(_loadMoreSources());
+    }
   }
 
   Future<void> _loadSources() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _currentPage = 1;
+      _hasMore = true;
+      _sources = [];
+    });
     try {
-      final sources = await NewsDatabase.instance.getAllSources();
+      final sources = await NewsDatabase.instance.getAllSourcesPaginated(
+        page: 1,
+        limit: 20,
+      );
+      final total = await NewsDatabase.instance.getSourcesCount();
       if (mounted) {
         setState(() {
           _sources = sources;
           _isLoading = false;
+          _hasMore = sources.length < total;
         });
       }
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadMoreSources() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final nextPage = _currentPage + 1;
+      final more = await NewsDatabase.instance.getAllSourcesPaginated(
+        page: nextPage,
+        limit: 20,
+      );
+      if (!mounted) return;
+      if (more.isEmpty) {
+        _hasMore = false;
+      } else {
+        _currentPage = nextPage;
+        final total = await NewsDatabase.instance.getSourcesCount();
+        setState(() {
+          _sources.addAll(more);
+          _hasMore = _sources.length < total;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingMore = false);
+      rethrow;
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
@@ -142,9 +203,20 @@ class _ManageSourcesPageState extends State<ManageSourcesPage> {
           : _sources.isEmpty 
               ? Center(child: Text(l10n.translate('noSources'), style: GoogleFonts.outfit()))
               : ListView.builder(
+                  controller: _scrollController,
                   padding: const EdgeInsets.all(12),
-                  itemCount: _sources.length,
+                  itemCount: _sources.length + (_hasMore ? 1 : 0),
                   itemBuilder: (context, index) {
+                    if (index == _sources.length) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: _isLoadingMore
+                              ? const CircularProgressIndicator()
+                              : const SizedBox.shrink(),
+                        ),
+                      );
+                    }
                     final src = _sources[index];
                     return Card(
                       margin: const EdgeInsets.only(bottom: 12),

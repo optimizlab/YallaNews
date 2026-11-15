@@ -14,15 +14,15 @@ class NativeAdService {
   static final NativeAdService instance = NativeAdService._internal();
 
   // ── Ad unit ids ─────────────────────────────────────────────────────────
-  static const String _adUnitId = 'ca-app-pub-2951683509728611/1778840232';
+  static const String _adUnitId = 'ca-app-pub-2951683509728611/2336290113';
 
   // ── Native factory id registered in MainActivity.kt ─────────────────────
   static const String _factoryId = 'yallanewsNativeAd';
 
   // ── Frequency caps ──────────────────────────────────────────────────────
-  static const int _minSecondsBetweenAds = 120;
-  static const int _maxAdsPerDay = 15;
-  static const int _minEngagementScore = 40;
+  static const int _minSecondsBetweenAds = 5;
+  static const int _maxAdsPerDay = 50;
+  static const int _minEngagementScore = 0;
 
   // ── Persisted stats ─────────────────────────────────────────────────────
   static const String _prefsKeyCount = 'native_ads_count';
@@ -114,10 +114,20 @@ class NativeAdService {
   ///
   /// The caller MUST dispose the returned ad after it leaves the viewport.
   Future<NativeAd?> takeAd() async {
-    if (!canServeMore()) return null;
-    if (!await _isSpacingOk()) return null;
+    debugPrint(
+      '[NATIVE AD SERVICE] takeAd() called. pool=${_pool.length}, shownToday=$_shownToday, engagement=$_engagementScore',
+    );
+    if (!canServeMore()) {
+      debugPrint('[NATIVE AD SERVICE] takeAd() blocked: canServeMore()=false');
+      return null;
+    }
+    if (!await _isSpacingOk()) {
+      debugPrint('[NATIVE AD SERVICE] takeAd() blocked: spacing not ok');
+      return null;
+    }
 
     if (_pool.isEmpty) {
+      debugPrint('[NATIVE AD SERVICE] Pool empty, triggering load');
       _loadOne();
       return null;
     }
@@ -130,16 +140,20 @@ class NativeAdService {
       await prefs.setInt(_prefsKeyLast, DateTime.now().millisecondsSinceEpoch);
     } catch (_) {}
 
-    // Small reward for watching a native ad impression session — this keeps
-    // the shared engagement score in sync with revenue-generating sessions.
     trackEngagement(2);
 
     ensurePreloaded();
+    debugPrint('[NATIVE AD SERVICE] takeAd() returned ad. pool now=${_pool.length}');
     return ad;
   }
 
   void _loadOne() {
-    if (_disposed || !canServeMore()) return;
+    if (_disposed || !canServeMore()) {
+      debugPrint('[NATIVE AD SERVICE] _loadOne() skipped: disposed=$_disposed, canServeMore()=${canServeMore()}');
+      return;
+    }
+
+    debugPrint('[NATIVE AD SERVICE] Loading native ad...');
 
     final adUnitId = _adUnitId;
 
@@ -155,12 +169,16 @@ class NativeAdService {
           }
           if (ad is NativeAd) {
             _pool.add(ad);
+            debugPrint(
+              '[NATIVE AD SERVICE] Ad loaded. pool size=${_pool.length}',
+            );
             _fillRateController.add(_pool.length);
           } else {
             ad.dispose();
           }
         },
         onAdFailedToLoad: (ad, error) {
+          debugPrint('[NATIVE AD SERVICE] Ad failed to load: $error');
           ad.dispose();
           _fillRateController.add(_pool.length);
           // Refill failed: retry after a cooldown so the feed keeps an ad ready.

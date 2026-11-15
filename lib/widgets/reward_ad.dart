@@ -453,6 +453,8 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
     if (_loadRequested || _isDisposed) return;
     _loadRequested = true;
 
+    debugPrint('[NATIVE AD] Acquiring ad for placement: ${widget.placement}');
+
     // The service keeps a pool warm; ask for one and retry on a short cadence
     // so a slow first fill doesn't remove the slot permanently.
     await NativeAdService.instance.initialize();
@@ -467,15 +469,20 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
           ad.dispose();
           return;
         }
+        debugPrint('[NATIVE AD] Ad acquired for placement: ${widget.placement}');
         setState(() => _ad = ad);
         NativeAdService.instance.ensurePreloaded();
         return;
       }
+      debugPrint(
+        '[NATIVE AD] No ad available (attempt $attempt/3), placement: ${widget.placement}',
+      );
       NativeAdService.instance.ensurePreloaded();
       if (attempt < 2) {
-        await Future<void>.delayed(const Duration(seconds: 4));
+        await Future<void>.delayed(const Duration(seconds: 2));
       }
     }
+    debugPrint('[NATIVE AD] Failed to acquire ad after 3 attempts, placement: ${widget.placement}');
   }
 
   @override
@@ -495,23 +502,24 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
     // feed stays tight while the pool refills.
     if (ad == null) return const SizedBox.shrink();
 
+    final l10n = AppLocalizations.of(context);
+
     return Container(
       margin: widget.margin,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainer,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: Theme.of(
             context,
-          ).colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ).colorScheme.outlineVariant.withValues(alpha: 0.2),
         ),
       ),
-      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
             child: Row(
               children: [
                 Icon(
@@ -521,8 +529,7 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  AppLocalizations.of(context).translate('sponsoredLabel') ??
-                      'Sponsored',
+                  l10n.translate('sponsoredLabel') ?? 'Sponsored',
                   style: GoogleFonts.outfit(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -532,8 +539,9 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
               ],
             ),
           ),
+          const SizedBox(height: 8),
           SizedBox(
-            height: 400,
+            height: 220,
             width: double.infinity,
             child: AdWidget(ad: ad),
           ),
@@ -559,7 +567,7 @@ class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
   NativeAd? _ad;
   bool _loading = false;
 
-  static const String _adUnitId = 'ca-app-pub-2951683509728611/1778840232';
+  static const String _adUnitId = 'ca-app-pub-2951683509728611/2336290113';
   static const String _factoryId = 'yallanewsNativeAd';
 
   @override

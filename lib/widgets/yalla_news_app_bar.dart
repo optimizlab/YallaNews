@@ -11,7 +11,7 @@ class YallaNewsAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   const YallaNewsAppBar({
     Key? key,
-    this.title = 'يلا نيوز',
+    this.title = '',
     this.onLeadingPressed,
     this.onActionPressed,
     this.leadingIcon = Icons.menu_rounded,
