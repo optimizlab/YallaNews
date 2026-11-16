@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
+import '../services/app_settings.dart';
 import '../services/category_service.dart';
 import '../services/analytics_service.dart';
 import '../services/server_api_service.dart';
@@ -67,12 +68,13 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
         limit: 20,
         page: 1,
         category: categoryId,
+        language: AppSettings.instance.locale?.languageCode,
       );
 
       if (mounted) {
         setState(() {
           _articles.clear();
-          _articles.addAll(fetched);
+          _articles.addAll(fetched.where((a) => a.language.trim().toLowerCase() == AppSettings.instance.locale?.languageCode.toLowerCase()));
           _hasMore = fetched.length >= 20;
           _isLoading = false;
         });
@@ -94,14 +96,16 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
         limit: 20,
         page: nextPage,
         category: categoryId,
+        language: AppSettings.instance.locale?.languageCode,
       );
 
       if (mounted) {
         setState(() {
           _currentPage = nextPage;
           final existingUrls = _articles.map((a) => a.url).toSet();
+          final targetLang = AppSettings.instance.locale?.languageCode.toLowerCase() ?? '';
           for (final a in fetched) {
-            if (!existingUrls.contains(a.url)) {
+            if (!existingUrls.contains(a.url) && a.language.trim().toLowerCase() == targetLang) {
               _articles.add(a);
             }
           }
@@ -117,9 +121,13 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
   }
 
   List<NewsModel> get _filteredArticles {
-    if (_searchQuery.trim().isEmpty) return _articles;
-    final q = _searchQuery.toLowerCase();
-    return _articles.where((a) => a.title.toLowerCase().contains(q) || a.summary.toLowerCase().contains(q)).toList();
+    final targetLang = AppSettings.instance.locale?.languageCode.toLowerCase() ?? '';
+    return _articles.where((a) {
+      if (a.language.trim().toLowerCase() != targetLang) return false;
+      if (_searchQuery.trim().isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      return a.title.toLowerCase().contains(q) || a.summary.toLowerCase().contains(q);
+    }).toList();
   }
 
   @override
@@ -360,6 +368,7 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
                       imageUrl: article.imageUrl,
                       fallbackImageUrl:
                           NewsModel.getFallbackImage(article.category),
+                      searchQuery: '${article.title}',
                       fit: BoxFit.cover,
                     ),
                   ),

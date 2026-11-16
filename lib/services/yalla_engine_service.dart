@@ -17,6 +17,7 @@ import 'image_validator_service.dart';
 import 'engine_ffi.dart';
 import 'arabic_normalizer.dart';
 import 'msn_image_fetcher.dart';
+import 'news_intelligence.dart';
 
 enum EngineMode {
   ffi, // Native Direct C++ DLL via Dart FFI
@@ -1728,8 +1729,22 @@ final descMatch = RegExp(
         entities.add(d.toString());
       }
       
-      // Determine event type
-      String eventType = 'general';
+       // Reject non-news entries (section headers, tutorials, courses, digests)
+       // before they are packaged as articles.
+       if (TinyLLMService.isNonNewsEntry(
+         title: cleanedTitle,
+         content: tinyLlmCleanedContent,
+         summary: decodedSummary,
+       )) {
+         addLog('[SYSTEM] Rejected non-news entry: "$cleanedTitle"');
+         if (!silent) {
+           addLog('[SYSTEM] Skipping non-news article: $url');
+         }
+         return {};
+       }
+       
+       // Determine event type
+       String eventType = 'general';
       final events = (storyElements['events'] as List<dynamic>?) ?? [];
       if (events.isNotEmpty) {
         eventType = 'event_detected';
@@ -1756,7 +1771,11 @@ final newsModel = NewsModel(
             summary: decodedSummary,
            content: tinyLlmCleanedContent,
            imageUrl: imageUrl,
-           category: 'general', // Would be determined from content analysis
+           category: IntelligenceResult.determineCategory(
+             '$cleanedTitle $decodedSummary $tinyLlmCleanedContent',
+             url: url,
+             title: cleanedTitle,
+           ),
            sentiment: optimizedSentiment,
            keywords: extractedWords,
            logs: '', // Could be populated with processing logs

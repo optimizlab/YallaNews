@@ -327,7 +327,7 @@ class _DailyBriefingPageState extends State<DailyBriefingPage> {
             Row(
               children: [
                 Text(
-                  '${_topStories.length} stories',
+                  l10n.translate('storiesCount').replaceAll('{count}', _topStories.length.toString()),
                   style: GoogleFonts.outfit(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,

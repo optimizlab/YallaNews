@@ -1,7 +1,11 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/news_model.dart';
+import 'app_settings.dart';
 
 class TTSService {
   static final TTSService instance = TTSService._();
@@ -9,6 +13,58 @@ class TTSService {
 
   bool _isPlaying = false;
   bool get isPlaying => _isPlaying;
+
+  bool _stopRequested = false;
+  bool _batchSpeaking = false;
+
+  final ValueNotifier<bool> _playingNotifier = ValueNotifier(false);
+  ValueListenable<bool> get playingNotifier => _playingNotifier;
+
+  NewsModel? _currentArticle;
+  NewsModel? get currentArticle => _currentArticle;
+
+  final ValueNotifier<NewsModel?> _articleNotifier = ValueNotifier<NewsModel?>(null);
+  ValueListenable<NewsModel?> get articleNotifier => _articleNotifier;
+
+  final ValueNotifier<String?> _activeDetailPageNotifier = ValueNotifier<String?>(null);
+  ValueListenable<String?> get activeDetailPageNotifier => _activeDetailPageNotifier;
+  String? get activeDetailPageUrl => _activeDetailPageNotifier.value;
+
+  final ValueNotifier<double> _progressNotifier = ValueNotifier(0.0);
+  ValueListenable<double> get progressNotifier => _progressNotifier;
+
+  void setActiveDetailPage(String? url) {
+    _activeDetailPageNotifier.value = url;
+  }
+
+  String? _currentText;
+  String? get currentText => _currentText;
+  List<String> _currentSentences = [];
+  int _currentSentenceIndex = 0;
+
+  void setCurrentArticle(NewsModel? article, {String? text}) {
+    _currentArticle = article;
+    _articleNotifier.value = article;
+    if (text != null && text.isNotEmpty) {
+      _currentText = text;
+      _currentSentences = _splitIntoSentences(text);
+      _currentSentenceIndex = 0;
+    } else if (article != null) {
+      final t = buildArticleReadText(article);
+      _currentText = t;
+      _currentSentences = _splitIntoSentences(t);
+      _currentSentenceIndex = 0;
+    }
+  }
+
+  void clearCurrentArticle() {
+    stop();
+    _currentArticle = null;
+    _currentText = null;
+    _currentSentences = [];
+    _currentSentenceIndex = 0;
+    _articleNotifier.value = null;
+  }
 
   VoidCallback? _onSpeakComplete;
 
@@ -25,15 +81,42 @@ class TTSService {
 
   bool get _isWindows => Platform.isWindows;
 
+  static const Map<String, String> _defaultTtsLocaleByLanguage = {
+    'ar': 'ar-SA',
+    'en': 'en-US',
+    'fr': 'fr-FR',
+    'tr': 'tr-TR',
+  };
+
+  static const Map<String, String> _defaultWindowsVoiceByLanguage = {
+    'ar': 'Microsoft Maha',
+    'en': 'Microsoft David',
+    'fr': 'Microsoft Hortense',
+    'tr': 'Microsoft David',
+  };
+
+  String _currentLanguageCode() => AppSettings.instance.locale?.languageCode ?? 'ar';
+
+  String _defaultTtsLocale(String languageCode) =>
+      _defaultTtsLocaleByLanguage[languageCode] ?? 'en-US';
+
+  String? _lastLocaleCode;
+
   TTSService._() {
+    _lastLocaleCode = _currentLanguageCode();
     _initialization = _initTts();
+    AppSettings.instance.addListener(_onAppSettingsChanged);
+  }
+
+  void _setPlaying(bool value) {
+    _isPlaying = value;
+    _playingNotifier.value = value;
   }
 
   Future<void> _initTts() async {
     if (!_isWindows) {
-      await _flutterTts.setLanguage("ar-SA");
-      // A slightly slower rate and subtly lowered pitch sound more natural
-      // for long-form Arabic narration than the platform default.
+      final languageCode = _currentLanguageCode();
+      await _flutterTts.setLanguage(_defaultTtsLocale(languageCode));
       await _flutterTts.setSpeechRate(0.42);
       await _flutterTts.setVolume(1.0);
       await _flutterTts.setPitch(0.97);
@@ -43,18 +126,22 @@ class TTSService {
       await _flutterTts.awaitSpeakCompletion(true);
 
       _flutterTts.setStartHandler(() {
-        _isPlaying = true;
+        _setPlaying(true);
       });
 
       _flutterTts.setCompletionHandler(() {
-        _isPlaying = false;
+        if (!_batchSpeaking) {
+          _setPlaying(false);
+        }
         final callback = _onSpeakComplete;
         _onSpeakComplete = null;
-        callback?.call();
+        if (!_batchSpeaking) {
+          callback?.call();
+        }
       });
 
       _flutterTts.setErrorHandler((msg) {
-        _isPlaying = false;
+        _setPlaying(false);
         final callback = _onSpeakComplete;
         _onSpeakComplete = null;
         callback?.call();
@@ -62,6 +149,15 @@ class TTSService {
     }
 
     await _restoreSavedVoice();
+  }
+
+  void _onAppSettingsChanged() {
+    final code = AppSettings.instance.locale?.languageCode;
+    if (code == _lastLocaleCode) return;
+    _lastLocaleCode = code;
+    if (_selectedVoiceName == null && !_isWindows) {
+      unawaited(_selectBestAvailableVoice(languageCode: code));
+    }
   }
 
   Future<void> _restoreSavedVoice() async {
@@ -75,33 +171,36 @@ class TTSService {
           await _flutterTts.setVoice({'name': savedName, 'locale': savedLocale});
         }
       } else {
-        await _selectBestAvailableVoice();
+        await _selectBestAvailableVoice(languageCode: _currentLanguageCode());
       }
     } catch (_) {
-      await _selectBestAvailableVoice();
+      await _selectBestAvailableVoice(languageCode: _currentLanguageCode());
     }
   }
 
-  Future<void> _selectBestAvailableVoice() async {
+  Future<void> _selectBestAvailableVoice({String? languageCode}) async {
+    await _initialization;
     if (_isWindows) return;
+    languageCode ??= _currentLanguageCode();
     try {
       final voices = await _flutterTts.getVoices;
       if (voices == null) return;
 
       final List<Map<String, dynamic>> voiceList = voices.cast<Map<String, dynamic>>();
 
+      final target = languageCode.toLowerCase();
       Map<String, dynamic>? best;
       for (final v in voiceList) {
         final name = (v['name'] ?? '').toString().toLowerCase();
         final locale = (v['locale'] ?? '').toString();
-        final isArabic = locale.startsWith('ar');
+        final isMatchLanguage = locale.toLowerCase().startsWith(target);
         final isLocal = name.contains('local') || name.contains('high') || name.contains('enhanced');
 
-        if (isArabic && isLocal) {
+        if (isMatchLanguage && isLocal) {
           best = v;
           break;
         }
-        if (isArabic && best == null) {
+        if (isMatchLanguage && best == null) {
           best = v;
         }
       }
@@ -220,6 +319,30 @@ class TTSService {
     await _flutterTts.setSpeechRate(rate);
   }
 
+  static String buildArticleReadText(NewsModel article) {
+    String stripHtml(String html) {
+      return html
+          .replaceAll(RegExp(r'<\s*br\s*/?>', caseSensitive: false), '\n')
+          .replaceAll(RegExp(r'</(p|div|h[1-6]|li)>', caseSensitive: false), '\n')
+          .replaceAll(RegExp(r'<[^>]*>'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+    }
+
+    final title = stripHtml(article.title).trim();
+    final summary = stripHtml(article.summary).trim();
+    final content = stripHtml(article.content).trim();
+
+    final parts = <String>[];
+    if (title.isNotEmpty) parts.add(title);
+    if (summary.isNotEmpty && summary != title) parts.add(summary);
+    if (content.isNotEmpty && content != summary && content != title) {
+      parts.add(content);
+    }
+
+    return parts.join('. ');
+  }
+
   Future<void> speak(String text, {VoidCallback? onCompleted}) async {
     await _initialization;
     if (text.isEmpty) {
@@ -227,10 +350,13 @@ class TTSService {
       return;
     }
     _onSpeakComplete = onCompleted;
+    _currentText = text;
+    _currentSentences = _splitIntoSentences(text);
+    _currentSentenceIndex = 0;
 
     if (_isWindows) {
       if (_newsMode) {
-        await _speakNewsStyleWindows(text);
+        await _speakNewsStyleWindows(_currentSentences, 0);
       } else {
         await _speakWindows(text);
       }
@@ -238,16 +364,52 @@ class TTSService {
     }
 
     if (_newsMode) {
-      await _speakNewsStyle(text);
+      await _speakNewsStyle(_currentSentences, 0);
     } else {
+      _setPlaying(true);
       await _flutterTts.speak(text);
     }
   }
 
-  Future<void> _speakWindows(String text) async {
-    _isPlaying = true;
+  Future<void> pause() async {
+    await stop(keepArticle: true);
+  }
+
+  Future<void> resume() async {
+    await _initialization;
+    _stopRequested = false;
+    if (_currentSentences.isEmpty) {
+      if (_currentArticle != null) {
+        final text = buildArticleReadText(_currentArticle!);
+        _currentText = text;
+        _currentSentences = _splitIntoSentences(text);
+        _currentSentenceIndex = 0;
+      } else {
+        return;
+      }
+    }
+    if (_currentSentenceIndex >= _currentSentences.length) {
+      _currentSentenceIndex = 0;
+    }
+    _setPlaying(true);
+    if (_isWindows) {
+      await _speakNewsStyleWindows(_currentSentences, _currentSentenceIndex);
+    } else {
+      await _speakNewsStyle(_currentSentences, _currentSentenceIndex);
+    }
+  }
+
+  Future<void> togglePlayback() async {
+    if (_isPlaying) {
+      await pause();
+    } else {
+      await resume();
+    }
+  }
+
+  Future<void> _speakSentenceWindows(String text) async {
     final escaped = _escapePowerShell(text);
-    final voice = _selectedVoiceName ?? 'Microsoft David';
+    final voice = _selectedVoiceName ?? _defaultWindowsVoiceByLanguage[_currentLanguageCode()] ?? 'Microsoft David';
     final command =
         "Add-Type -AssemblyName System.Speech; "
         "\$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
@@ -263,20 +425,43 @@ class TTSService {
       await proc.exitCode;
       _windowsTtsProcess = null;
     } catch (_) {}
-    _isPlaying = false;
+  }
+
+  Future<void> _speakWindows(String text) async {
+    _setPlaying(true);
+    await _speakSentenceWindows(text);
+    _setPlaying(false);
     _onSpeakComplete?.call();
     _onSpeakComplete = null;
   }
 
-  Future<void> _speakNewsStyleWindows(String text) async {
-    final sentences = _splitIntoSentences(text);
-    for (int i = 0; i < sentences.length; i++) {
-      if (!_isPlaying) break;
-      final s = sentences[i].trim();
-      if (s.isEmpty) continue;
-      await _speakWindows(s);
-      if (i < sentences.length - 1) {
-        await Future.delayed(const Duration(milliseconds: 500));
+  Future<void> _speakNewsStyleWindows(List<String> sentences, int startIndex) async {
+    _batchSpeaking = true;
+    _stopRequested = false;
+    _setPlaying(true);
+    try {
+      for (int i = startIndex; i < sentences.length; i++) {
+        if (_stopRequested) break;
+        _currentSentenceIndex = i;
+        _progressNotifier.value = sentences.length > 1 ? i / (sentences.length - 1) : 1.0;
+        final s = sentences[i].trim();
+        if (s.isEmpty) continue;
+        await _speakSentenceWindows(s);
+        if (i < sentences.length - 1 && !_stopRequested) {
+          await Future.delayed(const Duration(milliseconds: 400));
+        }
+      }
+    } finally {
+      _batchSpeaking = false;
+      if (!_stopRequested && _currentSentenceIndex >= sentences.length - 1) {
+        _currentSentenceIndex = 0;
+        _progressNotifier.value = 0.0;
+        _setPlaying(false);
+        final cb = _onSpeakComplete;
+        _onSpeakComplete = null;
+        cb?.call();
+      } else if (_stopRequested) {
+        _setPlaying(false);
       }
     }
   }
@@ -285,21 +470,35 @@ class TTSService {
     return text.replaceAll("'", "''").replaceAll('\n', ' ').replaceAll('\r', '');
   }
 
-  Future<void> _speakNewsStyle(String text) async {
-    _isPlaying = true;
-    final completion = _onSpeakComplete;
-    _onSpeakComplete = null;
-    final sentences = _splitIntoSentences(text);
-    for (int i = 0; i < sentences.length; i++) {
-      final s = sentences[i].trim();
-      if (s.isEmpty) continue;
-      await _flutterTts.speak(s);
-      if (i < sentences.length - 1) {
-        await Future.delayed(const Duration(milliseconds: 500));
+  Future<void> _speakNewsStyle(List<String> sentences, int startIndex) async {
+    _batchSpeaking = true;
+    _stopRequested = false;
+    _setPlaying(true);
+    try {
+      for (int i = startIndex; i < sentences.length; i++) {
+        if (_stopRequested) break;
+        _currentSentenceIndex = i;
+        _progressNotifier.value = sentences.length > 1 ? i / (sentences.length - 1) : 1.0;
+        final s = sentences[i].trim();
+        if (s.isEmpty) continue;
+        await _flutterTts.speak(s);
+        if (i < sentences.length - 1 && !_stopRequested) {
+          await Future.delayed(const Duration(milliseconds: 400));
+        }
+      }
+    } finally {
+      _batchSpeaking = false;
+      if (!_stopRequested && _currentSentenceIndex >= sentences.length - 1) {
+        _currentSentenceIndex = 0;
+        _progressNotifier.value = 0.0;
+        _setPlaying(false);
+        final cb = _onSpeakComplete;
+        _onSpeakComplete = null;
+        cb?.call();
+      } else if (_stopRequested) {
+        _setPlaying(false);
       }
     }
-    _isPlaying = false;
-    completion?.call();
   }
 
   List<String> _splitIntoSentences(String text) {
@@ -310,8 +509,10 @@ class TTSService {
         .toList();
   }
 
-  Future<void> stop() async {
+  Future<void> stop({bool keepArticle = false}) async {
     _onSpeakComplete = null;
+    _stopRequested = true;
+    _setPlaying(false);
     if (_isWindows) {
       try {
         _windowsTtsProcess?.kill();
@@ -328,7 +529,9 @@ class TTSService {
     } else {
       await _flutterTts.stop();
     }
-    _isPlaying = false;
+    if (!keepArticle) {
+      _currentSentenceIndex = 0;
+    }
   }
 
   static String _humanFriendlyName(String rawName, String locale) {

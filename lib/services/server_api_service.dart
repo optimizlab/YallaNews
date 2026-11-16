@@ -587,11 +587,17 @@ class ServerApiService {
   }
 
   /// Increment the read count for [articleId] on the server.
+  /// Failures (offline, 404, etc.) are swallowed and 0 is returned so a read
+  /// never crashes the UI when the stats endpoint is unavailable.
   static Future<int> incrementReadCount(String articleId) async {
-    final data = await postJson('stats/read.php', {
-      'article_id': articleId,
-    });
-    return (data['read_count'] as num?)?.toInt() ?? 0;
+    try {
+      final data = await postJson('stats/read.php', {
+        'article_id': articleId,
+      });
+      return (data['read_count'] as num?)?.toInt() ?? 0;
+    } catch (_) {
+      return 0;
+    }
   }
 
   /// Top articles by read count from the server.

@@ -628,6 +628,8 @@ class _EventDetailPageState extends State<EventDetailPage> {
                                 imageUrl: article.imageUrl,
                                 fallbackImageUrl:
                                     NewsModel.getFallbackImage(article.category),
+                                 searchQuery:
+                                     '${article.title}',
                                 width: 80,
                                 height: 80,
                                 fit: BoxFit.cover,

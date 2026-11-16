@@ -23,6 +23,7 @@ import '../widgets/custom_logo.dart';
 import '../widgets/banner_ad.dart';
 import '../widgets/cached_news_image.dart';
 import '../widgets/fact_check_widget.dart';
+import '../widgets/crawler_state_indicator.dart';
 import 'news_detail_page.dart';
 import 'explore_page.dart';
 import 'bookmarks_page.dart';
@@ -35,6 +36,7 @@ import 'contact_page.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/top_news_carousel.dart';
 import '../services/news_blender_service.dart';
+import '../views/prayer_times/prayer_times_page.dart';
 
 String _getSentimentLabel(double sentiment, AppLocalizations l10n) {
   if (sentiment >= 0.3) return l10n.translate('positive');
@@ -159,6 +161,30 @@ class _HomePageState extends State<HomePage> {
   String _searchQuery = '';
   int _currentIndex = 0;
   bool _isLoading = true;
+
+  /// Mobile bottom bar shows only 5 tabs in this order:
+  /// Home(0), Explore(1), DailyBriefing(2), PrayerTimes(3), Bookmarks(6).
+  static const List<int> _mobileToFull = [0, 1, 2, 3, 6];
+
+  bool get _isMobile => MediaQuery.of(context).size.width < 600;
+
+  int _mobileSelectedIndex() {
+    if (!_isMobile) return _currentIndex;
+    switch (_currentIndex) {
+      case 0:
+        return 0;
+      case 1:
+        return 1;
+      case 2:
+        return 2;
+      case 3:
+        return 3;
+      case 6:
+        return 4;
+      default:
+        return 0;
+    }
+  }
   bool _isSearchActive = false;
   String _selectedCategory = 'all';
   bool _waitingForInitialCrawl = false;
@@ -175,11 +201,14 @@ class _HomePageState extends State<HomePage> {
   final List<NewsModel> _pendingArticles = [];
   Timer? _crawlerFlushTimer;
   Timer? _crawlerBlendTimer;
+  Timer? _blendDebounceTimer;
+  bool _isBlending = false;
+  List<NewsModel> _blendedArticles = [];
+  int get _blendedCount => _allArticles.where((a) => a.isBlended).length;
   Timer? _searchDebounce;
   List<NewsModel> _cachedSearchResults = const [];
   String _lastSearchQuery = '';
-  int? _lastFeedHash;
-  List<List<Widget>> _feedRows = [];
+
 
   @override
   void initState() {
@@ -189,7 +218,6 @@ class _HomePageState extends State<HomePage> {
     AuthService.instance.addListener(_onAuthChanged);
     _lastLocale = AppSettings.instance.locale;
     _loadData();
-    _scrollController.addListener(_onScroll);
   }
 
   @override
@@ -197,8 +225,8 @@ class _HomePageState extends State<HomePage> {
     _articleSubscription?.cancel();
     _crawlerFlushTimer?.cancel();
     _crawlerBlendTimer?.cancel();
+    _blendDebounceTimer?.cancel();
     _searchDebounce?.cancel();
-    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     CategoryService.instance.removeListener(_onCategoriesChanged);
     AppSettings.instance.removeListener(_onSettingsChanged);
@@ -264,15 +292,29 @@ class _HomePageState extends State<HomePage> {
   Future<void> _applyBlendedArticles(List<NewsModel> rawList) async {
     if (!mounted) return;
     final compliantArticles = _filterPolicyCompliantArticles(rawList);
+    final rawOnly = compliantArticles.where((a) => !a.isBlended).toList();
+    final newlyBlended = compliantArticles.where((a) => a.isBlended).toList();
+    if (newlyBlended.isNotEmpty) {
+      _blendedArticles = newlyBlended;
+    }
+    final combined = [..._blendedArticles, ...rawOnly];
 
     setState(() {
-      _rawArticles = compliantArticles;
-      _allArticles = compliantArticles;
-      _articles = compliantArticles;
+      _rawArticles = rawOnly;
+      _allArticles = combined;
+      if (_selectedCategory == 'all') {
+        _articles = List.from(combined);
+      } else if (_selectedCategory == 'blended') {
+        _articles = _blendedArticles;
+      } else {
+        _articles = combined
+            .where((a) => _matchesCategory(a.category, _selectedCategory))
+            .toList();
+      }
     });
 
-    unawaited(_updateCategoryCountsAsync(compliantArticles));
-    unawaited(_ensureArticleImages(compliantArticles));
+    unawaited(_updateCategoryCountsAsync(combined));
+    unawaited(_ensureArticleImages(combined));
   }
 
   /// Fetches a main image for every article that lacks one, using MSN/Bing
@@ -316,10 +358,12 @@ class _HomePageState extends State<HomePage> {
           article.displaySourceName.trim().isNotEmpty ||
           article.authorName.trim().isNotEmpty ||
           article.author.trim().isNotEmpty;
+      final articleLang = article.language.trim().toLowerCase();
+      final selectedLang = selectedLanguage?.toLowerCase() ?? '';
       final languageMatches =
-          article.language.isEmpty ||
-          selectedLanguage == null ||
-          article.language.toLowerCase() == selectedLanguage.toLowerCase();
+          selectedLang.isNotEmpty &&
+          articleLang.isNotEmpty &&
+          articleLang == selectedLang;
       // The server may legitimately have no original publication timestamp.
       // Keep such articles visible; only reject a known, genuinely stale date.
       return hasPublisher &&
@@ -333,20 +377,32 @@ class _HomePageState extends State<HomePage> {
     final batch = List<NewsModel>.from(_pendingArticles);
     _pendingArticles.clear();
     if (!mounted) return;
+    for (final article in batch) {
+      if (_filterPolicyCompliantArticles([article]).isEmpty) continue;
+      final existingIndex = _rawArticles.indexWhere(
+        (a) => a.url == article.url,
+      );
+      if (existingIndex >= 0) {
+        _rawArticles[existingIndex] = article;
+      } else {
+        _rawArticles.insert(0, article);
+      }
+    }
+    final combined = [..._blendedArticles, ..._rawArticles];
     setState(() {
-      for (final article in batch) {
-        if (_filterPolicyCompliantArticles([article]).isEmpty) continue;
-        final existingIndex = _rawArticles.indexWhere(
-          (a) => a.url == article.url,
-        );
-        if (existingIndex >= 0) {
-          _rawArticles[existingIndex] = article;
-        } else {
-          _rawArticles.insert(0, article);
-        }
+      _allArticles = combined;
+      if (_selectedCategory == 'all') {
+        _articles = List.from(combined);
+      } else if (_selectedCategory == 'blended') {
+        _articles = _blendedArticles;
+      } else {
+        _articles = combined
+            .where((a) => _matchesCategory(a.category, _selectedCategory))
+            .toList();
       }
     });
-    _applyBlendedArticles(_rawArticles);
+    unawaited(_updateCategoryCountsAsync(combined));
+    unawaited(_ensureArticleImages(combined));
     widget.engineService.addLog(
       '[HOME] Flushed ${batch.length} articles, total: ${_rawArticles.length}',
     );
@@ -354,37 +410,22 @@ class _HomePageState extends State<HomePage> {
       _waitingForInitialCrawl = false;
       if (mounted) setState(() {});
     }
+    _scheduleBlend();
   }
 
-  Future<void> _updateCategoryCountsAsync(List<NewsModel> articles) async {
-    try {
-      final updatedCategories = await compute(
-        _updateCategoryCountsIsolate,
-        articles.map((a) => a.toJson()).toList(),
-      );
-      if (mounted) {
-        setState(() {
-          _categoryCounts.clear();
-          for (final category in updatedCategories) {
-            final id = category['id']?.toString() ?? '';
-            _categoryCounts[id] = category['newsCount'] ?? 0;
-          }
-        });
+  void _scheduleBlend() {
+    _blendDebounceTimer?.cancel();
+    _blendDebounceTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted && _allArticles.isNotEmpty && !_isBlending) {
+        _blendInBackground(_allArticles);
       }
-    } catch (_) {}
+    });
   }
 
   final Map<String, int> _categoryCounts = {};
-  final int _blendedCount = 0;
 
-  static List<Map<String, dynamic>> _updateCategoryCountsIsolate(
-    List<Map<String, dynamic>> articlesJson,
-  ) {
-    final articles = articlesJson
-        .map((json) => NewsModel.fromJson(json, json['url'] as String))
-        .toList();
+  Future<void> _updateCategoryCounts(List<NewsModel> articles) async {
     final categories = CategoryService.instance.categories;
-
     for (final category in categories) {
       final id = category['id']?.toString() ?? '';
       final name = category['name']?.toString() ?? id;
@@ -395,32 +436,48 @@ class _HomePageState extends State<HomePage> {
           count++;
         }
       }
-      category['newsCount'] = count;
+      _categoryCounts[id] = count;
     }
-
-    return categories;
+    if (mounted) setState(() {});
   }
 
+  Future<void> _updateCategoryCountsAsync(List<NewsModel> articles) =>
+      _updateCategoryCounts(articles);
+
   Future<void> _blendInBackground(List<NewsModel> rawList) async {
+    if (_isBlending) return;
+    if (rawList.isEmpty) return;
+    if (mounted) setState(() => _isBlending = true);
     try {
+      final candidates = rawList.take(30).toList();
       final blended = await NewsBlenderService.instance.blendArticlesAsync(
-        rawList,
+        candidates,
       );
       if (!mounted) return;
+      final newlyBlended = blended.where((a) => a.isBlended).toList();
+      _blendedArticles = newlyBlended;
+
+      final rawOnly = rawList.where((a) => !a.isBlended).toList();
+      final combined = [..._blendedArticles, ...rawOnly];
+
       setState(() {
-        _allArticles = blended;
+        _isBlending = false;
+        _allArticles = combined;
+        _rawArticles = rawOnly;
         if (_selectedCategory == 'all') {
-          _articles = List.from(blended);
+          _articles = List.from(combined);
         } else if (_selectedCategory == 'blended') {
-          _articles = blended.where((a) => a.isBlended).toList();
+          _articles = _blendedArticles;
         } else {
-          _articles = blended
+          _articles = combined
               .where((a) => _matchesCategory(a.category, _selectedCategory))
               .toList();
         }
       });
-      await _updateCategoryCountsAsync(blended);
-    } catch (_) {}
+      await _updateCategoryCounts(combined);
+    } catch (_) {
+      if (mounted) setState(() => _isBlending = false);
+    }
   }
 
   Future<void> _loadData({bool skipCachedArticles = false}) async {
@@ -697,11 +754,7 @@ class _HomePageState extends State<HomePage> {
             }
           },
         );
-        _crawlerBlendTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-          if (_allArticles.isNotEmpty) {
-            unawaited(_blendInBackground(_allArticles));
-          }
-        });
+        _scheduleBlend();
 
         // Start both the immediate crawl and adaptive scheduler only when
         // enabled in the user's saved preferences.
@@ -718,18 +771,21 @@ class _HomePageState extends State<HomePage> {
         );
         // On Wi-Fi, crawl sources immediately so the server and the feed are
         // fed with the latest news instead of stale cached articles.
-        unawaited(_refreshNewsNow());
-        unawaited(
-          BackgroundCrawlerService.instance.startSilentCrawl(
-            engineService: widget.engineService,
-            requireWifi: false,
-            onComplete: () {
-              if (mounted && _pendingArticles.isNotEmpty) {
-                _flushPendingArticles();
-              }
-            },
-          ),
-        );
+        Future.delayed(const Duration(seconds: 6), () {
+          if (!mounted) return;
+          unawaited(_refreshNewsNow());
+          unawaited(
+            BackgroundCrawlerService.instance.startSilentCrawl(
+              engineService: widget.engineService,
+              requireWifi: false,
+              onComplete: () {
+                if (mounted && _pendingArticles.isNotEmpty) {
+                  _flushPendingArticles();
+                }
+              },
+            ),
+          );
+        });
       } else {
         await _articleSubscription?.cancel();
         _articleSubscription = null;
@@ -893,15 +949,26 @@ class _HomePageState extends State<HomePage> {
     return age > maxAge;
   }
 
-  void _onScroll() {
-    if (!_isLoadingMore &&
-        _hasMore &&
-        !_isSearchActive &&
-        _selectedCategory == 'all' &&
-        _scrollController.position.pixels >=
-            _scrollController.position.maxScrollExtent - 200) {
-      unawaited(_loadMoreArticles());
+
+
+  Future<void> _scrollToTop() async {
+    if (_scrollController.hasClients) {
+      await _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+      );
     }
+    try {
+      final primary = PrimaryScrollController.of(context);
+      if (primary.hasClients) {
+        await primary.animateTo(
+          0,
+          duration: const Duration(milliseconds: 400),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadMoreArticles() async {
@@ -1015,8 +1082,11 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return AdaptiveLayout(
-      currentIndex: _currentIndex,
-      onNavigationChanged: (i) => setState(() => _currentIndex = i),
+      currentIndex: _mobileSelectedIndex(),
+      onNavigationChanged: (i) async {
+        setState(() => _currentIndex = _isMobile ? _mobileToFull[i] : i);
+        if (i == 0) await _scrollToTop();
+      },
       scrollController: _scrollController,
       destinations: [
         AdaptiveNavigationDestination(
@@ -1032,8 +1102,8 @@ class _HomePageState extends State<HomePage> {
           label: l10n.translate('dailyBriefing'),
         ),
         AdaptiveNavigationDestination(
-          icon: Icons.bookmark_rounded,
-          label: l10n.translate('bookmarks'),
+          icon: Icons.mosque_rounded,
+          label: l10n.translate('prayerTimes'),
         ),
         AdaptiveNavigationDestination(
           icon: Icons.person_rounded,
@@ -1044,8 +1114,34 @@ class _HomePageState extends State<HomePage> {
           label: l10n.translate('factCheck'),
         ),
         AdaptiveNavigationDestination(
+          icon: Icons.bookmark_rounded,
+          label: l10n.translate('bookmarks'),
+        ),
+        AdaptiveNavigationDestination(
           icon: Icons.settings_rounded,
           label: l10n.translate('settings'),
+        ),
+      ],
+      mobileDestinations: [
+        AdaptiveNavigationDestination(
+          icon: Icons.home_rounded,
+          label: l10n.translate('home'),
+        ),
+        AdaptiveNavigationDestination(
+          icon: Icons.explore_rounded,
+          label: l10n.translate('explore'),
+        ),
+        AdaptiveNavigationDestination(
+          icon: Icons.newspaper_rounded,
+          label: l10n.translate('dailyBriefing'),
+        ),
+        AdaptiveNavigationDestination(
+          icon: Icons.mosque_rounded,
+          label: l10n.translate('prayerTimes'),
+        ),
+        AdaptiveNavigationDestination(
+          icon: Icons.bookmark_rounded,
+          label: l10n.translate('bookmarks'),
         ),
       ],
       scaffoldKey: _scaffoldKey,
@@ -1092,6 +1188,7 @@ class _HomePageState extends State<HomePage> {
             iconSize: 24,
             onPressed: _activateSearch,
           ),
+          const CrawlerStateIndicator(),
           AnimatedBuilder(
             animation: AuthService.instance,
             builder: (context, _) {
@@ -1199,7 +1296,7 @@ class _HomePageState extends State<HomePage> {
       case 2:
         return const DailyBriefingPage();
       case 3:
-        return const BookmarksPage();
+        return const PrayerTimesPage();
       case 4:
         return const PersonalizedFeedPage(embedded: true);
       case 5:
@@ -1220,83 +1317,63 @@ class _HomePageState extends State<HomePage> {
           autoCheck: true,
         );
       case 6:
+        return const BookmarksPage();
+      case 7:
         return const SettingsPage(embedded: true);
       default:
         return _buildHomeContent(context);
     }
   }
 
-  /// Builds the feed rows with randomized banner ad placement and count.
+  /// Builds the feed rows with deterministic banner ad placement.
   ///
   /// Ads use [BannerAdWidget] (real ad unit id `ca-app-pub-2951683509728611/4930663860`)
-  /// and are inserted into random gaps between news items, styled to look like
-  /// a news item (placement `banner_1`). The layout is cached per article set
-  /// so ads don't jump around on every rebuild.
+  /// and are inserted after specific articles based on a stable URL hash.
+  /// Placement is tied to article identity, not list position, so ads stop
+  /// jumping around when new articles are inserted at the top of the feed.
   List<List<Widget>> _buildFeedRows(List<NewsModel> articles, bool isWide) {
-    final hash = articles.map((a) => a.url).join('\n').hashCode;
-    if (_lastFeedHash == hash && _feedRows.isNotEmpty) {
-      return _feedRows;
-    }
-    _lastFeedHash = hash;
-    _feedRows = [];
+    if (articles.isEmpty) return [];
 
-    if (articles.isEmpty) return _feedRows;
-
-    final random = Random(hash);
     final n = articles.length;
-
-    // Randomized ad count: at least one banner ad when there are multiple news
-    // items, up to roughly one ad per two news items, capped at 4. Placement
-    // (which gaps) is also randomized, but an ad is never inserted before the
-    // first 5 news items, and at least 4 news items separate any two ads.
-    final validGapCount = (n - 5).clamp(0, n - 1);
-    final maxAds = ((validGapCount + 4) / 5).floor().clamp(1, 4);
-    final adCount = validGapCount <= 0
-        ? 0
-        : (1 + random.nextInt(maxAds)).clamp(1, validGapCount);
-
-    // Eligible gaps are after at least 5 news items (index i >= 4).
-    final eligibleGaps = List<int>.generate(
-      validGapCount,
-      (idx) => 4 + idx,
-    )..shuffle(random);
-
-    // Enforce min 4 news items between any two banner ads (gap difference >= 5).
-    final adGaps = <int>{};
-    for (final gap in eligibleGaps) {
-      if (adGaps.length >= adCount) break;
-      if (adGaps.any((g) => (gap - g).abs() < 5)) continue;
-      adGaps.add(gap);
-    }
-
-    // Flat interleaved list of news cards and banner ads.
     final flat = <Widget>[];
+    var lastAdIndex = -10;
+    var adCount = 0;
     for (var i = 0; i < n; i++) {
       flat.add(_buildArticleCard(articles[i]));
-      if (i < n - 1 && adGaps.contains(i)) {
-        flat.add(const BannerAdWidget(placement: 'banner_1'));
+      if (adCount < 2 &&
+          i < n - 1 &&
+          i >= 4 &&
+          i - lastAdIndex >= 6 &&
+          articles[i].url.hashCode % 7 == 3) {
+        flat.add(BannerAdWidget(
+          key: ValueKey('ad_feed_${articles[i].url.hashCode}'),
+          placement: 'banner_1',
+        ));
+        lastAdIndex = i;
+        adCount++;
       }
     }
 
     // Group into rows: banner ads render full-width, news cards pair up on wide
     // screens to preserve the existing two-column feed layout.
+    final feedRows = <List<Widget>>[];
     var j = 0;
     while (j < flat.length) {
       final first = flat[j];
       if (first is BannerAdWidget) {
-        _feedRows.add([first]);
+        feedRows.add([first]);
         j++;
       } else if (isWide &&
           j + 1 < flat.length &&
           flat[j + 1] is! BannerAdWidget) {
-        _feedRows.add([first, flat[j + 1]]);
+        feedRows.add([first, flat[j + 1]]);
         j += 2;
       } else {
-        _feedRows.add([first]);
+        feedRows.add([first]);
         j++;
       }
     }
-    return _feedRows;
+    return feedRows;
   }
 
   Widget _buildHomeContent(BuildContext context) {
@@ -1417,18 +1494,25 @@ class _HomePageState extends State<HomePage> {
 
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: SingleChildScrollView(
-            child: Column(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (notification.metrics.pixels >=
+                  notification.metrics.maxScrollExtent - 200) {
+                if (_hasMore && !_isSearchActive && _selectedCategory == 'all') {
+                  unawaited(_loadMoreArticles());
+                }
+              }
+              return false;
+            },
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildCategoryChips(context),
-                const SizedBox(height: 10),
                 if (_articles.isNotEmpty) ...[
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 10),
-                      TopNewsCarousel(
+                  const SizedBox(height: 10),
+                  TopNewsCarousel(
                         articles: topArticles,
                         onArticleTap: (article) {
                           Navigator.push(
@@ -1474,8 +1558,10 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                    ],
-                  ),
+                      if (_isBlending && (_selectedCategory == 'all' || _selectedCategory == 'blended')) ...[
+                        _buildBlendedStoryLoader(context),
+                        const SizedBox(height: 14),
+                      ],
                   ..._buildFeedRows(remainingArticles, isWide).map((row) {
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 14),
@@ -1516,7 +1602,8 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-        );
+        ),
+      );
       },
     );
   }
@@ -1565,6 +1652,9 @@ class _HomePageState extends State<HomePage> {
       });
     }
     allCats.addAll(_categories);
+    if (allCats.length <= 1) {
+      return const SizedBox.shrink();
+    }
     return SizedBox(
       height: 44,
       child: ListView.separated(
@@ -1724,6 +1814,169 @@ class _HomePageState extends State<HomePage> {
           }).toList(),
         ),
       ],
+    );
+  }
+
+  Widget _buildBlendedStoryLoader(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF1E88E5).withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1565C0).withValues(alpha: 0.1),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1565C0), Color(0xFF1E88E5)],
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 13,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        l10n.translate('blendedBadge'),
+                        style: GoogleFonts.outfit(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    l10n.translate('blendedProcessingDesc'),
+                    style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFF1E88E5),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        height: 14,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        height: 14,
+                        width: 180,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFF1E88E5),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              l10n.translate('blendedSynthesizing'),
+                              style: GoogleFonts.outfit(
+                                fontSize: 11,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1565C0).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF1E88E5).withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 28,
+                      color: Color(0xFF1E88E5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: const LinearProgressIndicator(
+                minHeight: 2.5,
+                backgroundColor: Color(0x221565C0),
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1E88E5)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1938,6 +2191,7 @@ class _HomePageState extends State<HomePage> {
                   imageUrl: article.imageUrl.isEmpty
                       ? 'https://placehold.co/72x72/1A1A2E/C62828?text=${_getCategoryName(article.category, context)[0]}'
                       : article.imageUrl,
+                  searchQuery: '${article.title}',
                   width: 72,
                   height: 72,
                   fit: BoxFit.cover,
@@ -2032,9 +2286,10 @@ class _HomePageState extends State<HomePage> {
               icon: Icons.home_rounded,
               label: l10n.translate('home'),
               isSelected: _currentIndex == 0,
-              onTap: () {
+              onTap: () async {
                 Navigator.pop(context);
                 setState(() => _currentIndex = 0);
+                await _scrollToTop();
               },
             ),
             _DrawerItem(

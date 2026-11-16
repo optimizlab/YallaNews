@@ -11,6 +11,9 @@ import 'l10n/app_localizations.dart';
 import 'services/analytics_service.dart';
 import 'services/app_settings.dart';
 import 'services/auth_service.dart';
+import 'services/prayer/provider.dart';
+import 'services/prayer/location_manager.dart';
+import 'services/prayer/adhan_service.dart';
 import 'services/server_api_service.dart';
 import 'services/reward_ad_service.dart';
 import 'services/native_ad_service.dart';
@@ -18,9 +21,11 @@ import 'services/yalla_engine_service.dart';
 import 'views/home_page.dart';
 import 'views/welcome_page.dart';
 import 'views/splash_page.dart';
+import 'widgets/mini_audio_player.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await ensureTimezoneInitialized();
   final brightness =
       WidgetsBinding.instance.platformDispatcher.platformBrightness;
   SystemChrome.setSystemUIOverlayStyle(
@@ -64,6 +69,10 @@ Future<void> main() async {
   // Restore the user's login session before the UI is built so a connected
   // user stays logged in across app restarts.
   await AuthService.instance.init();
+  await AdhanService.instance.init();
+  // Restore saved preferences (theme mode, locale, ...) before the UI is built
+  // so the selected theme is applied on all views from the first frame.
+  await AppSettings.instance.loadSettings();
   runApp(const MyApp());
 }
 
@@ -302,7 +311,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           ),
           child: Directionality(
             textDirection: textDirection,
-            child: child ?? const SizedBox.shrink(),
+            child: Stack(
+              children: [
+                child ?? const SizedBox.shrink(),
+                const Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: MiniAudioPlayer(),
+                ),
+              ],
+            ),
           ),
         );
       },

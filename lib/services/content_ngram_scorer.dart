@@ -41,6 +41,9 @@ class ContentNgramScorer {
     RegExp(r'^(اقرأ أيض|read (also|more)|voir aussi)', caseSensitive: false),
     RegExp(r'(إعلان|sponsored|advertisement|publicité)', caseSensitive: false),
     RegExp(r'^[\d\s\W]{0,25}$'), // lines that are just numbers/punctuation
+    // Tutorial / course / how-to content is not news — drop these paragraphs.
+    RegExp(r'(كيفية|دورة|كورس|دروس|خطوات|دليل|تعليم|تدريب|شرح|إنشاء|إعداد)', caseSensitive: false),
+    RegExp(r'(tutorial|how to|step by step|lesson|course|training|learn css|learn html|guide)', caseSensitive: false),
   ];
 
   // ── Public API ────────────────────────────────────────────────────────────

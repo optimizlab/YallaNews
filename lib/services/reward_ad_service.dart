@@ -27,7 +27,7 @@ class RewardAdService {
   static const int _engagementDecayPerHour = 2;
 
   // ── Reward ad trigger thresholds ──────────────────────────────────────────
-  static const int _minArticlesReadBeforeRewardAd = 1;
+  static const int _minArticlesReadBeforeRewardAd = 2;
   static const int _minSecondsSpentBeforeRewardAd = 5;
 
   RewardedInterstitialAd? _rewardedInterstitialAd;
@@ -70,7 +70,8 @@ class RewardAdService {
     await _resetDailyCountersIfNeeded();
     _startEngagementDecayTimer();
     _sessionStartTime ??= DateTime.now().millisecondsSinceEpoch;
-    _preloadAd();
+    // Do not auto-preload on app start; preload only after user engagement
+    // (article read) so the user can read at least 2 items before ads appear.
   }
 
   /// Call when the user finishes reading an article. Increments the read count

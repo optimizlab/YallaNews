@@ -836,6 +836,7 @@ class BackgroundCrawlerService {
   SendPort? _crawlerSendPort;
 
   final Map<int, Completer<Map<String, dynamic>?>> _pendingRequests = {};
+  final Set<int> _abandonedRequestIds = <int>{};
   int _nextRequestId = 0;
   StreamSubscription<dynamic>? _receiveSubscription;
 
@@ -1077,6 +1078,8 @@ class BackgroundCrawlerService {
           // A single unreachable or slow publisher must never block the whole
           // crawler queue. Network calls inside a source crawler can otherwise
           // leave the Android isolate waiting indefinitely.
+          final crawlDeadline = DateTime.now()
+              .add(const Duration(seconds: 15));
           final quality =
               await _crawlSourceInBackground(
                 source,
@@ -1084,15 +1087,7 @@ class BackgroundCrawlerService {
                 maxUrls: maxUrls,
                 perSourceLimit: perSourceLimit,
                 pauseBetweenArticles: pauseBetweenArticles,
-              ).timeout(
-                const Duration(seconds: 25),
-                onTimeout: () {
-                  debugPrint('[SILENT CRAWLER] timeout source=${source.url}');
-                  engineService.addLog(
-                    '[SILENT CRAWLER] timeout ${source.name}; continuing.',
-                  );
-                  return null;
-                },
+                deadline: crawlDeadline,
               );
           debugPrint(
             '[SILENT CRAWLER] source result=${source.url} quality=$quality',
@@ -1174,6 +1169,7 @@ class BackgroundCrawlerService {
       }
     }
     _pendingRequests.clear();
+    _abandonedRequestIds.clear();
     final port = _receivePort;
     if (port != null) {
       port.close();
@@ -1224,6 +1220,10 @@ class BackgroundCrawlerService {
     if (_crawlerSendPort == null) return null;
 
     final requestId = _nextRequestId++;
+    if (_abandonedRequestIds.contains(requestId)) {
+      _abandonedRequestIds.remove(requestId);
+      return null;
+    }
     final completer = Completer<Map<String, dynamic>?>();
     _pendingRequests[requestId] = completer;
 
@@ -1238,7 +1238,7 @@ class BackgroundCrawlerService {
 
     try {
       final result = await completer.future.timeout(
-        const Duration(seconds: 15),
+        const Duration(seconds: 8),
       );
       return result;
     } catch (e) {
@@ -1250,6 +1250,7 @@ class BackgroundCrawlerService {
       };
     } finally {
       _pendingRequests.remove(requestId);
+      _abandonedRequestIds.remove(requestId);
     }
   }
 
@@ -1259,6 +1260,7 @@ class BackgroundCrawlerService {
     required int maxUrls,
     required int perSourceLimit,
     required Duration pauseBetweenArticles,
+    DateTime? deadline,
   }) async {
     if (_crawlerSendPort == null) return null;
     final crawlLanguage = _resolveCrawlerLanguage(
@@ -1434,6 +1436,12 @@ class BackgroundCrawlerService {
       final List<NewsModel> batchArticles = <NewsModel>[];
       for (final url in limitedUrls.take(effectivePerSourceLimit)) {
         if (!_isRunning) break;
+        if (deadline != null && DateTime.now().isAfter(deadline)) {
+          engineService.addLog(
+            '[SILENT CRAWLER] deadline reached for ${source.url}, stopping.',
+          );
+          break;
+        }
 
         final urlHash = NewsModel.hashUrl(url);
         if (seenHashes.contains(urlHash)) {
@@ -1582,6 +1590,7 @@ class BackgroundCrawlerService {
       return quality;
     } finally {
       _pendingRequests.remove(requestId);
+      _abandonedRequestIds.remove(requestId);
     }
   }
 

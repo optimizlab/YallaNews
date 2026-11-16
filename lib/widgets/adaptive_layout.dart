@@ -13,6 +13,7 @@ class AdaptiveLayout extends StatefulWidget {
   final GlobalKey<ScaffoldState>? scaffoldKey;
   final ScrollController? scrollController;
   final Future<void> Function()? onRefresh;
+  final List<AdaptiveNavigationDestination>? mobileDestinations;
 
   const AdaptiveLayout({
     super.key,
@@ -21,6 +22,7 @@ class AdaptiveLayout extends StatefulWidget {
     required this.currentIndex,
     required this.onNavigationChanged,
     required this.destinations,
+    this.mobileDestinations,
     this.drawer,
     this.appBar,
     this.scaffoldKey,
@@ -74,6 +76,9 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
     if (notification.depth == 0 || notification is UserScrollNotification) {
       final metrics = notification.metrics;
       final offset = metrics.pixels;
+      if (offset <= 10 && !_showBottomBar) {
+        setState(() => _showBottomBar = true);
+      }
       if (notification is ScrollStartNotification) {
         _lastOffset = offset;
       } else if (notification is UserScrollNotification) {
@@ -83,6 +88,9 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
           setState(() => _showBottomBar = true);
         }
         _lastOffset = offset;
+      }
+      if (offset <= 0 && !_showBottomBar) {
+        setState(() => _showBottomBar = true);
       }
     }
     return false;
@@ -97,9 +105,11 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
   Widget _buildMobileShell(BuildContext context, Widget scrollable) {
     final theme = Theme.of(context);
 
-    final safeIndex = widget.destinations.isEmpty
+    final mobileDestinations = widget.mobileDestinations ?? widget.destinations;
+
+    final safeIndex = mobileDestinations.isEmpty
         ? 0
-        : widget.currentIndex.clamp(0, widget.destinations.length - 1);
+        : widget.currentIndex.clamp(0, mobileDestinations.length - 1);
 
     final bottomBar = SafeArea(
       top: false,
@@ -113,7 +123,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
         unselectedItemColor: theme.colorScheme.onSurfaceVariant,
         selectedFontSize: 11,
         unselectedFontSize: 11,
-        items: widget.destinations.map((d) {
+        items: mobileDestinations.map((d) {
           return BottomNavigationBarItem(
             icon: Icon(d.icon),
             activeIcon: Icon(d.selectedIcon ?? d.icon),
@@ -190,21 +200,30 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
           );
         }
 
-        Widget scrollable = CustomScrollView(
+        final theme = Theme.of(context);
+        Widget scrollable = NestedScrollView(
           controller: widget.scrollController,
-          slivers: [
-            if (widget.appBar != null)
+          floatHeaderSlivers: true,
+          headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+            final bar = widget.appBar is AppBar ? widget.appBar as AppBar : null;
+            return <Widget>[
+              if (widget.appBar != null)
                 SliverAppBar(
-                  leading: (widget.appBar as AppBar?)?.leading,
-                  title: (widget.appBar as AppBar?)?.title,
-                  actions: (widget.appBar as AppBar?)?.actions,
-                  centerTitle: (widget.appBar as AppBar?)?.centerTitle ?? true,
+                  leading: bar?.leading,
+                  title: bar?.title,
+                  actions: bar?.actions,
+                  centerTitle: bar?.centerTitle ?? true,
+                  backgroundColor: bar?.backgroundColor ?? theme.colorScheme.surface,
                   elevation: 0,
+                  scrolledUnderElevation: 0,
                   floating: true,
+                  snap: true,
                   pinned: false,
+                  forceElevated: innerBoxIsScrolled,
                 ),
-            SliverToBoxAdapter(child: widget.body),
-          ],
+            ];
+          },
+          body: widget.body,
         );
 
         if (widget.onRefresh != null) {

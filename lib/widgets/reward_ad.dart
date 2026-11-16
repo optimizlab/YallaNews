@@ -515,11 +515,11 @@ class _NativeAdWidgetState extends State<NativeAdWidget> {
           ).colorScheme.outlineVariant.withValues(alpha: 0.2),
         ),
       ),
-      child: Column(
+      child: Column(        
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+            padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
             child: Row(
               children: [
                 Icon(
@@ -626,6 +626,7 @@ class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
     }
 
     return Container(
+      padding: const EdgeInsets.all(0),
       margin: const EdgeInsets.symmetric(vertical: 16),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainer,
@@ -639,6 +640,7 @@ class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
@@ -651,10 +653,9 @@ class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  AppLocalizations.of(context).translate('sponsoredLabel') ??
-                      'Sponsored',
+                  AppLocalizations.of(context).translate('sponsoredLabel') ?? "Sponsored",
                   style: GoogleFonts.outfit(
-                    fontSize: 11,
+                    fontSize: 7,
                     fontWeight: FontWeight.w700,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),

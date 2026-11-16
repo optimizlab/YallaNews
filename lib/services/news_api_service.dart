@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/news_model.dart';
+import 'news_intelligence.dart';
 
 /// Fetches articles from NewsAPI.org (https://newsapi.org/)
 /// and maps them to [NewsModel] so they can be combined with crawled articles.
@@ -82,7 +83,11 @@ class NewsApiService {
           summary: (map['description'] ?? '').toString(),
           content: (map['content'] ?? '').toString(),
           imageUrl: (map['urlToImage'] ?? '').toString(),
-          category: (category ?? 'general').toString(),
+          category: IntelligenceResult.determineCategory(
+            '${(map['title'] ?? '')} ${(map['description'] ?? '')}',
+            url: url,
+            title: (map['title'] ?? '').toString(),
+          ),
           language: (language ?? 'en').toString(),
           sentiment: 0.0,
           keywords: <String>[],

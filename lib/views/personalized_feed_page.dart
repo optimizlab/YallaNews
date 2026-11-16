@@ -583,6 +583,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                     imageUrl: article.imageUrl,
                     fallbackImageUrl:
                         NewsModel.getFallbackImage(article.category),
+                    searchQuery: '${article.title}',
                     width: double.infinity,
                     fit: BoxFit.cover,
                     errorWidget: Container(

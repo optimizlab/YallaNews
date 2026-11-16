@@ -222,11 +222,7 @@ class _AboutUsPageState extends State<AboutUsPage> {
                           style: GoogleFonts.outfit(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: isDark
-                                ? theme.colorScheme.onSurfaceVariant
-                                : theme.colorScheme.onPrimary.withValues(
-                                    alpha: 0.95,
-                                  ),
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
@@ -250,11 +246,7 @@ class _AboutUsPageState extends State<AboutUsPage> {
                           style: GoogleFonts.outfit(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onPrimary.withValues(
-                                    alpha: 0.9,
-                                  ),
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),

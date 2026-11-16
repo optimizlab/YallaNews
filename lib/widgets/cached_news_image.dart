@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:yallanews/services/msn_image_fetcher.dart';
 
 class CachedNewsImage extends StatefulWidget {
   final String imageUrl;
   final String? fallbackImageUrl;
+  final String? searchQuery;
   final double? width;
   final double? height;
   final BoxFit fit;
@@ -15,6 +17,7 @@ class CachedNewsImage extends StatefulWidget {
     Key? key,
     required this.imageUrl,
     this.fallbackImageUrl,
+    this.searchQuery,
     this.width,
     this.height,
     this.fit = BoxFit.cover,
@@ -32,6 +35,7 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
   String? _error;
   ImageProvider? _imageProvider;
   bool _fallbackTried = false;
+  bool _searchTried = false;
 
   @override
   void initState() {
@@ -43,8 +47,10 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
   void didUpdateWidget(CachedNewsImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imageUrl != widget.imageUrl ||
-        oldWidget.fallbackImageUrl != widget.fallbackImageUrl) {
+        oldWidget.fallbackImageUrl != widget.fallbackImageUrl ||
+        oldWidget.searchQuery != widget.searchQuery) {
       _fallbackTried = false;
+      _searchTried = false;
       _isLoading = true;
       _error = null;
       _imageProvider = null;
@@ -126,13 +132,42 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
       if (stream != null && listener != null) {
         stream.removeListener(listener);
       }
-      if (widget.fallbackImageUrl != null && !_fallbackTried) {
+      if (widget.searchQuery != null && !_searchTried && !_fallbackTried) {
+        _searchTried = true;
+        await _trySearchFallback(widget.searchQuery!);
+      } else if (widget.fallbackImageUrl != null && !_fallbackTried) {
         _fallbackTried = true;
         await _loadImage(widget.fallbackImageUrl!);
       } else if (mounted) {
         setState(() {
           _isLoading = false;
           _error = e.toString();
+        });
+      }
+    }
+  }
+
+  /// When the current image is broken, search image engines (MSN/Bing → Qwant)
+  /// for a replacement using [query], pick a random result (positions 1–5),
+  /// and load it. Falls back to [fallbackImageUrl] or the error state when no
+  /// usable result is found.
+  Future<void> _trySearchFallback(String query) async {
+    try {
+      final found = await MsnImageFetcher.fetchRandomImage(query)
+          .timeout(const Duration(seconds: 10));
+      if (mounted && found != null && found.isNotEmpty) {
+        await _loadImage(found);
+        return;
+      }
+    } catch (_) {}
+    if (mounted) {
+      if (widget.fallbackImageUrl != null && !_fallbackTried) {
+        _fallbackTried = true;
+        await _loadImage(widget.fallbackImageUrl!);
+      } else {
+        setState(() {
+          _isLoading = false;
+          _error = 'search_failed';
         });
       }
     }
@@ -163,14 +198,24 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
       return widget.errorWidget ?? _buildPlaceholder(context);
     }
 
-    return Image(
-      image: _imageProvider!,
-      width: widget.width,
-      height: widget.height,
-      fit: widget.fit,
-      alignment: widget.alignment,
-      errorBuilder: (context, error, stackTrace) =>
-          widget.errorWidget ?? _buildPlaceholder(context),
+    return ClipRect(
+      child: Image(
+        image: _imageProvider!,
+        width: widget.width,
+        height: widget.height,
+        fit: widget.fit,
+        alignment: widget.alignment,
+        errorBuilder: (context, error, stackTrace) {
+        if (widget.searchQuery != null &&
+            !_searchTried &&
+            !_fallbackTried &&
+            mounted) {
+          _searchTried = true;
+          _trySearchFallback(widget.searchQuery!);
+        }
+        return widget.errorWidget ?? _buildPlaceholder(context);
+      },
+      ),
     );
   }
 

@@ -393,8 +393,23 @@ DAILY BRIEFING:''';
     'top stories', 'award winners', 'awards',
   ];
 
+  /// Tutorial / course / how-to signals that describe instructional content
+  /// rather than a news event. Matches both Arabic and English.
+  static final List<String> _tutorialSignals = <String>[
+    // Arabic
+    'دورة', 'دورات', 'كورس', 'كورسات', 'درس', 'دروس', 'تدريب', 'تدريبات',
+    'تعليم', 'كيفية', 'طريقة', 'خطوات', 'دليل', 'إرشادات', 'شرح', 'شرحات',
+    'تدريب عملي', 'ورشة', 'ورشات', 'إعداد', 'إنشاء', 'برمجة', 'تصميم',
+    // English
+    'tutorial', 'tutorials', 'course', 'courses', 'lesson', 'lessons',
+    'training', 'how to', 'how-to', 'guide', 'guides', 'manual', 'walkthrough',
+    'step by step', 'learn', 'learn css', 'learn html', 'learn javascript',
+    'studiostyle', 'css studio', 'html studio', 'import', 'export design',
+  ];
+
   /// True when [title] / [content] / [summary] describe a section header,
-  /// category page, navigation link, or digest rather than a news article.
+  /// category page, navigation link, digest, or tutorial/course page rather
+  /// than a news article.
   static bool isNonNewsEntry({
     required String title,
     required String content,
@@ -408,7 +423,16 @@ DAILY BRIEFING:''';
     // 1. Exact section-header match (e.g. "الأخبار التقنية").
     if (_nonNewsTitles.contains(lower)) return true;
 
-    // 2. Pure category label: short title where every word is a known
+    // 2. Section header followed by separator (e.g. "الأخبار التقنية: ...").
+    //    Catches titles that start with a known section word then a colon/pipe/dash.
+    final sectionStart = _nonNewsTitles.firstWhere(
+      (s) => lower.startsWith('$s:') || lower.startsWith('$s |') ||
+          lower.startsWith('$s –') || lower.startsWith('$s -'),
+      orElse: () => '',
+    );
+    if (sectionStart.isNotEmpty) return true;
+
+    // 3. Pure category label: short title where every word is a known
     //    section word (e.g. "Futures & Commodities").
     final words =
         t.split(RegExp(r'[\s&]+')).where((w) => w.isNotEmpty).toList();
@@ -421,13 +445,16 @@ DAILY BRIEFING:''';
       if (allSection) return true;
     }
 
-    // 3. Year round-up / digest / best-of (not a single news event).
+    // 4. Year round-up / digest / best-of (not a single news event).
     if (_nonNewsRoundupSignals.any((s) => lower.contains(s))) return true;
 
-    // 4. Short title with no real body -> category / nav page.
-    final body = '${summary.trim()} ${content.trim()}';
+    // 5. Tutorial / course / how-to content is not news.
+    final fullText = '$t ${summary.trim()} ${content.trim()}'.toLowerCase();
+    if (_tutorialSignals.any((s) => fullText.contains(s))) return true;
+
+    // 6. Short title with no real body -> category / nav page.
     if (t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length <= 4 &&
-        body.trim().length < 40) {
+        '${summary.trim()} ${content.trim()}'.trim().length < 40) {
       return true;
     }
 

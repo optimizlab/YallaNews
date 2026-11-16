@@ -216,6 +216,22 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     _loadRelatedArticles();
     _trackRead();
     AuthService.instance.addListener(_onAuthChanged);
+    TTSService.instance.setActiveDetailPage(article.url);
+    _isSpeaking = TTSService.instance.isPlaying &&
+        TTSService.instance.currentArticle?.url == article.url;
+    TTSService.instance.playingNotifier.addListener(_onTtsStateChanged);
+    TTSService.instance.articleNotifier.addListener(_onTtsStateChanged);
+  }
+
+  void _onTtsStateChanged() {
+    if (!mounted) return;
+    final isCurrent = TTSService.instance.currentArticle?.url == article.url;
+    final isPlaying = isCurrent && TTSService.instance.isPlaying;
+    if (_isSpeaking != isPlaying) {
+      setState(() {
+        _isSpeaking = isPlaying;
+      });
+    }
   }
 
   /// Track that this article was read: increment locally and on the server so
@@ -373,7 +389,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     AuthService.instance.removeListener(_onAuthChanged);
     _scrollController.removeListener(_scrollListener);
     _scrollController.dispose();
-    TTSService.instance.stop();
+    TTSService.instance.playingNotifier.removeListener(_onTtsStateChanged);
+    TTSService.instance.articleNotifier.removeListener(_onTtsStateChanged);
+    TTSService.instance.setActiveDetailPage(null);
 
     // Record article read and show reward ad when thresholds are met.
     // RewardedInterstitialAd.show() does not require a BuildContext, so it is
@@ -577,26 +595,21 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   void _toggleTts() async {
-    if (_isSpeaking) {
-      await TTSService.instance.stop();
-      if (mounted) {
-        setState(() {
-          _isSpeaking = false;
-        });
-      }
+    final tts = TTSService.instance;
+    final isCurrentArticle = tts.currentArticle?.url == article.url;
+    if (isCurrentArticle && tts.isPlaying) {
+      await tts.pause();
+    } else if (isCurrentArticle && !tts.isPlaying) {
+      await tts.resume();
     } else {
       final contentToRead = _buildNewsReadText();
       if (contentToRead.trim().isEmpty) {
         if (mounted) setState(() => _isSpeaking = false);
         return;
       }
-      if (mounted) {
-        setState(() {
-          _isSpeaking = true;
-        });
-      }
+      tts.setCurrentArticle(article, text: contentToRead);
       try {
-        await TTSService.instance.speak(
+        await tts.speak(
           contentToRead,
           onCompleted: () {
             if (mounted) {
@@ -1228,21 +1241,26 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SelectableText(
-                          article.author,
-                          style: GoogleFonts.outfit(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        SelectableText(
-                          l10n.translate('editor'),
-                          style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
+                        RichText(
+                          text: TextSpan(
+                            style: GoogleFonts.outfit(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                            children: [
+                              TextSpan(
+                                text: '${l10n.translate('editor')}: ',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              TextSpan(text: article.author),
+                            ],
                           ),
                         ),
                       ],
@@ -1339,6 +1357,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                             imageUrl: article.imageUrl,
                             fallbackImageUrl:
                                 NewsModel.getFallbackImage(article.category),
+                            searchQuery:
+                                '${article.title}',
                             width: double.infinity,
                             fit: BoxFit.cover,
                             errorWidget: Container(
@@ -1816,6 +1836,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                                           NewsModel.getFallbackImage(
                                               rel.category,
                                             ),
+                                       searchQuery:
+                                           '${rel.title}',
                                       width: cardWidth,
                                       height: 120,
                                       fit: BoxFit.cover,
@@ -2686,9 +2708,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         child: CachedNewsImage(
           imageUrl: imgUrl,
           fallbackImageUrl: NewsModel.getFallbackImage(article.category),
-          width: double.infinity,
-          fit: BoxFit.cover,
-          placeholder: _buildImagePlaceholder(article.category, size: 200),
+                                   searchQuery:
+                                       '${article.title}',
+                                  width: double.infinity,
+                                  fit: BoxFit.cover,
+                                  placeholder: _buildImagePlaceholder(article.category, size: 200),
           errorWidget: _buildImagePlaceholder(article.category, size: 200),
         ),
       ),
@@ -3699,6 +3723,7 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
                                   : NewsModel.getFallbackImage(rel.category),
                               fallbackImageUrl:
                                   NewsModel.getFallbackImage(rel.category),
+                              searchQuery: '${rel.title}',
                               width: 90,
                               height: 70,
                               fit: BoxFit.cover,

@@ -8,6 +8,7 @@ import '../models/news_model.dart';
 import '../database/news_db.dart' show NewsDatabase;
 import '../services/category_service.dart';
 import '../views/news_detail_page.dart';
+import 'cached_news_image.dart';
 
 class RelatedArticlesWidget extends StatefulWidget {
   final NewsModel article;
@@ -262,7 +263,7 @@ class _RelatedArticlesWidgetState extends State<RelatedArticlesWidget> {
             color: theme.colorScheme.outline.withValues(alpha: 0.1),
           ),
         ),
-        child: Row(
+              child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ClipRRect(
@@ -270,15 +271,16 @@ class _RelatedArticlesWidgetState extends State<RelatedArticlesWidget> {
               child: SizedBox(
                 width: 80,
                 height: 60,
-                child: article.imageUrl.isNotEmpty
-                    ? Image.network(
-                        article.imageUrl,
-                        width: 80,
-                        height: 60,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _placeholderImage(context),
-                      )
-                    : _placeholderImage(context),
+                child: CachedNewsImage(
+                  imageUrl: article.imageUrl.isNotEmpty
+                      ? article.imageUrl
+                      : NewsModel.getFallbackImage(article.category),
+                  searchQuery: '${article.title}',
+                  width: 80,
+                  height: 60,
+                  fit: BoxFit.cover,
+                  errorWidget: _placeholderImage(context),
+                ),
               ),
             ),
             const SizedBox(width: 12),

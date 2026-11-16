@@ -1130,7 +1130,7 @@ class IntelligenceResult {
     }
 
     // Require minimum score to classify into a specialized category
-    if (bestScore < 2.0) {
+    if (bestScore < 0.5) {
       chosenCategory = _resolveFallback(validCategoryIds);
     }
 

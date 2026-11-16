@@ -357,6 +357,7 @@ decoration: BoxDecoration(
                         imageUrl: article.imageUrl.isEmpty
                             ? 'https://placehold.co/600x300/1A1A2E/C62828?text=$categoryLabel'
                             : article.imageUrl,
+                        searchQuery: '${article.title}',
                         width: double.infinity,
                         height: double.infinity,
                         fit: BoxFit.cover,
