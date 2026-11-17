@@ -185,6 +185,7 @@ class _HomePageState extends State<HomePage> {
         return 0;
     }
   }
+
   bool _isSearchActive = false;
   String _selectedCategory = 'all';
   bool _waitingForInitialCrawl = false;
@@ -208,7 +209,6 @@ class _HomePageState extends State<HomePage> {
   Timer? _searchDebounce;
   List<NewsModel> _cachedSearchResults = const [];
   String _lastSearchQuery = '';
-
 
   @override
   void initState() {
@@ -533,7 +533,9 @@ class _HomePageState extends State<HomePage> {
             cachedArticles.where(_isValidArticle),
           );
           rawList = validCached;
-          debugPrint('[HOME] Loaded ${validCached.length} articles from local cache');
+          debugPrint(
+            '[HOME] Loaded ${validCached.length} articles from local cache',
+          );
         } else {
           rawList = <NewsModel>[];
         }
@@ -545,8 +547,9 @@ class _HomePageState extends State<HomePage> {
       final newsApiArticles = await _fetchNewsApiArticles();
       if (newsApiArticles.isNotEmpty) {
         final existingUrls = rawList.map((a) => a.url).toSet();
-        final freshNewsApi =
-            newsApiArticles.where((a) => !existingUrls.contains(a.url)).toList();
+        final freshNewsApi = newsApiArticles
+            .where((a) => !existingUrls.contains(a.url))
+            .toList();
         widget.engineService.addLog(
           '[NEWSAPI] Merge: ${newsApiArticles.length} fetched, ${freshNewsApi.length} new (${existingUrls.length} already present)',
         );
@@ -562,9 +565,8 @@ class _HomePageState extends State<HomePage> {
       final validatedArticles = await _validateAndRegenerateArticles(rawList);
 
       // ─── 5. Blend + LLM synthesize across sources ───
-      final blendedArticles = await NewsBlenderService.instance.blendArticlesAsync(
-        validatedArticles,
-      );
+      final blendedArticles = await NewsBlenderService.instance
+          .blendArticlesAsync(validatedArticles);
 
       // ─── 6. Push new/blended articles to our server ───
       await _pushArticlesToApi(blendedArticles);
@@ -805,7 +807,10 @@ class _HomePageState extends State<HomePage> {
         debugPrint(
           '[HOME] Server empty, loading $articleCount articles from local DB',
         );
-        final localArticles = await db.getAllArticles(limit: 100, language: AppSettings.instance.locale?.languageCode);
+        final localArticles = await db.getAllArticles(
+          limit: 100,
+          language: AppSettings.instance.locale?.languageCode,
+        );
         final validLocal = _filterPolicyCompliantArticles(
           localArticles.where(_isValidArticle),
         );
@@ -853,9 +858,13 @@ class _HomePageState extends State<HomePage> {
     try {
       await NewsApiService.init();
       final key = NewsApiService.apiKey;
-      widget.engineService.addLog('[NEWSAPI] init done; key=${key == null || key.isEmpty ? 'missing' : key.substring(0, 8)}...');
+      widget.engineService.addLog(
+        '[NEWSAPI] init done; key=${key == null || key.isEmpty ? 'missing' : key.substring(0, 8)}...',
+      );
       if (key == null || key.isEmpty) {
-        widget.engineService.addLog('[NEWSAPI] No API key configured — skipping NewsAPI fetch.');
+        widget.engineService.addLog(
+          '[NEWSAPI] No API key configured — skipping NewsAPI fetch.',
+        );
         return <NewsModel>[];
       }
       final locale = AppSettings.instance.locale;
@@ -891,7 +900,9 @@ class _HomePageState extends State<HomePage> {
     final newsApiArticles = await _fetchNewsApiArticles();
     if (newsApiArticles.isNotEmpty && mounted) {
       final existingUrls = _rawArticles.map((a) => a.url).toSet();
-      final fresh = newsApiArticles.where((a) => !existingUrls.contains(a.url)).toList();
+      final fresh = newsApiArticles
+          .where((a) => !existingUrls.contains(a.url))
+          .toList();
       widget.engineService.addLog(
         '[NEWSAPI] Refresh: ${newsApiArticles.length} fetched, ${fresh.length} new',
       );
@@ -915,8 +926,8 @@ class _HomePageState extends State<HomePage> {
     final hasNews = _rawArticles.isNotEmpty;
     final newest = hasNews
         ? _rawArticles
-            .map((a) => a.publicationDate ?? DateTime.now())
-            .reduce((a, b) => a.isAfter(b) ? a : b)
+              .map((a) => a.publicationDate ?? DateTime.now())
+              .reduce((a, b) => a.isAfter(b) ? a : b)
         : null;
 
     if (!_isStale(newest)) return;
@@ -949,8 +960,6 @@ class _HomePageState extends State<HomePage> {
     return age > maxAge;
   }
 
-
-
   Future<void> _scrollToTop() async {
     if (_scrollController.hasClients) {
       await _scrollController.animateTo(
@@ -982,9 +991,9 @@ class _HomePageState extends State<HomePage> {
         _hasMore = false;
       } else {
         _currentPage = nextPage;
-        final newArticles = more.where(
-          (a) => !_articles.any((e) => e.url == a.url),
-        ).toList();
+        final newArticles = more
+            .where((a) => !_articles.any((e) => e.url == a.url))
+            .toList();
         setState(() {
           _articles.addAll(newArticles);
           _allArticles.addAll(newArticles);
@@ -1183,12 +1192,12 @@ class _HomePageState extends State<HomePage> {
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
         actions: [
+          const CrawlerStateIndicator(),
           IconButton(
             icon: const Icon(Icons.search_rounded),
             iconSize: 24,
             onPressed: _activateSearch,
           ),
-          const CrawlerStateIndicator(),
           AnimatedBuilder(
             animation: AuthService.instance,
             builder: (context, _) {
@@ -1345,10 +1354,12 @@ class _HomePageState extends State<HomePage> {
           i >= 4 &&
           i - lastAdIndex >= 6 &&
           articles[i].url.hashCode % 7 == 3) {
-        flat.add(BannerAdWidget(
-          key: ValueKey('ad_feed_${articles[i].url.hashCode}'),
-          placement: 'banner_1',
-        ));
+        flat.add(
+          BannerAdWidget(
+            key: ValueKey('ad_feed_${articles[i].url.hashCode}'),
+            placement: 'banner_1',
+          ),
+        );
         lastAdIndex = i;
         adCount++;
       }
@@ -1498,7 +1509,9 @@ class _HomePageState extends State<HomePage> {
             onNotification: (notification) {
               if (notification.metrics.pixels >=
                   notification.metrics.maxScrollExtent - 200) {
-                if (_hasMore && !_isSearchActive && _selectedCategory == 'all') {
+                if (_hasMore &&
+                    !_isSearchActive &&
+                    _selectedCategory == 'all') {
                   unawaited(_loadMoreArticles());
                 }
               }
@@ -1507,103 +1520,106 @@ class _HomePageState extends State<HomePage> {
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildCategoryChips(context),
-                if (_articles.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  TopNewsCarousel(
-                        articles: topArticles,
-                        onArticleTap: (article) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => NewsDetailPage(article: article),
-                            ),
-                          );
-                        },
-                        getCategoryName: (cat) =>
-                            _getCategoryName(cat, context),
-                        getReadTime: (art) => _getReadTime(art, context),
-                        getSourceName: (art) => _getSourceName(art),
-                      ),
-                      const SizedBox(height: 20),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 4,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFC62828),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _selectedCategory == 'all'
-                                  ? l10n.translate('all')
-                                  : _getCategoryName(
-                                      _selectedCategory,
-                                      context,
-                                    ),
-                              style: GoogleFonts.outfit(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      if (_isBlending && (_selectedCategory == 'all' || _selectedCategory == 'blended')) ...[
-                        _buildBlendedStoryLoader(context),
-                        const SizedBox(height: 14),
-                      ],
-                  ..._buildFeedRows(remainingArticles, isWide).map((row) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: isWide && row.length == 2
-                          ? Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(child: row[0]),
-                                const SizedBox(width: 14),
-                                Expanded(child: row[1]),
-                              ],
-                            )
-                          : row.first,
-                    );
-                  }),
-                  if (_isLoadingMore)
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildCategoryChips(context),
+                  if (_articles.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    TopNewsCarousel(
+                      articles: topArticles,
+                      onArticleTap: (article) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => NewsDetailPage(article: article),
+                          ),
+                        );
+                      },
+                      getCategoryName: (cat) => _getCategoryName(cat, context),
+                      getReadTime: (art) => _getReadTime(art, context),
+                      getSourceName: (art) => _getSourceName(art),
+                    ),
+                    const SizedBox(height: 20),
                     Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 32,
-                              height: 32,
-                              child: CircularProgressIndicator(strokeWidth: 3),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFC62828),
+                              borderRadius: BorderRadius.circular(2),
                             ),
-                            SizedBox(height: 12),
-                              Text(
-                                l10n.translate('loadingMore'),
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                              ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _selectedCategory == 'all'
+                                ? l10n.translate('all')
+                                : _getCategoryName(_selectedCategory, context),
+                            style: GoogleFonts.outfit(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    if (_isBlending &&
+                        (_selectedCategory == 'all' ||
+                            _selectedCategory == 'blended')) ...[
+                      _buildBlendedStoryLoader(context),
+                      const SizedBox(height: 14),
+                    ],
+                    ..._buildFeedRows(remainingArticles, isWide).map((row) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: isWide && row.length == 2
+                            ? Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: row[0]),
+                                  const SizedBox(width: 14),
+                                  Expanded(child: row[1]),
+                                ],
+                              )
+                            : row.first,
+                      );
+                    }),
+                    if (_isLoadingMore)
+                      Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 32,
+                                height: 32,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                ),
+                              ),
+                              SizedBox(height: 12),
+                              Text(
+                                l10n.translate('loadingMore'),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-      );
+        );
       },
     );
   }
@@ -1628,10 +1644,8 @@ class _HomePageState extends State<HomePage> {
       final bRecency = (1.0 / (bDays + 1)).clamp(0.0, 1.0);
       // Popularity score from read count (log-scaled so a single viral article
       // doesn't dwarf everything else).
-      final aPopularity = (1 + log(a.readCount + 1)) /
-          (1 + log(101));
-      final bPopularity = (1 + log(b.readCount + 1)) /
-          (1 + log(101));
+      final aPopularity = (1 + log(a.readCount + 1)) / (1 + log(101));
+      final bPopularity = (1 + log(b.readCount + 1)) / (1 + log(101));
       final aScore = aRecency * 0.6 + aPopularity * 0.4;
       final bScore = bRecency * 0.6 + bPopularity * 0.4;
       return bScore.compareTo(aScore);
@@ -1642,7 +1656,11 @@ class _HomePageState extends State<HomePage> {
   Widget _buildCategoryChips(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final allCats = <Map<String, dynamic>>[
-      {'id': 'all', 'name': l10n.translate('all'), 'nameEn': l10n.translate('all')},
+      {
+        'id': 'all',
+        'name': l10n.translate('all'),
+        'nameEn': l10n.translate('all'),
+      },
     ];
     if (_blendedCount > 0) {
       allCats.add({
@@ -1699,6 +1717,7 @@ class _HomePageState extends State<HomePage> {
                 ],
                 Text(
                   catName,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.outfit(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -1901,7 +1920,8 @@ class _HomePageState extends State<HomePage> {
                         height: 14,
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.7),
+                          color: theme.colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.7),
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
@@ -1910,7 +1930,8 @@ class _HomePageState extends State<HomePage> {
                         height: 14,
                         width: 180,
                         decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                          color: theme.colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
@@ -2313,10 +2334,10 @@ class _HomePageState extends State<HomePage> {
             _DrawerItem(
               icon: Icons.bookmark_rounded,
               label: l10n.translate('bookmarks'),
-              isSelected: _currentIndex == 3,
+              isSelected: _currentIndex == 6,
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 3);
+                setState(() => _currentIndex = 6);
               },
             ),
             Divider(
@@ -2388,10 +2409,10 @@ class _HomePageState extends State<HomePage> {
             _DrawerItem(
               icon: Icons.settings_rounded,
               label: l10n.translate('settingsNav'),
-              isSelected: _currentIndex == 6,
+              isSelected: _currentIndex == 7,
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 6);
+                setState(() => _currentIndex = 7);
               },
             ),
           ],
@@ -2410,10 +2431,9 @@ class _HomePageState extends State<HomePage> {
             AppLocalizations.of(context).translate('contactWebsiteError'),
           ),
         ),
-    );
+      );
+    }
   }
-}
-
 }
 
 class _DrawerItem extends StatelessWidget {
@@ -2437,7 +2457,9 @@ class _DrawerItem extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         decoration: BoxDecoration(
           color: isSelected
-              ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.12)
+              ? Theme.of(
+                  context,
+                ).colorScheme.primaryContainer.withValues(alpha: 0.12)
               : Colors.transparent,
         ),
         child: Row(

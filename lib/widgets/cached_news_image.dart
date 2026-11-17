@@ -1,4 +1,6 @@
 import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:yallanews/services/msn_image_fetcher.dart';
 
@@ -31,16 +33,14 @@ class CachedNewsImage extends StatefulWidget {
 }
 
 class _CachedNewsImageState extends State<CachedNewsImage> {
-  bool _isLoading = true;
-  String? _error;
-  ImageProvider? _imageProvider;
+  String? _currentUrl;
   bool _fallbackTried = false;
   bool _searchTried = false;
 
   @override
   void initState() {
     super.initState();
-    _loadImage(widget.imageUrl);
+    _currentUrl = widget.imageUrl;
   }
 
   @override
@@ -51,187 +51,116 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
         oldWidget.searchQuery != widget.searchQuery) {
       _fallbackTried = false;
       _searchTried = false;
-      _isLoading = true;
-      _error = null;
-      _imageProvider = null;
-      _loadImage(widget.imageUrl);
+      _currentUrl = widget.imageUrl;
     }
   }
 
-  Future<void> _loadImage(String url) async {
-    if (url.isEmpty) {
-      if (widget.fallbackImageUrl != null && !_fallbackTried) {
-        _fallbackTried = true;
-        await _loadImage(widget.fallbackImageUrl!);
-      } else if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = 'empty';
-        });
-      }
-      return;
-    }
+  bool get _shouldSkip => _currentUrl == null ||
+      _currentUrl!.isEmpty ||
+      _currentUrl!.contains('image.png') ||
+      _currentUrl!.toLowerCase().contains('bing.com/images/search') ||
+      _currentUrl!.toLowerCase().contains('google.com/search') ||
+      _currentUrl!.toLowerCase().contains('yahoo.com/search');
 
-    final lower = url.toLowerCase();
-    // Prevent image.png from being processed as it's a model instruction file
-    if (url.contains('image.png')) {
-      if (widget.fallbackImageUrl != null && !_fallbackTried) {
-        _fallbackTried = true;
-        await _loadImage(widget.fallbackImageUrl!);
-      } else if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = 'model_instruction';
-        });
-      }
-      return;
-    }
-
-    if (lower.contains('bing.com/images/search') ||
-        lower.contains('google.com/search') ||
-        lower.contains('yahoo.com/search')) {
-      if (widget.fallbackImageUrl != null && !_fallbackTried) {
-        _fallbackTried = true;
-        await _loadImage(widget.fallbackImageUrl!);
-      } else if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = 'invalid';
-        });
-      }
-      return;
-    }
-
-    ImageStream? stream;
-    ImageStreamListener? listener;
-    try {
-      final provider = NetworkImage(url);
-      final completer = Completer<void>();
-      stream = provider.resolve(const ImageConfiguration());
-      listener = ImageStreamListener(
-        (info, _) {
-          if (!completer.isCompleted) completer.complete();
-        },
-        onError: (error, _) {
-          if (!completer.isCompleted) completer.completeError(error);
-        },
-      );
-      final s = stream;
-      final l = listener;
-      s.addListener(l);
-      await completer.future.timeout(const Duration(seconds: 8));
-      s.removeListener(l);
-      if (mounted) {
-        setState(() {
-          _imageProvider = provider;
-          _isLoading = false;
-          _error = null;
-        });
-      }
-    } catch (e) {
-      if (stream != null && listener != null) {
-        stream.removeListener(listener);
-      }
-      if (widget.searchQuery != null && !_searchTried && !_fallbackTried) {
-        _searchTried = true;
-        await _trySearchFallback(widget.searchQuery!);
-      } else if (widget.fallbackImageUrl != null && !_fallbackTried) {
-        _fallbackTried = true;
-        await _loadImage(widget.fallbackImageUrl!);
-      } else if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _error = e.toString();
-        });
-      }
-    }
-  }
-
-  /// When the current image is broken, search image engines (MSN/Bing → Qwant)
-  /// for a replacement using [query], pick a random result (positions 1–5),
-  /// and load it. Falls back to [fallbackImageUrl] or the error state when no
-  /// usable result is found.
   Future<void> _trySearchFallback(String query) async {
     try {
       final found = await MsnImageFetcher.fetchRandomImage(query)
           .timeout(const Duration(seconds: 10));
       if (mounted && found != null && found.isNotEmpty) {
-        await _loadImage(found);
+        setState(() {
+          _currentUrl = found;
+          _searchTried = true;
+        });
         return;
       }
     } catch (_) {}
     if (mounted) {
       if (widget.fallbackImageUrl != null && !_fallbackTried) {
         _fallbackTried = true;
-        await _loadImage(widget.fallbackImageUrl!);
+        setState(() => _currentUrl = widget.fallbackImageUrl);
       } else {
-        setState(() {
-          _isLoading = false;
-          _error = 'search_failed';
-        });
+        setState(() => _searchTried = true);
       }
     }
   }
 
+  Widget _buildPlaceholder(BuildContext context) {
+    final theme = Theme.of(context);
+    return widget.placeholder ??
+        Container(
+          width: widget.width,
+          height: widget.height,
+          color: theme.colorScheme.surfaceContainer,
+          child: const Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        );
+  }
+
+  Widget _buildFallback(BuildContext context) {
+    return widget.errorWidget ?? _buildPlaceholder(context);
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return widget.placeholder ??
-          Container(
-            width: widget.width,
-            height: widget.height,
-            color: Colors.grey[300],
-            child: Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ),
-          );
+    if (_shouldSkip) {
+      if (widget.fallbackImageUrl != null && !_fallbackTried) {
+        _fallbackTried = true;
+        _currentUrl = widget.fallbackImageUrl;
+      } else if (widget.searchQuery != null && !_searchTried && !_fallbackTried) {
+        _searchTried = true;
+        unawaited(_trySearchFallback(widget.searchQuery!));
+      }
+      return _buildPlaceholder(context);
     }
 
-    if (_error != null || _imageProvider == null) {
-      return widget.errorWidget ?? _buildPlaceholder(context);
-    }
+    final memWidth = widget.width != null &&
+        widget.width!.isFinite &&
+        widget.width! > 0
+        ? widget.width!.toInt()
+        : null;
+    final memHeight = widget.height != null &&
+        widget.height!.isFinite &&
+        widget.height! > 0
+        ? widget.height!.toInt()
+        : null;
 
-    return ClipRect(
-      child: Image(
-        image: _imageProvider!,
-        width: widget.width,
-        height: widget.height,
-        fit: widget.fit,
-        alignment: widget.alignment,
-        errorBuilder: (context, error, stackTrace) {
+    return CachedNetworkImage(
+      imageUrl: _currentUrl!,
+      width: widget.width,
+      height: widget.height,
+      fit: widget.fit,
+      alignment: widget.alignment,
+      // Mobile-first disk cache: images are stored on disk by default and
+      // survive app restarts so they are never re-downloaded within the cache
+      // window. Kept small to respect device storage while avoiding reloads on
+      // every feed scroll. Cache duration is signaled via the Cache-Control
+      // header below.
+      memCacheWidth: memWidth,
+      memCacheHeight: memHeight,
+      fadeInDuration: const Duration(milliseconds: 220),
+      fadeInCurve: Curves.easeInOut,
+      httpHeaders: const {'Cache-Control': 'public, max-age=604800'},
+      placeholder: (context, url) => _buildPlaceholder(context),
+      errorWidget: (context, url, error) {
         if (widget.searchQuery != null &&
             !_searchTried &&
             !_fallbackTried &&
             mounted) {
           _searchTried = true;
-          _trySearchFallback(widget.searchQuery!);
+          unawaited(_trySearchFallback(widget.searchQuery!));
+        } else if (widget.fallbackImageUrl != null &&
+            !_fallbackTried &&
+            mounted) {
+          _fallbackTried = true;
+          _currentUrl = widget.fallbackImageUrl;
         }
-        return widget.errorWidget ?? _buildPlaceholder(context);
+        return _buildFallback(context);
       },
-      ),
-    );
-  }
-
-  Widget _buildPlaceholder(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      width: widget.width,
-      height: widget.height,
-      color: theme.colorScheme.surfaceContainer,
-      child: Center(
-        child: Icon(
-          Icons.image_rounded,
-          size: 32,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
     );
   }
 }

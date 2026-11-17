@@ -13,6 +13,7 @@ import '../services/arabic_normalizer.dart';
 import '../services/category_service.dart';
 import '../database/news_db.dart';
 import '../widgets/shimmer_loading.dart';
+import '../widgets/cached_news_image.dart';
 import 'news_detail_page.dart';
 import '../l10n/app_localizations.dart';
 
@@ -518,12 +519,12 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
                                       ClipRRect(
                                         borderRadius: BorderRadius.circular(8),
                                         child: article.imageUrl.startsWith('http')
-                                            ? Image.network(
-                                                article.imageUrl,
+                                            ? CachedNewsImage(
+                                                imageUrl: article.imageUrl,
                                                 width: 76,
                                                 height: 76,
                                                 fit: BoxFit.cover,
-                                                errorBuilder: (_, __, ___) => _buildFallbackImage(article.category),
+                                                errorWidget: _buildFallbackImage(article.category),
                                               )
                                             : _buildFallbackImage(article.category),
                                       ),

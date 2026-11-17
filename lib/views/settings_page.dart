@@ -1,9 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../database/news_db.dart';
 import '../services/app_settings.dart';
 import '../services/tts_service.dart';
 import '../l10n/app_localizations.dart';
+import '../services/prayer/repository.dart';
+import '../services/prayer/notification_scheduler.dart';
+import './prayer_times/adhan_settings_widget.dart';
+import './prayer_times/prayer_settings_widget.dart';
+import './prayer_times/location_selector_widget.dart';
 
 class SettingsPage extends StatefulWidget {
   /// When shown from the root navigation tabs, the parent [Scaffold] already
@@ -24,14 +30,32 @@ class _SettingsPageState extends State<SettingsPage> {
   int _topSourcesCount = 10;
   int _maxUrlsPerSource = 100;
   String _selectedLanguage = 'ar';
+  String? _lastSettingsLocale;
   List<dynamic> _ttsVoices = [];
-  Map<String, String>? _selectedVoice;
+  String? _selectedVoiceName;
+  late final PrayerTimesRepository _repository;
+  late final PrayerNotificationScheduler _notificationScheduler;
 
   @override
   void initState() {
     super.initState();
+    _repository = PrayerTimesRepository();
+    _notificationScheduler = PrayerNotificationScheduler();
     _loadSettings();
     _loadTtsSettings();
+    _initializeNotifications();
+    _lastSettingsLocale = AppSettings.instance.locale?.languageCode;
+    AppSettings.instance.addListener(_onAppSettingsChanged);
+  }
+
+  @override
+  void dispose() {
+    AppSettings.instance.removeListener(_onAppSettingsChanged);
+    super.dispose();
+  }
+
+  Future<void> _initializeNotifications() async {
+    await _notificationScheduler.initialize();
   }
 
   Future<void> _loadSettings() async {
@@ -52,25 +76,31 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _loadTtsSettings() async {
-    final voices = await TTSService.instance.getVoices();
-    if (mounted) {
-      setState(() {
-        _ttsVoices = voices
-            .map((voice) => Map<String, String>.from(voice))
-            .where(_isSupportedVoice)
-            .toList();
-        final selectedName = TTSService.instance.selectedVoiceName;
-        if (selectedName != null) {
-          for (final voice in _ttsVoices) {
-            final candidate = voice as Map<String, String>;
-            if (candidate['name'] == selectedName) {
-              _selectedVoice = candidate;
-              break;
+    try {
+      final voices = await TTSService.instance.getVoices();
+      if (mounted) {
+        setState(() {
+          _ttsVoices = voices
+              .map((voice) => Map<String, String>.from(voice))
+              .where((voice) {
+                final locale = (voice['locale'] ?? '').split(RegExp(r'[-_]')).first.toLowerCase();
+                return locale == _selectedLanguage.toLowerCase() && _isSupportedVoice(voice);
+              })
+              .toList();
+          final selectedName = TTSService.instance.selectedVoiceName;
+          _selectedVoiceName = selectedName;
+          if (_selectedVoiceName == null || !_ttsVoices.any((v) => (v as Map<String, String>)['name'] == _selectedVoiceName)) {
+            _selectedVoiceName = _ttsVoices.isNotEmpty ? (_ttsVoices.first as Map<String, String>)['name'] : null;
+            if (_selectedVoiceName != null) {
+              final voiceMap = _ttsVoices.firstWhere((v) => (v as Map<String, String>)['name'] == _selectedVoiceName) as Map<String, String>;
+              unawaited(TTSService.instance.setVoice(voiceMap));
             }
           }
-        }
-        _newsMode = TTSService.instance.newsMode;
-      });
+          _newsMode = TTSService.instance.newsMode;
+        });
+      }
+    } catch (e) {
+      debugPrint('[SETTINGS] Failed to load TTS voices: $e');
     }
   }
 
@@ -78,6 +108,13 @@ class _SettingsPageState extends State<SettingsPage> {
     final locale = (voice['locale'] ?? '').toLowerCase().replaceAll('_', '-');
     final language = locale.split('-').first;
     return const {'ar', 'fr', 'en', 'tr'}.contains(language);
+  }
+
+  void _onAppSettingsChanged() {
+    final currentLocale = AppSettings.instance.locale?.languageCode;
+    if (_lastSettingsLocale == currentLocale) return;
+    _lastSettingsLocale = currentLocale;
+    _loadTtsSettings();
   }
 
   bool _isEffectiveDarkMode(BuildContext context) {
@@ -173,6 +210,29 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 12),
                 _buildTtsVoiceOption(),
+                const SizedBox(height: 24),
+                const AdhanSettingsWidget(),
+                const SizedBox(height: 24),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      l10n.translate('cityAndTime'),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                LocationSelectorWidget(
+                  repository: _repository,
+                  onCitySelected: (city) async {
+                    await _repository.setManualLocation(city);
+                  },
+                ),
+                const SizedBox(height: 24),
+                PrayerSettingsWidget(
+                  repository: _repository,
+                  notificationScheduler: _notificationScheduler,
+                  times: null,
+                ),
                 const SizedBox(height: 24),
                 _buildClearSavedNewsOption(),
                 const SizedBox(height: 96),
@@ -298,6 +358,10 @@ class _SettingsPageState extends State<SettingsPage> {
     final l10n = AppLocalizations.of(context);
     final sorted = _ttsVoices
         .map((voice) => voice as Map<String, String>)
+        .where((voice) {
+          final locale = (voice['locale'] ?? '').split(RegExp(r'[-_]')).first.toLowerCase();
+          return locale == _selectedLanguage.toLowerCase();
+        })
         .toList()
       ..sort((a, b) {
         final la = (a['locale'] ?? '').split(RegExp(r'[-_]')).first.toLowerCase();
@@ -330,7 +394,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<Map<String, String>>(
+          DropdownButtonFormField<String>(
             isExpanded: true,
             dropdownColor: Theme.of(context).colorScheme.surfaceContainerHighest,
             style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 14),
@@ -341,7 +405,7 @@ class _SettingsPageState extends State<SettingsPage> {
               hintText: TTSService.instance.selectedVoiceName ?? AppLocalizations.of(context).translate('voiceSelection'),
               hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14),
             ),
-            value: _selectedVoice,
+            value: _selectedVoiceName,
             selectedItemBuilder: (context) => sorted.map((voice) {
               final name = voice['name'] ?? l10n.translate('unknownVoice');
               final locale = voice['locale'] ?? '';
@@ -357,15 +421,21 @@ class _SettingsPageState extends State<SettingsPage> {
             items: sorted.map((voice) {
               final name = voice['name'] ?? l10n.translate('unknownVoice');
               final locale = voice['locale'] ?? '';
-              return DropdownMenuItem<Map<String, String>>(
-                value: voice,
+              return DropdownMenuItem<String>(
+                value: name,
                 child: Text('$name ($locale)', style: TextStyle(color: Theme.of(context).colorScheme.onSurface)),
               );
             }).toList(),
-            onChanged: (voice) async {
-              if (voice == null) return;
-              setState(() => _selectedVoice = voice);
-              await TTSService.instance.setVoice(voice);
+            onChanged: (name) async {
+              if (name == null) return;
+              final voiceMap = _ttsVoices.firstWhere(
+                (v) => (v as Map<String, String>)['name'] == name,
+                orElse: () => <String, String>{},
+              ) as Map<String, String>;
+              if (voiceMap.isEmpty) return;
+              setState(() => _selectedVoiceName = name);
+              await TTSService.instance.setVoice(voiceMap);
+              await TTSService.instance.speakPreview();
             },
           ),
         ],

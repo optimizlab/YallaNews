@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -36,10 +37,18 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   // Fixed slot height so the feed layout is stable regardless of ad state.
   static const double _slotHeight = 110.0;
 
+  /// Google Mobile Ads is only available on Android/iOS. Desktop (Windows) and
+  /// web have no plugin implementation, so skip loading entirely to avoid
+  /// MissingPluginException crashes.
+  bool get _supportsAds =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
   @override
   void initState() {
     super.initState();
-    _loadAd();
+    if (_supportsAds) _loadAd();
   }
 
   @override
@@ -49,6 +58,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
   }
 
   void _loadAd() {
+    if (!_supportsAds) return;
     if (_state != _AdState.loading || _ad != null) return;
     _state = _AdState.loading;
 
@@ -131,7 +141,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
                 Text(
                   l10n.translate('sponsoredLabel') ?? 'Sponsored',
                   style: GoogleFonts.outfit(
-                    fontSize: 11,
+                    fontSize: 8,
                     fontWeight: FontWeight.w700,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -166,7 +176,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
       ),
       alignment: Alignment.center,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
         child: Row(
           children: [
             Icon(
@@ -178,7 +188,7 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
             Text(
               AppLocalizations.of(context).translate('sponsoredLabel') ?? 'Sponsored',
               style: GoogleFonts.outfit(
-                fontSize: 11,
+                fontSize: 8,
                 fontWeight: FontWeight.w700,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),

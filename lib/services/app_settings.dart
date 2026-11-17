@@ -10,6 +10,8 @@ class AppSettings extends ChangeNotifier {
   static const String _keyThemeMode = 'theme_mode';
   static const String _keyLocale = 'locale';
   static const String _keyCountryCode = 'country_code';
+  static const String _keyPrayerCountrySlug = 'prayer_country_slug';
+  static const String _keyPrayerCitySlug = 'prayer_city_slug';
 
   static const String _keyTopSourcesCount = 'top_sources_count';
   static const String _keyMaxUrlsPerSource = 'max_urls_per_source';
@@ -25,7 +27,7 @@ class AppSettings extends ChangeNotifier {
   static const int defaultFreshnessCurrentEventsDays = 30;
   static const int defaultFreshnessGeneralMonths = 3;
 
-  static const ThemeMode defaultThemeMode = ThemeMode.system;  static const Locale defaultLocale = Locale('ar');
+  static const ThemeMode defaultThemeMode = ThemeMode.system;  static const Locale defaultLocale = Locale('en');
 
   static const int defaultTopSourcesCount = 5;
   static const int defaultMaxUrlsPerSource = 30;
@@ -33,11 +35,15 @@ class AppSettings extends ChangeNotifier {
   ThemeMode _themeMode = defaultThemeMode;
   Locale? _locale = defaultLocale;
   String _countryCode = '';
+  String? _prayerCountrySlug;
+  String? _prayerCitySlug;
   bool _initialized = false;
 
   ThemeMode get themeMode => _themeMode;
   Locale? get locale => _locale;
   String get countryCode => _countryCode;
+  String? get prayerCountrySlug => _prayerCountrySlug;
+  String? get prayerCitySlug => _prayerCitySlug;
   bool get initialized => _initialized;
 
   Future<SharedPreferences> get _prefs async =>
@@ -69,6 +75,8 @@ class AppSettings extends ChangeNotifier {
     }
 
     _countryCode = prefs.getString(_keyCountryCode) ?? '';
+    _prayerCountrySlug = prefs.getString(_keyPrayerCountrySlug);
+    _prayerCitySlug = prefs.getString(_keyPrayerCitySlug);
 
     _initialized = true;
     notifyListeners();
@@ -92,6 +100,24 @@ class AppSettings extends ChangeNotifier {
     _countryCode = countryCode;
     final prefs = await _prefs;
     await prefs.setString(_keyCountryCode, countryCode);
+    notifyListeners();
+  }
+
+  Future<void> setPrayerLocation(String countrySlug, String citySlug) async {
+    _prayerCountrySlug = countrySlug;
+    _prayerCitySlug = citySlug;
+    final prefs = await _prefs;
+    await prefs.setString(_keyPrayerCountrySlug, countrySlug);
+    await prefs.setString(_keyPrayerCitySlug, citySlug);
+    notifyListeners();
+  }
+
+  Future<void> clearPrayerLocation() async {
+    _prayerCountrySlug = null;
+    _prayerCitySlug = null;
+    final prefs = await _prefs;
+    await prefs.remove(_keyPrayerCountrySlug);
+    await prefs.remove(_keyPrayerCitySlug);
     notifyListeners();
   }
 

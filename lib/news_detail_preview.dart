@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/news_model.dart';
+import '../l10n/app_localizations.dart';
 
 String _stripHtmlTags(String text) {
   if (text.isEmpty) return text;
   return text.replaceAll(RegExp(r'<[^>]*>'), '').trim();
 }
 
-String _getSentimentLabel(double sentiment) {
-  if (sentiment >= 0.3) return 'إيجابي';
-  if (sentiment <= -0.3) return 'سلبي';
-  return 'محايد';
+String _getSentimentLabel(double sentiment, AppLocalizations l10n) {
+  if (sentiment >= 0.3) return l10n.translate('positive');
+  if (sentiment <= -0.3) return l10n.translate('negative');
+  return l10n.translate('neutral');
 }
 
 /// Enhanced NewsDetailPreview showing how all requested information would be displayed
@@ -21,6 +22,7 @@ class NewsDetailPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
@@ -106,7 +108,7 @@ class NewsDetailPreview extends StatelessWidget {
           
            // Summary
            Text(
-             "ملخص تنفيذي لـ: ${article.title.split(' ').take(8).join(' ')}${article.title.split(' ').length > 8 ? '...' : ''}",
+              '${l10n.translate('executiveSummary')} لـ: ${article.title.split(' ').take(8).join(' ')}${article.title.split(' ').length > 8 ? '...' : ''}',
              style: GoogleFonts.outfit(
                fontSize: 12,
                fontWeight: FontWeight.bold,
@@ -142,12 +144,12 @@ class NewsDetailPreview extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                "مؤشر المشاعر:",
+                l10n.translate('sentimentIndicator'),
                 style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               const Spacer(),
               Text(
-                "${_getSentimentLabel(article.sentiment)} (${article.sentiment.toStringAsFixed(2)})",
+                "${_getSentimentLabel(article.sentiment, l10n)} (${article.sentiment.toStringAsFixed(2)})",
                 style: GoogleFonts.outfit(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -182,7 +184,7 @@ class NewsDetailPreview extends StatelessWidget {
           // Entities Section
           if ((article.entities ?? []).isNotEmpty) ...[
             Text(
-              "الكائنات المعرفة:",
+              l10n.translate('definedEntities'),
               style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
@@ -209,7 +211,7 @@ class NewsDetailPreview extends StatelessWidget {
           
           // Keywords
           Text(
-            "الكلمات المفتاحية المستخرجة:",
+            l10n.translate('extractedKeywords'),
             style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),

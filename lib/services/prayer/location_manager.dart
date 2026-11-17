@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/city_registry.dart';
+import '../../services/app_settings.dart';
 import '../prayer/provider.dart';
 
 enum LocationSource { gps, deviceCountry, simCountry, manual, none }
@@ -41,8 +42,28 @@ class LocationManager {
     return _prefs?.getBool(_keyManualLocation) ?? false;
   }
 
+  /// The manually saved prayer city (from settings), or null when none is set.
+  /// This is the source of truth used by [detectLocation], so the settings UI
+  /// can reflect the city that will actually be used for real prayer data.
+  CityEntry? get selectedCity {
+    final settings = AppSettings.instance;
+    final country = settings.prayerCountrySlug;
+    final city = settings.prayerCitySlug;
+    if (country == null || city == null) return null;
+    return CityRegistry.instance.bySlug(country, city);
+  }
+
   Future<ResolvedLocation> detectLocation() async {
-    // Manual selection always takes precedence.
+    final settings = AppSettings.instance;
+    final savedCountry = settings.prayerCountrySlug;
+    final savedCity = settings.prayerCitySlug;
+    if (savedCountry != null && savedCity != null) {
+      final city = CityRegistry.instance.bySlug(savedCountry, savedCity);
+      if (city != null) {
+        return ResolvedLocation(city: city, source: LocationSource.manual);
+      }
+    }
+
     final manual = _loadManualSelection();
     if (manual != null) {
       return ResolvedLocation(city: manual, source: LocationSource.manual);
@@ -187,17 +208,21 @@ class LocationManager {
   }
 
   Future<void> setManualLocation(CityEntry city) async {
-    if (_prefs == null) return;
-    await _prefs!.setString(_keySelectedCountrySlug, city.countrySlug);
-    await _prefs!.setString(_keySelectedCitySlug, city.slug);
-    await _prefs!.setBool(_keyManualLocation, true);
+    if (_prefs != null) {
+      await _prefs!.setString(_keySelectedCountrySlug, city.countrySlug);
+      await _prefs!.setString(_keySelectedCitySlug, city.slug);
+      await _prefs!.setBool(_keyManualLocation, true);
+    }
+    await AppSettings.instance.setPrayerLocation(city.countrySlug, city.slug);
   }
 
   Future<void> clearManualLocation() async {
-    if (_prefs == null) return;
-    await _prefs!.remove(_keySelectedCountrySlug);
-    await _prefs!.remove(_keySelectedCitySlug);
-    await _prefs!.setBool(_keyManualLocation, false);
+    if (_prefs != null) {
+      await _prefs!.remove(_keySelectedCountrySlug);
+      await _prefs!.remove(_keySelectedCitySlug);
+      await _prefs!.setBool(_keyManualLocation, false);
+    }
+    await AppSettings.instance.clearPrayerLocation();
   }
 
   List<CityEntry> get allCities => CityRegistry.instance.all;

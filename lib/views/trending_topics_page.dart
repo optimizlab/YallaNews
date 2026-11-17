@@ -12,6 +12,7 @@ import '../services/ai_service.dart';
 import '../services/category_service.dart';
 import '../services/app_settings.dart';
 import '../views/news_detail_page.dart';
+import '../widgets/cached_news_image.dart';
 
 class TrendingTopicsPage extends StatefulWidget {
   const TrendingTopicsPage({super.key});
@@ -573,8 +574,13 @@ class _TrendingTopicsPageState extends State<TrendingTopicsPage>
                   width: 60,
                   height: 45,
                   child: article.imageUrl.isNotEmpty
-                      ? Image.network(article.imageUrl, fit: BoxFit.cover)
-                      : Container(color: Theme.of(context).colorScheme.surfaceContainerHighest),
+                      ? CachedNewsImage(
+                          imageUrl: article.imageUrl,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        ),
                 ),
               ),
               title: Text(

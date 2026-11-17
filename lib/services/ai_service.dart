@@ -60,6 +60,9 @@ class AIService extends ChangeNotifier {
   List<AIModelType> get availableModels => AIModelType.values;
 
   Future<void> initialize() async {
+    // Idempotent: re-creating the model manager / inference engine on every
+    // rebuild would leak native handles and crash the embedded AI.
+    if (_modelManager != null || _inferenceEngine != null) return;
     try {
       // Get models directory
       final appDir = await getApplicationDocumentsDirectory();

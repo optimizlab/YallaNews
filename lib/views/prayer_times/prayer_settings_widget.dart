@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/prayer/notification_scheduler.dart';
 import '../../services/prayer/repository.dart';
-import '../../services/prayer/adhan_service.dart';
 import '../../models/prayer_times.dart';
 
 class PrayerSettingsWidget extends StatefulWidget {
@@ -32,8 +32,6 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
   String? _selectedMethod;
   final Map<Prayer, bool> _prayerEnabled = {};
   final Map<Prayer, int> _offsetMinutes = {};
-  String _selectedMuezzin = 'makkah';
-  bool _isPreviewingAdhan = false;
 
   @override
   void initState() {
@@ -43,9 +41,25 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
       _prayerEnabled[p] = true;
       _offsetMinutes[p] = 0;
     }
-    AdhanService.instance.init().then((_) {
-      if (mounted) setState(() => _selectedMuezzin = AdhanService.instance.selectedMuezzin);
-    });
+  }
+
+  Future<void> _saveProviderMethod() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('prayer_provider', _selectedProvider);
+    await prefs.setString('prayer_method', _selectedMethod ?? '');
+    widget.repository.selectProvider(_selectedProvider);
+    widget.repository.selectMethod(_selectedMethod);
+  }
+
+  Future<void> _saveNotificationEnabled(bool val) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('prayer_notifications_enabled', val);
+  }
+
+  Future<void> _savePrayerConfig(Prayer prayer, bool enabled, int offset) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('prayer_${prayer.index}_enabled', enabled);
+    await prefs.setInt('prayer_${prayer.index}_offset', offset);
   }
 
   Future<void> _loadSettings() async {
@@ -62,46 +76,6 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
         _offsetMinutes[p] = prefs.getInt('prayer_${p.index}_offset') ?? 0;
       }
     });
-  }
-
-  Future<void> _saveSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('prayer_notifications_enabled', _notificationsEnabled);
-    await prefs.setBool('prayer_time_24h', _use24Hour);
-    await prefs.setBool('prayer_auto_location_refresh', _autoLocationRefresh);
-    await prefs.setString('prayer_provider', _selectedProvider);
-    if (_selectedMethod != null) {
-      await prefs.setString('prayer_method', _selectedMethod!);
-    } else {
-      await prefs.remove('prayer_method');
-    }
-    for (final p in kObligatoryPrayers) {
-      await prefs.setBool('prayer_${p.index}_enabled', _prayerEnabled[p]!);
-      await prefs.setInt('prayer_${p.index}_offset', _offsetMinutes[p]!);
-    }
-
-    // Re-schedule notifications if enabled and we have times
-    if (_notificationsEnabled && widget.times != null) {
-      final configs = <Prayer, PrayerReminderConfig>{
-        for (final p in kObligatoryPrayers)
-          p: PrayerReminderConfig(
-            enabled: _prayerEnabled[p] ?? true,
-            offsetMinutes: _offsetMinutes[p] ?? 0,
-            sound: true,
-          ),
-      };
-      await widget.notificationScheduler.schedulePrayers(
-        widget.times!,
-        configs: configs,
-      );
-    } else {
-      await widget.notificationScheduler.cancelAll();
-    }
-
-    if (mounted) {
-      widget.repository.selectProvider(_selectedProvider);
-      widget.repository.selectMethod(_selectedMethod);
-    }
   }
 
   @override
@@ -126,7 +100,10 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
           _buildSection(l10n, l10n.translate('notificationsPermission'), [
             SwitchListTile(
               value: _notificationsEnabled,
-              onChanged: (val) => setState(() => _notificationsEnabled = val),
+              onChanged: (val) async {
+                setState(() => _notificationsEnabled = val);
+                await _saveNotificationEnabled(val);
+              },
               title: Text(l10n.translate('enableNotifications')),
               secondary: const Icon(Icons.notifications_rounded),
             ),
@@ -136,7 +113,14 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
             ...kObligatoryPrayers.map((prayer) {
               return SwitchListTile(
                 value: _prayerEnabled[prayer] ?? true,
-                onChanged: (val) => setState(() => _prayerEnabled[prayer] = val),
+                onChanged: (val) async {
+                  setState(() => _prayerEnabled[prayer] = val);
+                  await _savePrayerConfig(
+                    prayer,
+                    val,
+                    _offsetMinutes[prayer] ?? 0,
+                  );
+                },
                 title: Text(_prayerName(l10n, prayer)),
                 subtitle: Text(
                   '${l10n.translate('reminderOffset')}: ${_offsetMinutes[prayer]} min',
@@ -158,6 +142,7 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
                 onChanged: (val) {
                   if (val == null) return;
                   setState(() => _selectedProvider = val);
+                  unawaited(_saveProviderMethod());
                 },
               ),
             ),
@@ -179,6 +164,7 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
                 ],
                 onChanged: (val) {
                   setState(() => _selectedMethod = val);
+                  unawaited(_saveProviderMethod());
                 },
               ),
             ),
@@ -201,54 +187,6 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
               secondary: const Icon(Icons.my_location_rounded),
             ),
           ]),
-          const SizedBox(height: 16),
-          _buildSection(l10n, 'صوت الأذان', [
-            ...AdhanService.muezzins.entries.map((entry) {
-              final key = entry.key;
-              final name = entry.value;
-              return RadioListTile<String>(
-                value: key,
-                groupValue: _selectedMuezzin,
-                onChanged: (val) {
-                  if (val == null) return;
-                  setState(() => _selectedMuezzin = val);
-                  AdhanService.instance.setMuezzin(val);
-                },
-                title: Text(
-                  name,
-                  style: GoogleFonts.outfit(fontSize: 14, fontWeight: FontWeight.w500),
-                ),
-                secondary: IconButton(
-                  icon: _isPreviewingAdhan && _selectedMuezzin == key
-                      ? const Icon(Icons.stop_circle_rounded)
-                      : const Icon(Icons.play_circle_outline_rounded),
-                  tooltip: 'معاينة',
-                  onPressed: () async {
-                    if (_isPreviewingAdhan) {
-                      await AdhanService.instance.stopAdhan();
-                      if (mounted) setState(() => _isPreviewingAdhan = false);
-                    } else {
-                      setState(() {
-                        _selectedMuezzin = key;
-                        _isPreviewingAdhan = true;
-                      });
-                      await AdhanService.instance.previewMuezzin(key);
-                      if (mounted) setState(() => _isPreviewingAdhan = false);
-                    }
-                  },
-                ),
-              );
-            }).toList(),
-          ]),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _saveSettings,
-              child: Text(l10n.translate('settings')),
-            ),
-          ),
-          const SizedBox(height: 24),
         ],
       ),
     );
@@ -274,12 +212,12 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
             ),
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Material(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
+            child: Column(children: children),
           ),
-          child: Column(children: children),
         ),
       ],
     );

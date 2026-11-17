@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/news_model.dart';
 import 'app_settings.dart';
@@ -10,6 +11,14 @@ import 'app_settings.dart';
 class TTSService {
   static final TTSService instance = TTSService._();
   final FlutterTts _flutterTts = FlutterTts();
+
+  static const String _prefsLastUrl = 'tts_last_url';
+  static const String _prefsLastIndex = 'tts_last_index';
+  static const String _prefsLastText = 'tts_last_text';
+
+  /// Preferred default Arabic voice: a professional, deep, composed and
+  /// authoritative news presenter voice.
+  static const String _preferredArabicVoiceName = 'ar-xa-x-are-network';
 
   bool _isPlaying = false;
   bool get isPlaying => _isPlaying;
@@ -30,11 +39,21 @@ class TTSService {
   ValueListenable<String?> get activeDetailPageNotifier => _activeDetailPageNotifier;
   String? get activeDetailPageUrl => _activeDetailPageNotifier.value;
 
+  String? _lastDetailUrl;
+  String? get lastDetailUrl => _lastDetailUrl;
+
   final ValueNotifier<double> _progressNotifier = ValueNotifier(0.0);
   ValueListenable<double> get progressNotifier => _progressNotifier;
 
   void setActiveDetailPage(String? url) {
     _activeDetailPageNotifier.value = url;
+    _lastDetailUrl = url;
+  }
+
+  /// Clears the active detail page notifier without clearing [_lastDetailUrl],
+  /// so the observer can restore it when the covering route is popped.
+  void hideDetailPageTemporarily() {
+    _activeDetailPageNotifier.value = null;
   }
 
   String? _currentText;
@@ -54,11 +73,159 @@ class TTSService {
       _currentText = t;
       _currentSentences = _splitIntoSentences(t);
       _currentSentenceIndex = 0;
+      _fetchFullArticleContentIfNeeded(article);
+    }
+    unawaited(_persistPosition());
+  }
+
+  /// Persists the current playback position so reading can continue from the
+  /// last place after the detail page is left or the app is restarted.
+  Future<void> _persistPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsLastUrl, _currentArticle?.url ?? '');
+      await prefs.setInt(_prefsLastIndex, _currentSentenceIndex);
+      await prefs.setString(_prefsLastText, _currentText ?? '');
+    } catch (_) {}
+  }
+
+  Future<void> _clearSavedPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefsLastUrl);
+      await prefs.remove(_prefsLastIndex);
+      await prefs.remove(_prefsLastText);
+    } catch (_) {}
+  }
+
+  /// Restores the last playback position for the current article so reading
+  /// continues from where it left off instead of restarting from the top.
+  Future<void> _restoreSavedPosition() async {
+    if (_currentSentences.isEmpty || _currentArticle == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUrl = prefs.getString(_prefsLastUrl);
+      if (savedUrl != null && savedUrl == _currentArticle!.url) {
+        final savedIndex = prefs.getInt(_prefsLastIndex) ?? 0;
+        _currentSentenceIndex = savedIndex.clamp(0, _currentSentences.length - 1);
+      }
+    } catch (_) {}
+  }
+
+  /// When articles only contain a headline or brief summary, fetch the full
+  /// web article content and dynamically append the remaining paragraphs so
+  /// TTS reads the entire story seamlessly even from the floating player.
+  Future<void> _fetchFullArticleContentIfNeeded(NewsModel article) async {
+    if (article.content.length >= 500 || article.url.isEmpty) return;
+    try {
+      final uri = Uri.tryParse(article.url);
+      if (uri == null || (!uri.isScheme('http') && !uri.isScheme('https'))) return;
+
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return;
+      if (_currentArticle?.url != article.url) return;
+
+      final html = response.body;
+      String cleaned = _extractHtmlText(html).trim();
+      if (cleaned.length < 120) {
+        final pTags = RegExp(
+          r'<p[^>]*>(.*?)</p>',
+          dotAll: true,
+          caseSensitive: false,
+        ).allMatches(html).map((m) => m.group(1) ?? '').toList();
+        if (pTags.isNotEmpty) {
+          cleaned = pTags.join('\n\n');
+          cleaned = cleaned.replaceAll(RegExp(r'<[^>]+>'), ' ').trim();
+        }
+      }
+
+      if (cleaned.length > 50 && _currentArticle?.url == article.url) {
+        final updatedArticle = article.copyWith(content: cleaned);
+        _currentArticle = updatedArticle;
+        _articleNotifier.value = updatedArticle;
+        appendArticleContent(cleaned);
+      }
+    } catch (_) {}
+  }
+
+  static String _extractHtmlText(String html) {
+    String cleaned = html;
+    cleaned = cleaned.replaceAll(RegExp(r'<script\b[^>]*>.*?</script>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<style\b[^>]*>.*?</style>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<nav\b[^>]*>.*?</nav>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<header\b[^>]*>.*?</header>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<footer\b[^>]*>.*?</footer>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<aside\b[^>]*>.*?</aside>', dotAll: true, caseSensitive: false), '');
+    cleaned = cleaned.replaceAll(RegExp(r'<iframe\b[^>]*>.*?</iframe>', dotAll: true, caseSensitive: false), '');
+
+    final articlePatterns = [
+      RegExp(r'<article[^>]*>(.*?)</article>', dotAll: true, caseSensitive: false),
+      RegExp('<div[^>]+class=["\'][^"\']*(?:article|content|post|entry|body)[^"\']*["\'][^>]*>(.*?)</div>', dotAll: true, caseSensitive: false),
+      RegExp('<div[^>]+id=["\'][^"\']*(?:article|content|post|entry|body)[^"\']*["\'][^>]*>(.*?)</div>', dotAll: true, caseSensitive: false),
+      RegExp(r'<main[^>]*>(.*?)</main>', dotAll: true, caseSensitive: false),
+    ];
+
+    String extracted = '';
+    int bestLength = 0;
+    for (final pattern in articlePatterns) {
+      for (final match in pattern.allMatches(cleaned)) {
+        final candidate = match.group(1) ?? '';
+        if (candidate.length > bestLength) {
+          bestLength = candidate.length;
+          extracted = candidate;
+        }
+      }
+    }
+
+    String working = extracted;
+    if (working.isEmpty) {
+      final bodyMatch = RegExp(r'<body[^>]*>(.*?)</body>', dotAll: true, caseSensitive: false).firstMatch(cleaned);
+      working = bodyMatch != null ? bodyMatch.group(1)! : cleaned;
+    }
+
+    final pTags = RegExp(r'<p[^>]*>(.*?)</p>', dotAll: true, caseSensitive: false)
+        .allMatches(working)
+        .map((m) => (m.group(1) ?? '').trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
+
+    if (pTags.isEmpty) {
+      working = working.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+      working = working.replaceAll(RegExp(r'</?(p|div|li|tr|td|h[1-6]|blockquote|pre|ul|ol|section|article)[^>]*>', caseSensitive: false), '\n');
+      working = working.replaceAll(RegExp(r'<[^>]+>'), ' ');
+      working = working.replaceAll(RegExp(r'[ \t]+\n'), '\n');
+      working = working.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+      working = working.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
+      return working;
+    }
+
+    final buffer = StringBuffer();
+    for (final p in pTags) {
+      final text = p.replaceAll(RegExp(r'<[^>]+>'), ' ').trim();
+      if (text.isEmpty) continue;
+      if (buffer.length > 0) buffer.writeln();
+      buffer.writeln(text);
+    }
+    return buffer.toString().trim();
+  }
+
+  /// Appends newly fetched full-text sentences to the active reading queue.
+  void appendArticleContent(String newContent) {
+    if (newContent.trim().isEmpty) return;
+    final newSentences = _splitIntoSentences(newContent);
+    if (newSentences.isEmpty) return;
+
+    final existingSet = _currentSentences.map((s) => s.trim()).toSet();
+    final toAdd = newSentences.where((s) => !existingSet.contains(s.trim())).toList();
+    if (toAdd.isNotEmpty) {
+      _currentSentences.addAll(toAdd);
+      _currentText = '${_currentText ?? ''} ${toAdd.join('. ')}'.trim();
     }
   }
 
   void clearCurrentArticle() {
     stop();
+    unawaited(_clearSavedPosition());
     _currentArticle = null;
     _currentText = null;
     _currentSentences = [];
@@ -70,6 +237,9 @@ class TTSService {
 
   String? _selectedVoiceName;
   String? get selectedVoiceName => _selectedVoiceName;
+
+  String? _selectedVoiceLocale;
+  String? get selectedVoiceLocale => _selectedVoiceLocale;
 
   bool _newsMode = true;
   bool get newsMode => _newsMode;
@@ -155,7 +325,12 @@ class TTSService {
     final code = AppSettings.instance.locale?.languageCode;
     if (code == _lastLocaleCode) return;
     _lastLocaleCode = code;
-    if (_selectedVoiceName == null && !_isWindows) {
+    if (_selectedVoiceName == null) {
+      unawaited(_selectBestAvailableVoice(languageCode: code));
+      return;
+    }
+    final currentLocale = _selectedVoiceLocale;
+    if (currentLocale != null && code != null && !currentLocale.toLowerCase().startsWith(code.toLowerCase())) {
       unawaited(_selectBestAvailableVoice(languageCode: code));
     }
   }
@@ -167,8 +342,10 @@ class TTSService {
       final savedLocale = prefs.getString('tts_voice_locale');
       if (savedName != null && savedLocale != null) {
         _selectedVoiceName = savedName;
+        _selectedVoiceLocale = savedLocale;
         if (!_isWindows) {
           await _flutterTts.setVoice({'name': savedName, 'locale': savedLocale});
+          await _applyVoiceTuning(savedName);
         }
       } else {
         await _selectBestAvailableVoice(languageCode: _currentLanguageCode());
@@ -179,9 +356,22 @@ class TTSService {
   }
 
   Future<void> _selectBestAvailableVoice({String? languageCode}) async {
-    await _initialization;
-    if (_isWindows) return;
     languageCode ??= _currentLanguageCode();
+
+    if (_isWindows) {
+      final defaultName = _defaultWindowsVoiceByLanguage[languageCode];
+      final defaultLocale = _defaultTtsLocale(languageCode);
+      if (defaultName != null) {
+        _selectedVoiceName = defaultName;
+        _selectedVoiceLocale = defaultLocale;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('tts_voice_name', defaultName);
+          await prefs.setString('tts_voice_locale', defaultLocale);
+        } catch (_) {}
+      }
+      return;
+    }
     try {
       final voices = await _flutterTts.getVoices;
       if (voices == null) return;
@@ -189,13 +379,19 @@ class TTSService {
       final List<Map<String, dynamic>> voiceList = voices.cast<Map<String, dynamic>>();
 
       final target = languageCode.toLowerCase();
+      final bool isArabic = target == 'ar';
       Map<String, dynamic>? best;
+      Map<String, dynamic>? preferred;
       for (final v in voiceList) {
         final name = (v['name'] ?? '').toString().toLowerCase();
         final locale = (v['locale'] ?? '').toString();
         final isMatchLanguage = locale.toLowerCase().startsWith(target);
         final isLocal = name.contains('local') || name.contains('high') || name.contains('enhanced');
 
+        if (isArabic && isMatchLanguage && name.contains(_preferredArabicVoiceName)) {
+          preferred = v;
+          continue;
+        }
         if (isMatchLanguage && isLocal) {
           best = v;
           break;
@@ -205,15 +401,19 @@ class TTSService {
         }
       }
 
-      if (best != null) {
-        final voiceMap = best.cast<String, String>();
+      final chosen = preferred ?? best;
+      if (chosen != null) {
+        final voiceMap = chosen.cast<String, String>();
         final voiceName = voiceMap['name'] ?? '';
+        final voiceLocale = voiceMap['locale'] ?? '';
         await _flutterTts.setVoice(voiceMap);
         _selectedVoiceName = voiceName;
+        _selectedVoiceLocale = voiceLocale;
+        await _applyVoiceTuning(voiceName);
         try {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('tts_voice_name', voiceName);
-          await prefs.setString('tts_voice_locale', voiceMap['locale'] ?? '');
+          await prefs.setString('tts_voice_locale', chosen['locale'] ?? '');
         } catch (_) {}
       }
     } catch (_) {}
@@ -299,15 +499,53 @@ class TTSService {
     return voices;
   }
 
+  /// Applies the news presenter voice preset (speed 0.88, pitch 0.90) when the
+  /// Arabic are-network voice is active; keeps the engine defaults otherwise.
+  Future<void> _applyVoiceTuning(String? voiceName) async {
+    if (!_isWindows) {
+      if (voiceName != null && voiceName.toLowerCase().contains(_preferredArabicVoiceName)) {
+        await _flutterTts.setSpeechRate(0.88);
+        await _flutterTts.setPitch(0.90);
+      } else {
+        await _flutterTts.setSpeechRate(0.42);
+        await _flutterTts.setPitch(0.97);
+      }
+    }
+  }
+
   Future<void> setVoice(Map<String, String> voice) async {
     _selectedVoiceName = voice['name'];
-    if (_isWindows) return;
-    await _flutterTts.setVoice(voice);
+    _selectedVoiceLocale = voice['locale'];
+    if (!_isWindows) {
+      await _flutterTts.setVoice(voice);
+      await _applyVoiceTuning(voice['name']);
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('tts_voice_name', voice['name'] ?? '');
       await prefs.setString('tts_voice_locale', voice['locale'] ?? '');
     } catch (_) {}
+  }
+
+  static const Map<String, String> _previewTextByLanguage = {
+    'ar': 'هذه voice تجريبية للغة العربية',
+    'en': 'This is a voice preview for English',
+    'fr': 'Ceci est un aperçu de voix en français',
+    'tr': 'Bu bir Türkçe ses ön izlemesidir',
+  };
+
+  String _previewText(String languageCode) =>
+      _previewTextByLanguage[languageCode] ?? _previewTextByLanguage['en']!;
+
+  Future<void> speakPreview({String? text}) async {
+    await _initialization;
+    final speakText = text ?? _previewText(_currentLanguageCode());
+    if (_isWindows) {
+      await _speakWindows(speakText);
+      return;
+    }
+    _setPlaying(true);
+    await _flutterTts.speak(speakText);
   }
 
   Future<void> setNewsMode(bool value) async {
@@ -353,6 +591,7 @@ class TTSService {
     _currentText = text;
     _currentSentences = _splitIntoSentences(text);
     _currentSentenceIndex = 0;
+    unawaited(_persistPosition());
 
     if (_isWindows) {
       if (_newsMode) {
@@ -388,6 +627,7 @@ class TTSService {
         return;
       }
     }
+    await _restoreSavedPosition();
     if (_currentSentenceIndex >= _currentSentences.length) {
       _currentSentenceIndex = 0;
     }
@@ -443,6 +683,7 @@ class TTSService {
       for (int i = startIndex; i < sentences.length; i++) {
         if (_stopRequested) break;
         _currentSentenceIndex = i;
+        unawaited(_persistPosition());
         _progressNotifier.value = sentences.length > 1 ? i / (sentences.length - 1) : 1.0;
         final s = sentences[i].trim();
         if (s.isEmpty) continue;
@@ -478,6 +719,7 @@ class TTSService {
       for (int i = startIndex; i < sentences.length; i++) {
         if (_stopRequested) break;
         _currentSentenceIndex = i;
+        unawaited(_persistPosition());
         _progressNotifier.value = sentences.length > 1 ? i / (sentences.length - 1) : 1.0;
         final s = sentences[i].trim();
         if (s.isEmpty) continue;
@@ -531,6 +773,7 @@ class TTSService {
     }
     if (!keepArticle) {
       _currentSentenceIndex = 0;
+      unawaited(_clearSavedPosition());
     }
   }
 

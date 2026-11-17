@@ -23,6 +23,8 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer>
   late AnimationController _waveController;
   late Animation<Offset> _slideAnimation;
 
+  bool _hiddenForDetailPage = false;
+
   @override
   void initState() {
     super.initState();
@@ -109,17 +111,23 @@ class _MiniAudioPlayerState extends State<MiniAudioPlayer>
 
         // Hide when no article is loaded
         if (article == null) {
+          _hiddenForDetailPage = false;
           return const SizedBox.shrink();
         }
 
-        // Hide when the user is currently viewing the detail page for this article
         if (activeDetailUrl != null && activeDetailUrl == article.url) {
+          _hiddenForDetailPage = true;
           return const SizedBox.shrink();
         }
 
-        // Hide when virtual keyboard is visible
         if (MediaQuery.of(context).viewInsets.bottom > 0) {
+          _hiddenForDetailPage = false;
           return const SizedBox.shrink();
+        }
+
+        if (_hiddenForDetailPage) {
+          _hiddenForDetailPage = false;
+          _slideController.value = 1.0;
         }
 
         final theme = Theme.of(context);

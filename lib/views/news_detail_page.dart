@@ -12,6 +12,9 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/tts_service.dart';
+import '../services/ai_service.dart';
+import '../services/ai_ffi.dart';
+import '../widgets/ask_this_news_widget.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_windows/webview_flutter_windows.dart'
     as windows_webview;
@@ -157,6 +160,180 @@ class _SpeakingIndicatorState extends State<_SpeakingIndicator>
   );
 }
 
+class _ArticleActionsSheet extends StatefulWidget {
+  final NewsModel article;
+  final VoidCallback onLike;
+  final VoidCallback onShare;
+  final VoidCallback onSave;
+  final VoidCallback onTranslate;
+  final VoidCallback onAsk;
+  final VoidCallback onReport;
+
+  const _ArticleActionsSheet({
+    required this.article,
+    required this.onLike,
+    required this.onShare,
+    required this.onSave,
+    required this.onTranslate,
+    required this.onAsk,
+    required this.onReport,
+  });
+
+  @override
+  State<_ArticleActionsSheet> createState() => _ArticleActionsSheetState();
+}
+
+class _ArticleActionsSheetState extends State<_ArticleActionsSheet>
+    with SingleTickerProviderStateMixin {
+  static final Map<IconData, String> _actions = {
+    Icons.favorite_border_rounded: 'like',
+    Icons.share_rounded: 'share',
+    Icons.bookmark_border_rounded: 'save',
+    Icons.translate_rounded: 'translate',
+    Icons.auto_awesome_rounded: 'askThisNews',
+    Icons.report_rounded: 'report',
+  };
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 400),
+  )..forward();
+
+  late final Animation<double> _fade = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOut,
+  );
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, 0.25),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handle(String action) {
+    Navigator.pop(context);
+    switch (action) {
+      case 'like':
+        widget.onLike();
+        break;
+      case 'share':
+        widget.onShare();
+        break;
+      case 'save':
+        widget.onSave();
+        break;
+      case 'translate':
+        widget.onTranslate();
+        break;
+      case 'askThisNews':
+        widget.onAsk();
+        break;
+      case 'report':
+        widget.onReport();
+        break;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = AppLocalizations.of(context);
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(
+        position: _slide,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.12),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 4,
+                width: 40,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ..._actions.entries.map((entry) {
+                final icon = entry.key;
+                final key = entry.value;
+                final label = switch (key) {
+                  'like' => l10n.translate('like'),
+                  'share' => l10n.translate('share'),
+                  'save' => l10n.translate('save'),
+                  'translate' => l10n.translate('translate'),
+                  'askThisNews' => l10n.translate('askThisNews'),
+                  'report' => l10n.translate('report'),
+                  _ => key,
+                };
+                return InkWell(
+                  onTap: () => _handle(key),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            icon,
+                            size: 22,
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Text(
+                          label,
+                          style: GoogleFonts.outfit(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const Spacer(),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+              const SizedBox(height: 10),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class NewsDetailPage extends StatefulWidget {
   final NewsModel article;
 
@@ -221,6 +398,12 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         TTSService.instance.currentArticle?.url == article.url;
     TTSService.instance.playingNotifier.addListener(_onTtsStateChanged);
     TTSService.instance.articleNotifier.addListener(_onTtsStateChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    TTSService.instance.setActiveDetailPage(article.url);
   }
 
   void _onTtsStateChanged() {
@@ -317,6 +500,23 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ),
       );
     }
+  }
+
+  void _showArticleActionsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _ArticleActionsSheet(
+        article: article,
+        onLike: _toggleLike,
+        onShare: _shareArticle,
+        onSave: _toggleSave,
+        onTranslate: _translateArticle,
+        onAsk: _openAskThisNews,
+        onReport: _reportArticle,
+      ),
+    );
   }
 
   Future<void> _reportArticle() async {
@@ -724,6 +924,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             _enrichedImageUrl = fetchedImage!;
           }
         });
+        if (TTSService.instance.currentArticle?.url == article.url) {
+          TTSService.instance.appendArticleContent(cleaned);
+        }
       }
     } catch (_) {
     } finally {
@@ -1105,6 +1308,13 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             ),
             onPressed: _shareArticle,
           ),
+          IconButton(
+            icon: Icon(
+              Icons.menu_rounded,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+            onPressed: _showArticleActionsSheet,
+          ),
         ],
         title: AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
@@ -1156,7 +1366,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             onPressed: _toggleTts,
             backgroundColor: Theme.of(context).colorScheme.surface,
             child: Icon(
-              _isSpeaking ? Icons.stop : Icons.volume_up,
+              _isSpeaking ? Icons.stop : Icons.play_arrow,
               color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
@@ -2382,7 +2592,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+          onPressed: () {
+    TTSService.instance.setActiveDetailPage(null);
+            Navigator.pop(context);
+          },
             child: Text(l10n.translate('cancel')),
           ),
           if (hasUser)
@@ -2475,6 +2688,89 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     } finally {
       if (mounted) setState(() => _saveLoading = false);
     }
+  }
+
+  Future<void> _translateArticle() async {
+    final l10n = AppLocalizations.of(context);
+    final connected = await ConnectivityService.hasInternet();
+    if (!connected) {
+      if (mounted)
+        _showActionMessage(l10n.translate('noInternetConnection'));
+      return;
+    }
+    final isArabic = article.language.isEmpty || article.language.startsWith('ar');
+    final source = isArabic ? YallaLanguage.arabic : YallaLanguage.english;
+    final target = isArabic ? YallaLanguage.english : YallaLanguage.arabic;
+    try {
+      final translation = await AIService.instance.translate(
+        text: effectiveContent.isNotEmpty ? effectiveContent : article.summary,
+        sourceLang: source,
+        targetLang: target,
+      );
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(l10n.translate('translation')),
+          content: SingleChildScrollView(
+            child: SelectableText(
+              translation,
+              style: GoogleFonts.outfit(
+                fontSize: 14,
+                height: 1.6,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(AppLocalizations.of(context).translate('close')),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (mounted)
+        _showActionMessage(l10n.translate('error'));
+    }
+  }
+
+  void _openAskThisNews() {
+    Navigator.pop(context);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 4,
+              width: 40,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: AskThisNewsWidget(
+                article: article,
+                startOpen: true,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _toggleOfflineSave() async {

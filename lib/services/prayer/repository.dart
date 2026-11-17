@@ -225,4 +225,6 @@ class PrayerTimesRepository {
   }
 
   bool get isManualLocation => _location.hasManualLocation;
+
+  CityEntry? get selectedCity => _location.selectedCity;
 }

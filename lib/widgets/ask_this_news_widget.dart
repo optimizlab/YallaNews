@@ -1,4 +1,6 @@
 // Ask This News - Chat Interface with Article Context
+// Uses the embedded AI (yalla_core via AIService) for grounded, smart answers,
+// with a deterministic extractive fallback when the native model is unavailable.
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -6,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../services/ai_service.dart';
+import '../widgets/cached_news_image.dart';
 
 class AskThisNewsWidget extends StatefulWidget {
   final NewsModel article;
@@ -29,6 +32,7 @@ class _AskThisNewsWidgetState extends State<AskThisNewsWidget>
   final List<ChatMessage> _messages = [];
   bool _isSending = false;
   bool _isExpanded = false;
+  bool _aiReady = false;
   late AnimationController _animationController;
   final FocusNode _focusNode = FocusNode();
 
@@ -44,6 +48,12 @@ class _AskThisNewsWidgetState extends State<AskThisNewsWidget>
       _toggleExpanded();
     }
 
+    AIService.instance.addListener(_onAiChanged);
+    _aiReady = AIService.instance.isReady;
+    // initialize() rethrows on failure (missing native library / model dir),
+    // so swallow the error here — the widget still works offline via fallback.
+    unawaited(AIService.instance.initialize().catchError((_) => null));
+
     _messages.add(ChatMessage(
       text: 'Hello! I have read this article. What would you like to know?',
       isUser: false,
@@ -51,8 +61,14 @@ class _AskThisNewsWidgetState extends State<AskThisNewsWidget>
     ));
   }
 
+  void _onAiChanged() {
+    if (!mounted) return;
+    setState(() => _aiReady = AIService.instance.isReady);
+  }
+
   @override
   void dispose() {
+    AIService.instance.removeListener(_onAiChanged);
     _controller.dispose();
     _scrollController.dispose();
     _animationController.dispose();
@@ -90,22 +106,9 @@ class _AskThisNewsWidgetState extends State<AskThisNewsWidget>
     _scrollToBottom();
 
     try {
-      final contextStr = '''
-Article Title: ${widget.article.title}
-Article Summary: ${widget.article.summary}
-Article Content: ${widget.article.content}
-Category: ${widget.article.category}
-Language: ${widget.article.language}
-''';
-
       String responseText;
-      if (AIService.instance.isReady) {
-        final result = await AIService.instance.generate(
-          prompt: '$contextStr\n\nQuestion: $text\n\nAnswer based on the article content:',
-          maxTokens: 300,
-          temperature: 0.3,
-        );
-        responseText = result['text'] as String? ?? 'I could not generate a response.';
+      if (_aiReady) {
+        responseText = await _generateAiAnswer(text);
       } else {
         responseText = _fallbackAnswer(text);
       }
@@ -125,7 +128,9 @@ Language: ${widget.article.language}
       if (mounted) {
         setState(() {
           _messages.add(ChatMessage(
-            text: 'Sorry, I encountered an error: ${e.toString()}',
+            text: _aiReady
+                ? 'I could not generate a response right now. Asking based on the article instead.\n\n${_fallbackAnswer(text)}'
+                : 'Sorry, I encountered an error: ${e.toString()}',
             isUser: false,
             timestamp: DateTime.now(),
             isError: true,
@@ -135,6 +140,61 @@ Language: ${widget.article.language}
         _scrollToBottom();
       }
     }
+  }
+
+  /// Grounded generation using the embedded AI (yalla_core inference engine).
+  /// Answers strictly from the article, in the user's language, with conversation
+  /// history so it behaves as a real multi-turn chatbot.
+  Future<String> _generateAiAnswer(String question) async {
+    final content = widget.article.content.trim();
+    final trimmedContent = content.length > 2500
+        ? '${content.substring(0, 2500)}...'
+        : content;
+
+    final recent = _messages.length <= 8
+        ? _messages
+        : _messages.sublist(_messages.length - 8);
+    final history = <String>[];
+    for (final m in recent) {
+      if (m.isUser) {
+        history.add('User: ${m.text}');
+      } else if (!m.isError) {
+        history.add('Assistant: ${m.text}');
+      }
+    }
+    final historyBlock = history.isNotEmpty ? history.join('\n') + '\n' : '';
+
+    final prompt = '''You are a helpful news assistant answering questions strictly about the article below.
+Rules:
+- Base every answer ONLY on the article title, summary, and content provided.
+- If the answer is not in the article, say so clearly instead of inventing facts.
+- Be concise, accurate, and helpful.
+- Reply in the same language as the user's question.
+- Do not include meta-commentary, just the answer.
+
+ARTICLE
+Title: ${widget.article.title}
+Source: ${widget.article.displaySourceName}
+Category: ${widget.article.language.isNotEmpty ? widget.article.language : 'unknown'} | ${widget.article.category}
+Summary: ${widget.article.summary}
+Content: $trimmedContent
+
+$historyBlock
+User: $question
+Assistant:''';
+
+    final result = await AIService.instance.generate(
+      prompt: prompt,
+      maxTokens: 400,
+      temperature: 0.3,
+      topP: 0.9,
+    );
+
+    final text = (result['text'] as String?)?.trim() ?? '';
+    if (text.isNotEmpty) return text;
+
+    // Empty generation -> fall back to extractive answer.
+    return _fallbackAnswer(question);
   }
 
   void _scrollToBottom() {
@@ -317,6 +377,38 @@ Language: ${widget.article.language}
                         ],
                       ),
                     ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _aiReady
+                            ? theme.colorScheme.primaryContainer.withOpacity(0.3)
+                            : theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _aiReady ? Icons.auto_awesome_rounded : Icons.offline_bolt_rounded,
+                            size: 10,
+                            color: _aiReady
+                                ? theme.colorScheme.onPrimaryContainer
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _aiReady ? 'AI ready' : 'Offline',
+                            style: GoogleFonts.outfit(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: _aiReady
+                                  ? theme.colorScheme.onPrimaryContainer
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     AnimatedRotation(
                       turns: _isExpanded ? 0.5 : 0,
                       duration: const Duration(milliseconds: 300),
@@ -347,30 +439,182 @@ Language: ${widget.article.language}
       return const SizedBox.shrink();
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: theme.colorScheme.outline.withValues(alpha: 0.1),
+    return Column(
+      children: [
+        _buildNewsCard(context, theme, l10n),
+        Expanded(
+          child: ListView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.all(16),
+            itemCount: _messages.length,
+            itemBuilder: (context, index) {
+              final msg = _messages[index];
+              return _buildMessageBubble(context, msg);
+            },
           ),
         ),
-      ),
-      child: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                return _buildMessageBubble(context, msg);
-              },
-            ),
+        _buildInputArea(context, theme, l10n),
+      ],
+    );
+  }
+
+  Widget _buildNewsCard(BuildContext context, ThemeData theme, AppLocalizations l10n) {
+    final imageUrl = widget.article.imageUrl;
+    final hasImage = imageUrl.isNotEmpty &&
+        !imageUrl.contains('placehold.co') &&
+        !imageUrl.contains('placeholder');
+
+    final title = widget.article.title;
+    final desc = widget.article.summary.isNotEmpty
+        ? widget.article.summary
+        : (widget.article.shortTitle.isNotEmpty
+            ? widget.article.shortTitle
+            : widget.article.content);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.15),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
           ),
-          _buildInputArea(context, theme, l10n),
         ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasImage)
+              SizedBox(
+                width: 92,
+                height: 92,
+                child: CachedNewsImage(
+                  imageUrl: imageUrl,
+                  fallbackImageUrl: NewsModel.getFallbackImage(widget.article.category),
+                  searchQuery: '${widget.article.title} ${widget.article.category}',
+                  width: 92,
+                  height: 92,
+                  fit: BoxFit.cover,
+                  errorWidget: Container(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    child: Icon(
+                      Icons.article_outlined,
+                      color: theme.colorScheme.onSurfaceVariant,
+                      size: 32,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Container(
+                width: 92,
+                height: 92,
+                color: theme.colorScheme.surfaceContainerHighest,
+                child: Icon(
+                  Icons.article_outlined,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  size: 32,
+                ),
+              ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: theme.colorScheme.onSurface,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            widget.article.category,
+                            style: GoogleFonts.outfit(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.source_rounded,
+                          size: 12,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          widget.article.displaySourceName.isNotEmpty
+                              ? widget.article.displaySourceName
+                              : l10n.translate('unknownSource'),
+                          style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      desc.isNotEmpty
+                          ? desc.length > 140
+                              ? '${desc.substring(0, 140)}...'
+                              : desc
+                          : l10n.translate('executiveSummary'),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.outfit(
+                        fontSize: 12.5,
+                        color: desc.isNotEmpty
+                            ? theme.colorScheme.onSurfaceVariant
+                            : theme.colorScheme.onSurfaceVariant,
+                        height: 1.4,
+                        fontStyle: desc.isEmpty ? FontStyle.italic : FontStyle.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

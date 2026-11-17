@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../../models/city_registry.dart';
 import '../../models/prayer_times.dart';
 import '../../services/prayer/countdown_engine.dart';
 import '../../services/prayer/notification_scheduler.dart';
 import '../../services/prayer/repository.dart';
-import '../prayer_times/location_selector_widget.dart';
-import '../prayer_times/prayer_settings_widget.dart';
 
 class PrayerTimesPage extends StatefulWidget {
   const PrayerTimesPage({super.key});
@@ -18,12 +16,10 @@ class PrayerTimesPage extends StatefulWidget {
   State<PrayerTimesPage> createState() => _PrayerTimesPageState();
 }
 
-class _PrayerTimesPageState extends State<PrayerTimesPage>
-    with TickerProviderStateMixin {
+class _PrayerTimesPageState extends State<PrayerTimesPage> {
   late final PrayerTimesRepository _repository;
   late final PrayerNotificationScheduler _notificationScheduler;
   late final CountdownEngine _countdownEngine;
-  late final TabController _tabController;
 
   PrayerTimes? _times;
   bool _isLoading = true;
@@ -36,7 +32,6 @@ class _PrayerTimesPageState extends State<PrayerTimesPage>
     _repository = PrayerTimesRepository();
     _notificationScheduler = PrayerNotificationScheduler();
     _countdownEngine = CountdownEngine();
-    _tabController = TabController(length: 3, vsync: this);
     _loadPrayerTimes();
     _initializeNotifications();
   }
@@ -53,6 +48,13 @@ class _PrayerTimesPageState extends State<PrayerTimesPage>
     });
 
     try {
+      // Apply saved provider/method so settings actually affect the fetch.
+      final prefs = await SharedPreferences.getInstance();
+      final provider = prefs.getString('prayer_provider') ?? 'waqtazan';
+      final method = prefs.getString('prayer_method');
+      _repository.selectProvider(provider);
+      _repository.selectMethod(method);
+
       final result = await _repository.getToday();
       if (!mounted) return;
       setState(() {
@@ -76,48 +78,38 @@ class _PrayerTimesPageState extends State<PrayerTimesPage>
   }
 
   Future<void> _scheduleNotifications(PrayerTimes times) async {
-    final enabled = await _notificationScheduler.areNotificationsEnabled();
-    if (!enabled) return;
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool('prayer_notifications_enabled') ?? false;
+    if (!enabled) {
+      await _notificationScheduler.cancelAll();
+      return;
+    }
 
-    final configs = <Prayer, PrayerReminderConfig>{
-      for (final p in kObligatoryPrayers)
-        p: const PrayerReminderConfig(enabled: true, offsetMinutes: 0, sound: true),
-    };
+    final systemEnabled = await _notificationScheduler.areNotificationsEnabled();
+    if (!systemEnabled) return;
+
+    final configs = <Prayer, PrayerReminderConfig>{};
+    for (final p in kObligatoryPrayers) {
+      final prayerEnabled = prefs.getBool('prayer_${p.index}_enabled') ?? true;
+      final offset = prefs.getInt('prayer_${p.index}_offset') ?? 0;
+      configs[p] = PrayerReminderConfig(
+        enabled: prayerEnabled,
+        offsetMinutes: offset,
+        sound: true,
+      );
+    }
     _notificationScheduler.setTimeZone(times.timeZone);
     await _notificationScheduler.schedulePrayers(times, configs: configs);
-  }
-
-  Future<void> _onCitySelected(CityEntry city) async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-    try {
-      await _repository.setManualLocation(city);
-      final result = await _repository.refresh(city);
-      if (!mounted) return;
-      setState(() {
-        _times = result.times;
-        _error = result.error?.message;
-        _offline = result.times.fromCache || !result.succeeded;
-        _isLoading = false;
-      });
-      if (_times != null) {
-        _countdownEngine.updateTimes(_times!);
-        await _scheduleNotifications(_times!);
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
-    }
   }
 
   Future<void> _onRefresh() async {
     if (_times == null) return;
     await _loadPrayerTimes();
+  }
+
+  bool _isArabicOrPersian(AppLocalizations l10n) {
+    final code = l10n.translate('languageCode');
+    return code == 'ar' || code == 'fa';
   }
 
   String _formatTime(DateTime? time) {
@@ -142,9 +134,20 @@ class _PrayerTimesPageState extends State<PrayerTimesPage>
     }
   }
 
+  String _translatedCityName(PrayerTimes times, AppLocalizations l10n) {
+    final translated = l10n.translate('city_${times.citySlug}');
+    if (translated == 'city_${times.citySlug}') return times.cityName;
+    return translated;
+  }
+
+  String _translatedCountryName(PrayerTimes times, AppLocalizations l10n) {
+    final translated = l10n.translate('country_${times.countrySlug}');
+    if (translated == 'country_${times.countrySlug}') return times.countryName;
+    return translated;
+  }
+
   @override
   void dispose() {
-    _tabController.dispose();
     _countdownEngine.dispose();
     _notificationScheduler.dispose();
     super.dispose();
@@ -153,34 +156,9 @@ class _PrayerTimesPageState extends State<PrayerTimesPage>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final isRtl = _isArabicOrPersian(l10n);
 
     return Scaffold(
-      body: Column(
-        children: [
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _buildTodayTab(l10n),
-                LocationSelectorWidget(
-                  repository: _repository,
-                  onCitySelected: _onCitySelected,
-                ),
-                PrayerSettingsWidget(
-                  repository: _repository,
-                  notificationScheduler: _notificationScheduler,
-                  times: _times,
-                ),
-              ],
-            ),
-          ),
-          SafeArea(
-            child: _buildTabBar(l10n),
-          ),
-        ],
-      ),
+      body: _buildTodayTab(l10n),
       floatingActionButton: _times != null
           ? FloatingActionButton.extended(
               onPressed: _onRefresh,
@@ -189,32 +167,6 @@ class _PrayerTimesPageState extends State<PrayerTimesPage>
             )
           : null,
     );
-  }
-
-  Widget _buildTabBar(AppLocalizations l10n) {
-    return TabBar(
-      controller: _tabController,
-      onTap: (i) {},
-      tabs: [
-        Tab(
-          icon: const Icon(Icons.today_rounded),
-          text: l10n.translate('prayerTimes'),
-        ),
-        Tab(
-          icon: const Icon(Icons.location_on_rounded),
-          text: l10n.translate('selectCity'),
-        ),
-        Tab(
-          icon: const Icon(Icons.settings_rounded),
-          text: l10n.translate('settings'),
-        ),
-      ],
-    );
-  }
-
-  bool _isArabicOrPersian(AppLocalizations l10n) {
-    final code = l10n.translate('languageCode');
-    return code == 'ar' || code == 'fa';
   }
 
   Widget _buildTodayTab(AppLocalizations l10n) {
@@ -268,7 +220,7 @@ class _PrayerTimesPageState extends State<PrayerTimesPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${_times!.cityName}, ${_times!.countryName}',
+                      '${_translatedCityName(_times!, l10n)}, ${_translatedCountryName(_times!, l10n)}',
                       style: GoogleFonts.outfit(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,

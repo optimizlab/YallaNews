@@ -7,6 +7,7 @@ import '../database/news_db.dart';
 import '../services/category_service.dart';
 import '../services/app_settings.dart';
 import 'news_detail_page.dart';
+import '../widgets/cached_news_image.dart';
 
 class BookmarksPage extends StatefulWidget {
   const BookmarksPage({Key? key}) : super(key: key);
@@ -185,12 +186,12 @@ class _BookmarksPageState extends State<BookmarksPage> {
               const SizedBox(width: 12),
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  article.imageUrl,
+                child: CachedNewsImage(
+                  imageUrl: article.imageUrl,
                   width: 72,
                   height: 72,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _buildFallbackImage(article.category),
+                  errorWidget: _buildFallbackImage(article.category),
                 ),
               ),
             ],

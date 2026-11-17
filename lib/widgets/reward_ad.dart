@@ -655,7 +655,7 @@ class _DetailNativeAdWidgetState extends State<DetailNativeAdWidget> {
                 Text(
                   AppLocalizations.of(context).translate('sponsoredLabel') ?? "Sponsored",
                   style: GoogleFonts.outfit(
-                    fontSize: 7,
+                    fontSize: 8,
                     fontWeight: FontWeight.w700,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),

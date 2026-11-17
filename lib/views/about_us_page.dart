@@ -145,15 +145,27 @@ class _AboutUsPageState extends State<AboutUsPage> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: theme.colorScheme.surface,
-      body: CustomScrollView(
-        slivers: [
+      backgroundColor: theme.colorScheme.primary,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              theme.colorScheme.primary,
+              theme.colorScheme.primary,
+              theme.colorScheme.primaryContainer,
+            ],
+          ),
+        ),
+        child: CustomScrollView(
+          slivers: [
           // ─── Hero App Bar ─────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 320,
             pinned: true,
             stretch: true,
-            backgroundColor: theme.colorScheme.surface,
+            backgroundColor: Colors.transparent,
             leading: IconButton(
               icon: Container(
                 padding: const EdgeInsets.all(6),
@@ -172,7 +184,15 @@ class _AboutUsPageState extends State<AboutUsPage> {
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      theme.colorScheme.primary,
+                      theme.colorScheme.primary,
+                      theme.colorScheme.primaryContainer,
+                    ],
+                  ),
                 ),
                 child: SafeArea(
                   child: Column(
@@ -812,6 +832,7 @@ class _AboutUsPageState extends State<AboutUsPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

@@ -17,6 +17,11 @@ class AdhanService {
     'qatami': 'ناصر القطامي',
     'imadi': 'أحمد العمادي',
     'madinah': 'المدينة المنورة',
+    'egypt': 'مصر (أذان مصري)',
+    'yemen': 'اليمن (أذان يمني)',
+    'iraq': 'العراق (أذان عراقي)',
+    'turkish': 'تركيا (أذان تركي)',
+    'moroccan': 'المغرب (أذان مغربي)',
   };
 
   /// Map of muezzin key → asset path
@@ -26,6 +31,11 @@ class AdhanService {
     'qatami': 'audio/adhan/adhan_qatami.mp3',
     'imadi': 'audio/adhan/adhan_imadi.mp3',
     'madinah': 'audio/adhan/adhan_madinah.mp3',
+    'egypt': 'audio/adhan/adhan_egypt.mp3',
+    'yemen': 'audio/adhan/adhan_yemen.mp3',
+    'iraq': 'audio/adhan/adhan_iraq.mp3',
+    'turkish': 'audio/adhan/adhan_turkish.mp3',
+    'moroccan': 'audio/adhan/adhan_moroccan.mp3',
   };
 
   final AudioPlayer _player = AudioPlayer();
@@ -33,6 +43,9 @@ class AdhanService {
   bool _initialized = false;
 
   String get selectedMuezzin => _selectedMuezzin;
+
+  /// Emits the current player state so UI can show play/stop while audio plays.
+  Stream<PlayerState> get playerState => _player.onPlayerStateChanged;
 
   /// Load saved muezzin preference. Must be called once at app start.
   Future<void> init() async {
@@ -61,7 +74,7 @@ class AdhanService {
   /// Play the adhan for the currently selected muezzin.
   Future<void> playAdhan() async {
     try {
-      await _player.stop();
+      _player.stop();
       final path = _assetPaths[_selectedMuezzin] ?? _assetPaths['makkah']!;
       await _player.play(AssetSource(path));
     } catch (e) {
@@ -72,7 +85,7 @@ class AdhanService {
   /// Play a preview for [muezzinKey] (used in settings).
   Future<void> previewMuezzin(String muezzinKey) async {
     try {
-      await _player.stop();
+      _player.stop();
       final path = _assetPaths[muezzinKey] ?? _assetPaths['makkah']!;
       await _player.play(AssetSource(path));
     } catch (e) {

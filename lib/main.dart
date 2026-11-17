@@ -18,6 +18,7 @@ import 'services/server_api_service.dart';
 import 'services/reward_ad_service.dart';
 import 'services/native_ad_service.dart';
 import 'services/yalla_engine_service.dart';
+import 'services/tts_service.dart';
 import 'views/home_page.dart';
 import 'views/welcome_page.dart';
 import 'views/splash_page.dart';
@@ -58,6 +59,13 @@ Future<void> main() async {
   }
   if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
     try {
+      if (kDebugMode) {
+        await MobileAds.instance.updateRequestConfiguration(
+          RequestConfiguration(
+            testDeviceIds: <String>['6BAC26B50B09436B98991395B02B91C1'],
+          ),
+        );
+      }
       await MobileAds.instance.initialize();
       await RewardAdService.instance.initialize();
       // Native ads are preloaded into a pool so the feed never waits on one.
@@ -97,6 +105,15 @@ SystemUiOverlayStyle _systemUiStyle({
       statusBarIconColor,
     ),
   );
+}
+
+class _TTSRouteObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (TTSService.instance.activeDetailPageUrl != null) {
+      TTSService.instance.hideDetailPageTemporarily();
+    }
+  }
 }
 
 class MyApp extends StatefulWidget {
@@ -337,7 +354,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         Locale('fr'),
         Locale('tr'),
       ],
-      navigatorObservers: <NavigatorObserver>[],
+      navigatorObservers: <NavigatorObserver>[_TTSRouteObserver()],
       home: _initialPage ?? const SplashPage(),
     );
   }

@@ -201,6 +201,15 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
         }
 
         final theme = Theme.of(context);
+        Widget body = widget.body;
+        if (widget.onRefresh != null) {
+          body = RefreshIndicator(
+            onRefresh: widget.onRefresh!,
+            color: theme.colorScheme.primary,
+            child: widget.body,
+          );
+        }
+
         Widget scrollable = NestedScrollView(
           controller: widget.scrollController,
           floatHeaderSlivers: true,
@@ -223,16 +232,8 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
                 ),
             ];
           },
-          body: widget.body,
+          body: body,
         );
-
-        if (widget.onRefresh != null) {
-          scrollable = RefreshIndicator(
-            onRefresh: widget.onRefresh!,
-            color: const Color(0xFFC62828),
-            child: scrollable,
-          );
-        }
 
         return _buildMobileShell(context, scrollable);
       },

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'arabic_news_processor.dart';
 import 'models/news_model.dart';
 import 'database/news_db.dart';
+import 'widgets/cached_news_image.dart';
 
 /// Example widget showing how to use the Arabic News Processor in a Flutter app
 class ArabicNewsExample extends StatefulWidget {
@@ -162,8 +163,8 @@ class _ArabicNewsExampleState extends State<ArabicNewsExample> {
                           margin: const EdgeInsets.only(bottom: 8.0),
                           child: ListTile(
                             leading: article.imageUrl.startsWith('http')
-                                ? Image.network(
-                                    article.imageUrl,
+                                ? CachedNewsImage(
+                                    imageUrl: article.imageUrl,
                                     width: 60,
                                     height: 60,
                                     fit: BoxFit.cover,
@@ -238,8 +239,8 @@ class _ArabicNewsExampleState extends State<ArabicNewsExample> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (article.imageUrl.startsWith('http'))
-                Image.network(
-                  article.imageUrl,
+                CachedNewsImage(
+                  imageUrl: article.imageUrl,
                   width: double.infinity,
                   height: 200,
                   fit: BoxFit.cover,

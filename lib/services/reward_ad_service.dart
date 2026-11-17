@@ -4,6 +4,8 @@ import 'package:flutter/material.dart' show BuildContext;
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/tts_service.dart';
+
 class RewardAdService {
   RewardAdService._internal();
   static final RewardAdService instance = RewardAdService._internal();
@@ -261,6 +263,7 @@ class RewardAdService {
     _rewardedInterstitialAd!.fullScreenContentCallback =
         FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
+        _pauseTts();
         _eventController.add(RewardAdEvent.shown(placement));
       },
       onAdDismissedFullScreenContent: (ad) {
@@ -268,6 +271,7 @@ class RewardAdService {
         _rewardedInterstitialAd = null;
         _recordAdShown();
         _preloadAd();
+        _resumeTts();
         onAdDismissed?.call();
         completer.complete(true);
       },
@@ -331,6 +335,7 @@ class RewardAdService {
     _rewardedInterstitialAd!.fullScreenContentCallback =
         FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
+        _pauseTts();
         _eventController.add(RewardAdEvent.shown(placement));
       },
       onAdDismissedFullScreenContent: (ad) {
@@ -338,6 +343,7 @@ class RewardAdService {
         _rewardedInterstitialAd = null;
         _recordAdShown();
         _preloadAd();
+        _resumeTts();
         onAdDismissed?.call();
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
@@ -364,6 +370,21 @@ class RewardAdService {
     _rewardedInterstitialAd?.dispose();
     _eventController.close();
     _isInitialized = false;
+  }
+
+  /// Pauses TTS playback (keeping position) so a full-screen reward ad plays
+  /// without audio competing with the article narration.
+  void _pauseTts() {
+    try {
+      unawaited(TTSService.instance.pause());
+    } catch (_) {}
+  }
+
+  /// Resumes TTS playback from the last position after the reward ad closes.
+  void _resumeTts() {
+    try {
+      unawaited(TTSService.instance.resume());
+    } catch (_) {}
   }
 }
 

@@ -21,6 +21,7 @@ class LocationSelectorWidget extends StatefulWidget {
 
 class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
   String? _selectedCountrySlug;
+  CityEntry? _selectedCity;
   List<CityEntry> _filteredCities = [];
   String _searchQuery = '';
   bool _isLoading = false;
@@ -29,6 +30,7 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
   void initState() {
     super.initState();
     _loadCountries();
+    _loadSelectedCity();
   }
 
   Future<void> _loadCountries() async {
@@ -36,8 +38,20 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
     if (!mounted) return;
     setState(() {
       _filteredCities = cities;
-      if (cities.isNotEmpty) {
+      if (_selectedCountrySlug == null && cities.isNotEmpty) {
         _selectedCountrySlug = cities.first.countrySlug;
+      }
+    });
+  }
+
+  void _loadSelectedCity() {
+    final selected = widget.repository.selectedCity;
+    if (!mounted) return;
+    setState(() {
+      _selectedCity = selected;
+      if (selected != null) {
+        _selectedCountrySlug = selected.countrySlug;
+        _searchQuery = '';
       }
     });
   }
@@ -63,6 +77,18 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
     return cities.where((c) =>
         c.cityName.toLowerCase().contains(query) ||
         c.countryName.toLowerCase().contains(query)).toList();
+  }
+
+  String _translatedCity(CityEntry city, AppLocalizations l10n) {
+    final translated = l10n.translate('city_${city.slug}');
+    if (translated == 'city_${city.slug}') return city.cityName;
+    return translated;
+  }
+
+  String _translatedCountry(CityEntry city, AppLocalizations l10n) {
+    final translated = l10n.translate('country_${city.countrySlug}');
+    if (translated == 'country_${city.countrySlug}') return city.countryName;
+    return translated;
   }
 
   @override
@@ -199,11 +225,10 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
       items: countrySlugs.map((slug) {
-        final cities = _getCitiesForCountry(slug);
-        final countryName = cities.isNotEmpty ? cities.first.countryName : slug;
+        final countryName = l10n.translate('country_$slug');
         return DropdownMenuItem(
           value: slug,
-          child: Text(countryName),
+          child: Text(countryName.isEmpty ? slug : countryName),
         );
       }).toList(),
       onChanged: (val) {
@@ -248,17 +273,27 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
       itemCount: cities.length,
       itemBuilder: (context, index) {
         final city = cities[index];
+        final isSelected = _selectedCity?.cacheKey == city.cacheKey;
         return ListTile(
           leading: const Icon(Icons.location_city_rounded),
           title: Text(
-            city.cityName,
+            _translatedCity(city, l10n),
             style: GoogleFonts.outfit(
               fontWeight: FontWeight.w600,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.onSurface,
             ),
           ),
-          subtitle: Text(city.countryName),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: () => widget.onCitySelected(city),
+          subtitle: Text(_translatedCountry(city, l10n)),
+          selected: isSelected,
+          trailing: isSelected
+              ? const Icon(Icons.check_rounded)
+              : const Icon(Icons.chevron_right_rounded),
+          onTap: () {
+            setState(() => _selectedCity = city);
+            widget.onCitySelected(city);
+          },
         );
       },
     );
