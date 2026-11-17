@@ -8,6 +8,7 @@ import '../../models/prayer_times.dart';
 import '../../services/prayer/countdown_engine.dart';
 import '../../services/prayer/notification_scheduler.dart';
 import '../../services/prayer/repository.dart';
+import '../../services/prayer/adhan_audio_service.dart';
 
 class PrayerTimesPage extends StatefulWidget {
   const PrayerTimesPage({super.key});
@@ -38,6 +39,7 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
 
   Future<void> _initializeNotifications() async {
     await _notificationScheduler.initialize();
+    await AdhanAudioService.instance.init();
   }
 
   Future<void> _loadPrayerTimes() async {
@@ -88,14 +90,18 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     final systemEnabled = await _notificationScheduler.areNotificationsEnabled();
     if (!systemEnabled) return;
 
+    final adhanMaster = prefs.getBool('prayer_adhan_sound') ?? false;
     final configs = <Prayer, PrayerReminderConfig>{};
     for (final p in kObligatoryPrayers) {
       final prayerEnabled = prefs.getBool('prayer_${p.index}_enabled') ?? true;
       final offset = prefs.getInt('prayer_${p.index}_offset') ?? 0;
+      final prayerAdhan =
+          adhanMaster && (prefs.getBool('prayer_${p.index}_adhan_sound') ?? false);
       configs[p] = PrayerReminderConfig(
         enabled: prayerEnabled,
         offsetMinutes: offset,
         sound: true,
+        adhanSound: prayerAdhan,
       );
     }
     _notificationScheduler.setTimeZone(times.timeZone);

@@ -1,4 +1,5 @@
 
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -6,27 +7,34 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 
 import '../../models/prayer_times.dart';
+import 'adhan_audio_service.dart';
 
 class PrayerReminderConfig {
   const PrayerReminderConfig({
     required this.enabled,
     required this.offsetMinutes,
     this.sound = true,
+    this.adhanSound = false,
   });
 
   final bool enabled;
   final int offsetMinutes;
   final bool sound;
+  /// When true, play the embedded adhan audio for ~30s at prayer time,
+  /// even when the app is closed (via a foreground audio service).
+  final bool adhanSound;
 
   PrayerReminderConfig copyWith({
     bool? enabled,
     int? offsetMinutes,
     bool? sound,
+    bool? adhanSound,
   }) {
     return PrayerReminderConfig(
       enabled: enabled ?? this.enabled,
       offsetMinutes: offsetMinutes ?? this.offsetMinutes,
       sound: sound ?? this.sound,
+      adhanSound: adhanSound ?? this.adhanSound,
     );
   }
 }
@@ -98,7 +106,12 @@ class PrayerNotificationScheduler {
         ?.createNotificationChannel(androidChannel);
   }
 
-  void _onNotificationTapped(NotificationResponse details) {}
+  void _onNotificationTapped(NotificationResponse details) {
+    final payload = details.payload ?? '';
+    if (payload.startsWith('adhan:')) {
+      unawaited(AdhanAudioService.instance.playAdhan());
+    }
+  }
 
   Future<bool> requestPermission() async {
     if (!Platform.isAndroid && !Platform.isIOS) return false;
@@ -151,52 +164,6 @@ class PrayerNotificationScheduler {
     }
   }
 
-  Future<void> _scheduleOne({
-    required Prayer prayer,
-    required PrayerTime prayerTime,
-    required DateTime targetUtc,
-    required PrayerReminderConfig config,
-  }) async {
-    final tzLocation = tz.getLocation(_timeZone);
-    final tzTarget = tz.TZDateTime.from(targetUtc, tzLocation);
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
-      enableVibration: true,
-      playSound: config.sound,
-      sound: config.sound
-          ? const RawResourceAndroidNotificationSound('adhan')
-          : null,
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      sound: 'adhan.caf',
-      presentAlert: true,
-      presentSound: true,
-    );
-
-    final details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    await _localNotifications.zonedSchedule(
-      _notificationId(prayer),
-      _prayerTitle(prayer),
-      _prayerBody(prayer, prayerTime.formatted),
-      tzTarget,
-      details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
-    );
-  }
-
   String _prayerTitle(Prayer prayer) {
     switch (prayer) {
       case Prayer.fajr:
@@ -222,6 +189,54 @@ class PrayerNotificationScheduler {
     for (final prayer in kObligatoryPrayers) {
       await _localNotifications.cancel(_notificationId(prayer));
     }
+  }
+
+  Future<void> _scheduleOne({
+    required Prayer prayer,
+    required PrayerTime prayerTime,
+    required DateTime targetUtc,
+    required PrayerReminderConfig config,
+  }) async {
+    final tzLocation = tz.getLocation(_timeZone);
+    final tzTarget = tz.TZDateTime.from(targetUtc, tzLocation);
+
+    final androidDetails = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      enableVibration: true,
+      playSound: config.sound,
+      sound: config.sound
+          ? const RawResourceAndroidNotificationSound('adhan')
+          : null,
+      autoCancel: true,
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      sound: 'adhan.caf',
+      presentAlert: true,
+      presentSound: true,
+    );
+
+    final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    await _localNotifications.zonedSchedule(
+      _notificationId(prayer),
+      _prayerTitle(prayer),
+      _prayerBody(prayer, prayerTime.formatted),
+      tzTarget,
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.time,
+      payload: config.adhanSound ? 'adhan:${prayer.name}' : null,
+    );
   }
 
   Future<void> cancelPrayer(Prayer prayer) async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -19,6 +20,7 @@ import 'services/reward_ad_service.dart';
 import 'services/native_ad_service.dart';
 import 'services/yalla_engine_service.dart';
 import 'services/tts_service.dart';
+import 'services/ai_service.dart';
 import 'views/home_page.dart';
 import 'views/welcome_page.dart';
 import 'views/splash_page.dart';
@@ -81,6 +83,9 @@ Future<void> main() async {
   // Restore saved preferences (theme mode, locale, ...) before the UI is built
   // so the selected theme is applied on all views from the first frame.
   await AppSettings.instance.loadSettings();
+  // Initialize the embedded AI engine (yalla_core) so Ask This News can use it
+  // for grounded answers. Failures are swallowed — the chat falls back offline.
+  unawaited(AIService.instance.initialize().catchError((_) => null));
   runApp(const MyApp());
 }
 

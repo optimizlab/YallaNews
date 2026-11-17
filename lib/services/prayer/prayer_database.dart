@@ -14,6 +14,7 @@ class PrayerDatabase {
   static final PrayerDatabase instance = PrayerDatabase._privateConstructor();
 
   static Database? _db;
+  static const int _dbVersion = 2;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -31,7 +32,17 @@ class PrayerDatabase {
 
     return openDatabase(
       dbPath,
-      version: 1,
+      version: _dbVersion,
+      onUpgrade: (Database db, int oldVersion, int newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS prayer_adhan_config (
+              prayer_index INTEGER PRIMARY KEY,
+              adhan_sound INTEGER NOT NULL DEFAULT 0
+            )
+          ''');
+        }
+      },
       onCreate: (Database db, int version) async {
         await db.execute('''
           CREATE TABLE IF NOT EXISTS prayer_times_cache (
@@ -57,6 +68,12 @@ class PrayerDatabase {
         await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_prayer_cache_lookup ON prayer_times_cache(country_slug, city_slug, local_date, provider, method)',
         );
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS prayer_adhan_config (
+            prayer_index INTEGER PRIMARY KEY,
+            adhan_sound INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
       },
     );
   }

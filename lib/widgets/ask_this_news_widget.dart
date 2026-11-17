@@ -424,10 +424,20 @@ Assistant:''';
           ),
         ),
         Expanded(
-          child: AnimatedSize(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-            child: _isExpanded ? _buildChatContent(context, theme, l10n) : const SizedBox.shrink(),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Animate the actual available height instead of relying on
+              // AnimatedSize's intrinsic measurement of a Column containing an
+              // Expanded child (which yields zero-height ListView + dead input).
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                height: _isExpanded ? constraints.maxHeight : 0,
+                child: _isExpanded
+                    ? _buildChatContent(context, theme, l10n)
+                    : const SizedBox.shrink(),
+              );
+            },
           ),
         ),
       ],
@@ -750,6 +760,7 @@ Assistant:''';
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 CircleAvatar(
                   radius: 16,

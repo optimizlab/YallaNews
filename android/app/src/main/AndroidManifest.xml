@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!-- Required to query activities that can process text -->
     <queries>
@@ -66,6 +68,20 @@
                 <action android:name="inoov.app.yallanews.PRAYER_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- Prayer Times: receiver triggered by the full-screen prayer notification -->
+        <receiver
+            android:name=".PrayerNotificationReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="inoov.app.yallanews.PRAYER_NOTIFICATION_FIRE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Prayer Times: foreground service that plays the adhan audio -->
+        <service
+            android:name=".AdhanAudioService"
+            android:exported="false" />
     </application>
 
     <!-- OpenGL GPU acceleration for MediaPipe / Gemma inference (optional but recommended) -->

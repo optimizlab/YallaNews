@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/prayer/notification_scheduler.dart';
 import '../../services/prayer/repository.dart';
+import '../../services/prayer/adhan_audio_service.dart';
 import '../../models/prayer_times.dart';
 
 class PrayerSettingsWidget extends StatefulWidget {
@@ -28,10 +29,12 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
   bool _notificationsEnabled = false;
   bool _use24Hour = true;
   bool _autoLocationRefresh = true;
+  bool _adhanSound = false;
   String _selectedProvider = 'waqtazan';
   String? _selectedMethod;
   final Map<Prayer, bool> _prayerEnabled = {};
   final Map<Prayer, int> _offsetMinutes = {};
+  final Map<Prayer, bool> _prayerAdhanSound = {};
 
   @override
   void initState() {
@@ -40,6 +43,7 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
     for (final p in kObligatoryPrayers) {
       _prayerEnabled[p] = true;
       _offsetMinutes[p] = 0;
+      _prayerAdhanSound[p] = false;
     }
   }
 
@@ -56,10 +60,20 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
     await prefs.setBool('prayer_notifications_enabled', val);
   }
 
+  Future<void> _saveAdhanSound(bool val) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('prayer_adhan_sound', val);
+  }
+
   Future<void> _savePrayerConfig(Prayer prayer, bool enabled, int offset) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('prayer_${prayer.index}_enabled', enabled);
     await prefs.setInt('prayer_${prayer.index}_offset', offset);
+  }
+
+  Future<void> _savePrayerAdhanSound(Prayer prayer, bool val) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('prayer_${prayer.index}_adhan_sound', val);
   }
 
   Future<void> _loadSettings() async {
@@ -67,6 +81,7 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
     if (!mounted) return;
     setState(() {
       _notificationsEnabled = prefs.getBool('prayer_notifications_enabled') ?? false;
+      _adhanSound = prefs.getBool('prayer_adhan_sound') ?? false;
       _use24Hour = prefs.getBool('prayer_time_24h') ?? true;
       _autoLocationRefresh = prefs.getBool('prayer_auto_location_refresh') ?? true;
       _selectedProvider = prefs.getString('prayer_provider') ?? 'waqtazan';
@@ -74,6 +89,8 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
       for (final p in kObligatoryPrayers) {
         _prayerEnabled[p] = prefs.getBool('prayer_${p.index}_enabled') ?? true;
         _offsetMinutes[p] = prefs.getInt('prayer_${p.index}_offset') ?? 0;
+        _prayerAdhanSound[p] =
+            prefs.getBool('prayer_${p.index}_adhan_sound') ?? false;
       }
     });
   }
@@ -81,7 +98,6 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final isRtl = _isRtl(l10n);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -107,25 +123,57 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
               title: Text(l10n.translate('enableNotifications')),
               secondary: const Icon(Icons.notifications_rounded),
             ),
+            SwitchListTile(
+              value: _adhanSound,
+              onChanged: (val) async {
+                setState(() => _adhanSound = val);
+                await _saveAdhanSound(val);
+                if (val) {
+                  await AdhanAudioService.instance.init();
+                }
+              },
+              title: Text(l10n.translate('adhanSound')),
+              secondary: const Icon(Icons.volume_up_rounded),
+              subtitle: Text(l10n.translate('adhanSoundDesc')),
+            ),
           ]),
           const SizedBox(height: 16),
           _buildSection(l10n, l10n.translate('individualPrayerReminders'), [
             ...kObligatoryPrayers.map((prayer) {
-              return SwitchListTile(
-                value: _prayerEnabled[prayer] ?? true,
-                onChanged: (val) async {
-                  setState(() => _prayerEnabled[prayer] = val);
-                  await _savePrayerConfig(
-                    prayer,
-                    val,
-                    _offsetMinutes[prayer] ?? 0,
-                  );
-                },
-                title: Text(_prayerName(l10n, prayer)),
-                subtitle: Text(
-                  '${l10n.translate('reminderOffset')}: ${_offsetMinutes[prayer]} min',
-                ),
-                secondary: Icon(_icon(prayer)),
+              return Column(
+                children: [
+                  SwitchListTile(
+                    value: _prayerEnabled[prayer] ?? true,
+                    onChanged: (val) async {
+                      setState(() => _prayerEnabled[prayer] = val);
+                      await _savePrayerConfig(
+                        prayer,
+                        val,
+                        _offsetMinutes[prayer] ?? 0,
+                      );
+                    },
+                    title: Text(_prayerName(l10n, prayer)),
+                    subtitle: Text(
+                      '${l10n.translate('reminderOffset')}: ${_offsetMinutes[prayer]} min',
+                    ),
+                    secondary: Icon(_icon(prayer)),
+                  ),
+                  SwitchListTile(
+                    value: _prayerAdhanSound[prayer] ?? false,
+                    onChanged: (val) async {
+                      if (!_adhanSound) {
+                        // Adhan audio requires the master toggle.
+                        setState(() => _prayerAdhanSound[prayer] = false);
+                        return;
+                      }
+                      setState(() => _prayerAdhanSound[prayer] = val);
+                      await _savePrayerAdhanSound(prayer, val);
+                    },
+                    title: Text(l10n.translate('playAdhanAudio')),
+                    secondary: const Icon(Icons.audiotrack_rounded),
+                    dense: true,
+                  ),
+                ],
               );
             }).toList(),
           ]),
@@ -192,11 +240,6 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
     );
   }
 
-  bool _isRtl(AppLocalizations l10n) {
-    final code = l10n.translate('languageCode');
-    return code == 'ar' || code == 'fa';
-  }
-
   Widget _buildSection(AppLocalizations l10n, String title, List<Widget> children) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,10 +255,10 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
             ),
           ),
         ),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Material(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        Material(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
             child: Column(children: children),
           ),
         ),

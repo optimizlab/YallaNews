@@ -183,8 +183,7 @@ class _ArticleActionsSheet extends StatefulWidget {
   State<_ArticleActionsSheet> createState() => _ArticleActionsSheetState();
 }
 
-class _ArticleActionsSheetState extends State<_ArticleActionsSheet>
-    with SingleTickerProviderStateMixin {
+class _ArticleActionsSheetState extends State<_ArticleActionsSheet> {
   static final Map<IconData, String> _actions = {
     Icons.favorite_border_rounded: 'like',
     Icons.share_rounded: 'share',
@@ -194,23 +193,8 @@ class _ArticleActionsSheetState extends State<_ArticleActionsSheet>
     Icons.report_rounded: 'report',
   };
 
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 400),
-  )..forward();
-
-  late final Animation<double> _fade = CurvedAnimation(
-    parent: _controller,
-    curve: Curves.easeOut,
-  );
-  late final Animation<Offset> _slide = Tween<Offset>(
-    begin: const Offset(0, 0.25),
-    end: Offset.zero,
-  ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
-
   @override
   void dispose() {
-    _controller.dispose();
     super.dispose();
   }
 
@@ -242,36 +226,45 @@ class _ArticleActionsSheetState extends State<_ArticleActionsSheet>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    return FadeTransition(
-      opacity: _fade,
-      child: SlideTransition(
-        position: _slide,
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
         child: Container(
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           decoration: BoxDecoration(
             color: theme.colorScheme.surface,
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 32,
+                offset: const Offset(0, 12),
               ),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                height: 4,
-                width: 40,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    widget.article.title,
+                    style: GoogleFonts.outfit(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-              ..._actions.entries.map((entry) {
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                ..._actions.entries.map((entry) {
                 final icon = entry.key;
                 final key = entry.value;
                 final label = switch (key) {
@@ -283,53 +276,31 @@ class _ArticleActionsSheetState extends State<_ArticleActionsSheet>
                   'report' => l10n.translate('report'),
                   _ => key,
                 };
-                return InkWell(
-                  onTap: () => _handle(key),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 14,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            icon,
-                            size: 22,
-                            color: theme.colorScheme.onPrimaryContainer,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Text(
-                          label,
-                          style: GoogleFonts.outfit(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                        ),
-                        const Spacer(),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          size: 18,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ],
+                final isReport = key == 'report';
+                final color = isReport
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.onSurface;
+                return ListTile(
+                  leading: Icon(icon, color: color, size: 24),
+                  title: Text(
+                    label,
+                    style: GoogleFonts.outfit(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: color,
                     ),
                   ),
+                  onTap: () => _handle(key),
+                  dense: true,
+                  visualDensity: const VisualDensity(vertical: -1),
                 );
               }),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
             ],
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -503,11 +474,25 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   void _showArticleActionsSheet() {
-    showModalBottomSheet(
+    showGeneralDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ArticleActionsSheet(
+      barrierDismissible: true,
+      barrierLabel: 'articleActions',
+      transitionDuration: const Duration(milliseconds: 350),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curve = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+        );
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.85, end: 1.0).animate(curve),
+          child: FadeTransition(
+            opacity: curve,
+            child: child,
+          ),
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) => _ArticleActionsSheet(
         article: article,
         onLike: _toggleLike,
         onShare: _shareArticle,
@@ -1310,7 +1295,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           ),
           IconButton(
             icon: Icon(
-              Icons.menu_rounded,
+              Icons.more_vert_rounded,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: _showArticleActionsSheet,

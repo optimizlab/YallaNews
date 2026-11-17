@@ -10,6 +10,8 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        YallaNewsApp.engine = flutterEngine
+
         // Register the factory so Dart can show native ads through the
         // "yallanewsNativeAd" factory id (see NativeAdService in Dart).
         GoogleMobileAdsPlugin.registerNativeAdFactory(
@@ -20,6 +22,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        YallaNewsApp.engine = null
         GoogleMobileAdsPlugin.unregisterNativeAdFactory(flutterEngine, "yallanewsNativeAd")
         super.cleanUpFlutterEngine(flutterEngine)
     }

@@ -25,7 +25,7 @@ class AdhanService {
   };
 
   /// Map of muezzin key → asset path
-  static const Map<String, String> _assetPaths = {
+  static const Map<String, String> assetPaths = {
     'makkah': 'audio/adhan/adhan_makkah.mp3',
     'afasy': 'audio/adhan/adhan_afasy.mp3',
     'qatami': 'audio/adhan/adhan_qatami.mp3',
@@ -37,6 +37,9 @@ class AdhanService {
     'turkish': 'audio/adhan/adhan_turkish.mp3',
     'moroccan': 'audio/adhan/adhan_moroccan.mp3',
   };
+
+  /// Map of muezzin key → asset path (legacy alias).
+  static const Map<String, String> _assetPaths = assetPaths;
 
   final AudioPlayer _player = AudioPlayer();
   String _selectedMuezzin = 'makkah';
