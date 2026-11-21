@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'yalla_engine_service.dart';
 import 'connectivity_service.dart';
 
@@ -93,17 +92,13 @@ class DeviceBenchmark {
       isWifi = await ConnectivityService.isWifi();
     } catch (_) {}
 
-    ConnectionType connectionType = ConnectionType.none;
-    try {
-      final result = await Connectivity().checkConnectivity();
-      if (result.contains(ConnectivityResult.wifi)) {
-        connectionType = ConnectionType.wifi;
-      } else if (result.contains(ConnectivityResult.mobile)) {
-        connectionType = ConnectionType.mobile;
-      } else {
-        connectionType = ConnectionType.none;
-      }
-    } catch (_) {}
+    ConnectionType connectionType = ConnectionType.wifi;
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        final isWifi = await ConnectivityService.isWifi();
+        connectionType = isWifi ? ConnectionType.wifi : ConnectionType.none;
+      } catch (_) {}
+    }
 
     double? speedMbps;
     int? latencyMs;

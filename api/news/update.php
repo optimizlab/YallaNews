@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/news_schema.php';
@@ -18,22 +20,31 @@ try {
     $params = [];
 
     $rawInput = file_get_contents('php://input');
-    if (empty($rawInput)) {
+    if ($rawInput === false || empty(trim($rawInput))) {
         json_response(['error' => 'Empty request body'], 400);
     }
     $data = json_decode($rawInput, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
         json_response(['error' => 'Invalid JSON'], 400);
     }
+    if (!is_array($data)) {
+        $data = [];
+    }
 
     // Detect existing columns in yn_news
-    $colsStmt = $db->query("SHOW COLUMNS FROM yn_news");
     $existingCols = [];
-    while ($colRow = $colsStmt->fetch(PDO::FETCH_ASSOC)) {
-        $existingCols[] = $colRow['Field'];
+    try {
+        $colsStmt = $db->query("SHOW COLUMNS FROM yn_news");
+        while ($colRow = $colsStmt->fetch(PDO::FETCH_ASSOC)) {
+            $existingCols[] = $colRow['Field'];
+        }
+    } catch (Exception $e) {
+        error_log('SHOW COLUMNS yn_news failed: ' . $e->getMessage());
     }
 
     $newsColumns = array_fill_keys($existingCols, true);
+
+    // Handle source fields defensively
     if (isset($data['source_name']) || isset($data['source_id'])) {
         $sourceName = sanitize_string($data['source_name'] ?? $data['source_id'], 255);
         $sourceUrl = filter_var(
@@ -60,12 +71,16 @@ try {
 
     if (isset($data['category'])) {
         $category = sanitize_string($data['category'], 64);
-        $categoryExists = $db->query(
-            'SELECT id FROM yn_categories WHERE id = ? LIMIT 1',
-            [$category]
-        )->fetch();
-        if (!$categoryExists) {
-            json_response(['error' => 'Category does not exist'], 400);
+        try {
+            $categoryExists = $db->query(
+                'SELECT id FROM yn_categories WHERE id = ? LIMIT 1',
+                [$category]
+            )->fetch();
+            if (!$categoryExists) {
+                json_response(['error' => 'Category does not exist'], 400);
+            }
+        } catch (Exception $e) {
+            error_log('Category check failed: ' . $e->getMessage());
         }
         $data['category'] = $category;
     }
@@ -98,6 +113,5 @@ try {
 
 } catch (Exception $e) {
     error_log('Update article error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to update article'], 500);
+    json_response(['error' => 'Failed to update article', 'details' => $e->getMessage()], 500);
 }
-?>

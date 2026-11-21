@@ -196,8 +196,9 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
   Future<void> _detectGps() async {
     setState(() => _isLoading = true);
     try {
-      // The repository uses LocationManager internally which detects via GPS
-      final result = await widget.repository.getToday();
+      // Force GPS so the real position's country/city are used, ignoring any
+      // previously saved manual selection.
+      final result = await widget.repository.getToday(forceGps: true);
       if (!mounted) return;
       if (result.times.cityName.isNotEmpty) {
         final city = CityEntry(
@@ -210,6 +211,11 @@ class _LocationSelectorWidgetState extends State<LocationSelectorWidget> {
           longitude: result.times.longitude ?? 0,
           timeZone: result.times.timeZone,
         );
+        setState(() {
+          _selectedCity = city;
+          _selectedCountrySlug = city.countrySlug;
+          _searchQuery = '';
+        });
         widget.onCitySelected(city);
       }
     } catch (_) {}

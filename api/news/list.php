@@ -1,7 +1,8 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
-require_once __DIR__ . '/../categories/category_helpers.php';
 require_once __DIR__ . '/news_schema.php';
 
 list($page, $limit, $offset) = get_pagination_params();
@@ -35,7 +36,12 @@ if ($relatedOnly && (empty($category) || strtolower($category) === 'all' || empt
 
 if ($includeAllStatuses) {
     no_cache_headers();
-    require_admin();
+    try {
+        require_admin();
+    } catch (\Throwable $e) {
+        error_log('require_admin failed: ' . $e->getMessage());
+        json_response(['error' => 'Unauthorized', 'details' => $e->getMessage()], 401);
+    }
 } else {
     cache_headers(60);
 }
@@ -50,8 +56,18 @@ try {
         $sortColumn = $sourceNameExpression;
     }
 
-    $categoryColumns = category_table_columns($db);
-    $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+    // Defensive category select
+    $categoryColumns = [];
+    $categorySelect = '';
+    try {
+        require_once __DIR__ . '/../categories/category_helpers.php';
+        $categoryColumns = category_table_columns($db);
+        if (!empty($categoryColumns)) {
+            $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+        }
+    } catch (Exception $e) {
+        error_log('category helpers failed: ' . $e->getMessage());
+    }
 
     $where = $includeAllStatuses ? ['1 = 1'] : ["n.status = 'published'"];
     $params = [];
@@ -84,18 +100,29 @@ try {
     $stmt = $db->query($countSql, $params);
     $total = intval($stmt->fetchColumn());
 
+    // Defensive views_count subquery - only if yn_user_reading_history exists
+    $viewsSubquery = "0 AS views_count";
+    try {
+        $historyCols = $db->query('SHOW COLUMNS FROM yn_user_reading_history')->fetchAll(PDO::FETCH_COLUMN, 0);
+        if (!empty($historyCols)) {
+            $viewsSubquery = "(SELECT COUNT(*) FROM yn_user_reading_history rh WHERE rh.article_id = n.id) AS views_count";
+        }
+    } catch (Exception $e) {
+        // table doesn't exist, use 0
+    }
+
     $sql = "SELECT n.id, n.title, n.summary, n.content, n.language, n.category,
                    $sourceNameExpression AS source_id, $sourceUrlExpression AS source_url,
                    n.source_url_article,
                    n.image_url, n.published_at, n.status,
                    $categorySelect,
-                   (SELECT COUNT(*) FROM yn_user_reading_history rh WHERE rh.article_id = n.id) AS views_count
-             FROM yn_news n
-             $sourceJoin
-             LEFT JOIN yn_categories c ON n.category = c.id
-             WHERE $whereClause
-             ORDER BY $sortColumn $sortOrder, n.published_at DESC
-             LIMIT ? OFFSET ?";
+                   $viewsSubquery
+              FROM yn_news n
+              $sourceJoin
+              LEFT JOIN yn_categories c ON n.category = c.id
+              WHERE $whereClause
+              ORDER BY $sortColumn $sortOrder, n.published_at DESC
+              LIMIT ? OFFSET ?";
 
     $params[] = $limit;
     $params[] = $offset;
@@ -104,18 +131,18 @@ try {
 
     $formatted = array_map(function($a) {
         $imageUrl = $a['image_url'];
-        $categoryTranslations = [
+        $categoryTranslationsLocal = [
             'ar' => (string)($a['category_name'] ?? ''),
             'en' => (string)($a['category_name_en'] ?? ''),
             'fr' => (string)($a['category_name_fr'] ?? ''),
             'tr' => (string)($a['category_name_tr'] ?? ''),
         ];
         $language = strtolower((string)($a['language'] ?? ''));
-        $localizedCategoryName = $categoryTranslations[$language] ?? '';
+        $localizedCategoryName = $categoryTranslationsLocal[$language] ?? '';
         if ($localizedCategoryName === '') {
-            $localizedCategoryName = $categoryTranslations['ar'] ?: (string)($a['category'] ?? '');
+            $localizedCategoryName = $categoryTranslationsLocal['ar'] ?: (string)($a['category'] ?? '');
         }
-        if (empty($imageUrl) || str_contains($imageUrl, 'bing.com/images/search')) {
+        if (empty($imageUrl) || strpos($imageUrl, 'bing.com/images/search') !== false) {
             $seed = crc32($a['id'] ?? $a['title']);
             $imageUrl = "https://placehold.co/600x400/EEE/31343C?text=" . urlencode($a['category'] ?? 'news') . "+$seed";
         }
@@ -127,11 +154,11 @@ try {
             'language' => $a['language'],
             'category' => $a['category'],
             'categoryName' => $localizedCategoryName,
-            'categoryNameAr' => $categoryTranslations['ar'],
+            'categoryNameAr' => $categoryTranslationsLocal['ar'],
             'categoryNameEn' => $a['category_name_en'],
             'categoryNameFr' => $a['category_name_fr'],
             'categoryNameTr' => $a['category_name_tr'],
-            'categoryTranslations' => $categoryTranslations,
+            'categoryTranslations' => $categoryTranslationsLocal,
             'source' => [
                 'name' => $a['source_id'],
                 'url' => $a['source_url'],
@@ -156,8 +183,7 @@ try {
         ]
     ]);
 
-} catch (Exception $e) {
+} catch (\Throwable $e) {
     error_log('List articles error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to fetch articles'], 500);
+    json_response(['error' => 'Failed to fetch articles', 'details' => $e->getMessage()], 500);
 }
-?>

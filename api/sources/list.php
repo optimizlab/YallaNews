@@ -1,7 +1,8 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
-require_once __DIR__ . '/../categories/category_helpers.php';
 
 $all = isset($_GET['all']) && $_GET['all'] == '1';
 
@@ -9,8 +10,18 @@ cache_headers($all ? 60 : 3600);
 
 try {
     $db = Database::getInstance();
-    $categoryColumns = category_table_columns($db);
-    $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+
+    $categoryColumns = [];
+    $categorySelect = '';
+    try {
+        require_once __DIR__ . '/../categories/category_helpers.php';
+        $categoryColumns = category_table_columns($db);
+        if (!empty($categoryColumns)) {
+            $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+        }
+    } catch (Exception $e) {
+        error_log('category helpers failed: ' . $e->getMessage());
+    }
 
     $countryCode = $_GET['country_code'] ?? $_GET['country'] ?? null;
     $language = $_GET['language'] ?? null;
@@ -22,10 +33,9 @@ try {
     [$page, $limit, $offset] = get_pagination_params();
 
     $sql = "SELECT s.id, s.name, s.url, s.category, s.country, s.language,
-                   s.status, s.score, s.last_crawled,
-                   $categorySelect
-            FROM yn_sources s
-            LEFT JOIN yn_categories c ON s.category = c.id";
+                   s.status, s.score, s.last_crawled
+            $categorySelect
+            FROM yn_sources s";
     $params = [];
     $where = [];
 
@@ -89,7 +99,7 @@ try {
             'count' => count($urls)
         ]);
     } else {
-        $formatted = array_map(function($s) {
+        $formatted = array_map(function($s) use ($categoryColumns) {
             return [
                 'id' => $s['id'],
                 'name' => $s['name'],
@@ -130,7 +140,5 @@ try {
     echo json_encode([
         'error' => 'Failed to fetch sources',
         'details' => $e->getMessage(),
-        'trace' => $e->getTraceAsString()
     ]);
 }
-?>

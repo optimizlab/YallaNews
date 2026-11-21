@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'adhan_service.dart';
@@ -28,9 +28,19 @@ class AdhanAudioService {
   Timer? _stopTimer;
   bool _started = false;
 
+  /// Whether the adhan is currently playing.
+  bool get isPlaying => _player.state == PlayerState.playing;
+
+  /// Stream of player state changes so UI can toggle play/stop.
+  Stream<PlayerState> get playerStateStream => _player.onPlayerStateChanged;
+
   /// Whether the platform supports background audio playback.
   bool get isSupported =>
-      Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+      Platform.isAndroid ||
+      Platform.isIOS ||
+      Platform.isMacOS ||
+      Platform.isWindows ||
+      Platform.isLinux;
 
   /// Initialize the service. Safe to call multiple times.
   Future<void> init() async {

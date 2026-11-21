@@ -10,18 +10,18 @@ $email = filter_var(sanitize_string($data['email'] ?? '', 255), FILTER_SANITIZE_
 $password = $data['password'] ?? null;
 
 if (!$email || !$password) {
-    json_response(['error' => 'Missing email or password'], 400);
+    json_response(['success' => false, 'error' => 'Missing email or password'], 400);
 }
 
 try {
     $db = Database::getInstance();
-    
+
     $sql = "SELECT id, email, display_name, photo_url, phone_number, password_hash, role 
             FROM yn_users 
             WHERE email = ? 
             LIMIT 1";
     $stmt = $db->query($sql, [$email]);
-    $user = $stmt->fetch();
+    $dbUser = $stmt->fetch();
 
     // Check if logging in with master admin credentials
     $cleanPassword = trim($password);
@@ -29,12 +29,14 @@ try {
         $email === 'admin@yallanews.com' || 
         $email === 'admin@inoov.com' || 
         strpos($email, 'admin@') === 0 || 
-        ($user && ($user['role'] ?? '') === 'admin')
+        ($dbUser && ($dbUser['role'] ?? '') === 'admin')
     );
+
+    $user = null;
 
     if ($isAdminEmail && in_array($cleanPassword, ['admin', 'admin123', 'admin@123', 'yallanews2024'])) {
         $hash = password_hash($cleanPassword, PASSWORD_DEFAULT);
-        $adminId = !empty($user['id']) ? $user['id'] : 'admin_' . substr(md5($email), 0, 12);
+        $adminId = !empty($dbUser['id']) ? $dbUser['id'] : 'admin_' . substr(md5($email), 0, 12);
 
         $db->query(
             "INSERT INTO yn_users (id, email, display_name, password_hash, role, created_at) 
@@ -46,16 +48,18 @@ try {
         $user = [
             'id' => $adminId,
             'email' => $email,
-            'display_name' => !empty($user['display_name']) ? $user['display_name'] : 'مدير النظام',
-            'photo_url' => $user['photo_url'] ?? null,
-            'phone_number' => $user['phone_number'] ?? null,
+            'display_name' => !empty($dbUser['display_name']) ? $dbUser['display_name'] : 'مدير النظام',
+            'photo_url' => $dbUser['photo_url'] ?? null,
+            'phone_number' => $dbUser['phone_number'] ?? null,
             'password_hash' => $hash,
             'role' => 'admin'
         ];
+    } elseif ($dbUser) {
+        $user = $dbUser;
     }
 
     if (!$user || !password_verify($password, $user['password_hash'] ?? '')) {
-        json_response(['error' => 'Invalid credentials'], 401);
+        json_response(['success' => false, 'error' => 'Invalid credentials'], 401);
     }
 
     // Generate a secure auth token for mobile/API clients
@@ -76,7 +80,7 @@ try {
         }
     } catch (Exception $e) {
         error_log('Token save error: ' . $e->getMessage());
-        json_response(['error' => 'Authentication setup failed'], 500);
+        json_response(['success' => false, 'error' => 'Authentication setup failed'], 500);
         return;
     }
 
@@ -86,7 +90,7 @@ try {
 
     json_response([
         'success' => true,
-        'token'   => $authToken, // Used by Flutter app as Bearer token
+        'token'   => $authToken,
         'user' => [
             'id' => $user['id'],
             'email' => $user['email'],
@@ -99,6 +103,6 @@ try {
 
 } catch (Exception $e) {
     error_log('Login error: ' . $e->getMessage());
-    json_response(['error' => 'Login failed'], 500);
+    json_response(['success' => false, 'error' => 'Login failed'], 500);
 }
 ?>

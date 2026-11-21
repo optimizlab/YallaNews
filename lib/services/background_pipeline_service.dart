@@ -3,7 +3,6 @@
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:workmanager/workmanager.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:yallanews/services/ai_service.dart';
 import 'package:yallanews/services/model_download_manager.dart';
@@ -11,6 +10,7 @@ import 'package:yallanews/services/news_pipeline_service.dart'
     show NewsPipelineConfig, PipelineArticle, NewsPipelineService;
 import 'package:yallanews/database/news_db.dart';
 import 'package:yallanews/services/ai_ffi.dart' show YallaProviderConfig, YallaProviderType;
+import 'package:yallanews/services/platform_stubs.dart';
 
 /// WorkManager task names
 const String kPipelineTask = 'com.yallanews.pipeline_run';
@@ -19,10 +19,13 @@ const String kCleanupTask = 'com.yallanews.cleanup';
 
 /// Initialize background services
 Future<void> initializeBackgroundServices() async {
-  await Workmanager().initialize(_callbackDispatcher, isInDebugMode: false);
+  if (PlatformAds.isAvailable) {
+    await PlatformWorkManager.initialize();
+  }
   
   // Schedule daily pipeline run (every 6 hours)
-  await Workmanager().registerPeriodicTask(
+  if (PlatformAds.isAvailable) {
+    await PlatformWorkManager.registerPeriodicTask(
     'pipeline_daily',
     kPipelineTask,
     frequency: const Duration(hours: 6),

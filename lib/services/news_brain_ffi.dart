@@ -470,6 +470,12 @@ typedef _ClassifyCategoryDart = Pointer<Utf8> Function(Pointer<Utf8> title, Poin
 typedef _AnalyzeSentimentC = Double Function(Pointer<Utf8> text);
 typedef _AnalyzeSentimentDart = double Function(Pointer<Utf8> text);
 
+/// Press-editor AI validation: returns 1 when the item looks like a real news
+/// article, 0 when it is a section header, category page, nav link, digest, or
+/// any non-article boilerplate.
+typedef _IsRealNewsC = Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef _IsRealNewsDart = int Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+
 /// Dart FFI Service to communicate with newsBrain C++ DLL
 class NewsBrainService {
   NewsBrainService._internal();
@@ -487,6 +493,7 @@ class NewsBrainService {
   _ClassifyArticleDart? _classifyArticle;
   _ClassifyCategoryDart? _classifyCategory;
   _AnalyzeSentimentDart? _analyzeSentiment;
+  _IsRealNewsDart? _isRealNews;
 
   bool get isAvailable {
     _ensureInitialized();
@@ -533,6 +540,7 @@ class NewsBrainService {
         _classifyArticle = _lib!.lookupFunction<_ClassifyArticleC, _ClassifyArticleDart>('newsbrain_classify_article');
         _classifyCategory = _lib!.lookupFunction<_ClassifyCategoryC, _ClassifyCategoryDart>('newsbrain_classify_category');
         _analyzeSentiment = _lib!.lookupFunction<_AnalyzeSentimentC, _AnalyzeSentimentDart>('newsbrain_analyze_sentiment');
+        _isRealNews = _lib!.lookupFunction<_IsRealNewsC, _IsRealNewsDart>('newsbrain_is_real_news');
       }
     } catch (e) {
       // Library not found or platform unsupported - handled gracefully via isAvailable check
@@ -694,6 +702,33 @@ class NewsBrainService {
       return _analyzeSentiment!(textPtr);
     } finally {
       calloc.free(textPtr);
+    }
+  }
+
+  /// Press-editor AI validation: returns true when the item looks like a real
+  /// news article, false when it is a section header, category page, nav link,
+  /// digest, or any non-article boilerplate.
+  Future<bool> isRealNews({
+    required String title,
+    required String content,
+    required String summary,
+    String url = '',
+  }) async {
+    _ensureInitialized();
+    if (_isRealNews == null) return false;
+
+    final titlePtr = title.toNativeUtf8();
+    final contentPtr = content.toNativeUtf8();
+    final summaryPtr = summary.toNativeUtf8();
+    final urlPtr = url.toNativeUtf8();
+    try {
+      final result = _isRealNews!(titlePtr, contentPtr, summaryPtr, urlPtr);
+      return result == 1;
+    } finally {
+      calloc.free(titlePtr);
+      calloc.free(contentPtr);
+      calloc.free(summaryPtr);
+      calloc.free(urlPtr);
     }
   }
 }

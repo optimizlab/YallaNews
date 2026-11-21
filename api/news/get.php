@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../categories/category_helpers.php';
@@ -19,8 +21,17 @@ try {
     $sourceUrlExpression = news_source_url_expression($newsColumns);
     $sourceJoin = news_source_join($newsColumns);
 
-    $categoryColumns = category_table_columns($db);
-    $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+    // Defensive category select
+    $categoryColumns = [];
+    $categorySelect = '';
+    try {
+        $categoryColumns = category_table_columns($db);
+        if (!empty($categoryColumns)) {
+            $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+        }
+    } catch (Exception $e) {
+        error_log('category helpers failed: ' . $e->getMessage());
+    }
 
     $sql = "SELECT n.*, $sourceNameExpression AS resolved_source_name,
                $sourceUrlExpression AS resolved_source_url,
@@ -83,6 +94,5 @@ try {
 
 } catch (Exception $e) {
     error_log('Get article error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to fetch article'], 500);
+    json_response(['error' => 'Failed to fetch article', 'details' => $e->getMessage()], 500);
 }
-?>

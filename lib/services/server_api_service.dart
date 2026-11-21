@@ -94,9 +94,6 @@ class ServerApiService {
       'Accept': 'application/json',
       'User-Agent': 'YallaNewsApp/1.0',
       if (token != null) 'Authorization': 'Bearer $token',
-      if (token != null) 'X-Auth-Token': token,
-      if (token != null) 'X-User-Token': token,
-      if (token != null) 'X-Authorization': 'Bearer $token',
       if (cookie != null && cookie.isNotEmpty) 'Cookie': cookie,
     };
   }
@@ -502,6 +499,14 @@ class ServerApiService {
   /// Unlike [articleId] as the current authenticated user.
   static Future<void> unlikeArticle(String articleId) async {
     await postJson('likes/unlike.php', {'articleId': articleId});
+  }
+
+  /// Report [articleId] as the current authenticated user with [reason].
+  static Future<void> reportArticle(String articleId, String reason) async {
+    await postJson('reports/create.php', {
+      'articleId': articleId,
+      'reason': reason,
+    });
   }
 
   // ─── Local like fallback ────────────────────────────────────────────────────

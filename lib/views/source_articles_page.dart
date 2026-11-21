@@ -167,7 +167,9 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
     widget.engineService.addLog("[SYSTEM] Triggering Two-Pass Crawling Pipeline for source: ${widget.source.name}");
 
     try {
-      final jsonStr = await rootBundle.loadString('assets/news_local_db.json');
+      // No static source list: the engine does not consume localDbJson, so an
+      // empty array avoids any dependence on bundled/mocked data.
+      final jsonStr = '[]';
       
       // PASS 1: Catch candidate URLs from source homepage
       widget.engineService.addLog("[PIPELINE] Pass 1: Crawling source homepage URL to catch article URLs...");

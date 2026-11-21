@@ -1122,6 +1122,12 @@
             <span>المستخدمين</span>
           </a>
         </li>
+        <li class="nav-item">
+          <a class="nav-link" data-tab="reports">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>تقارير الإبلاغ</span>
+          </a>
+        </li>
       </ul>
 
       <div class="sidebar-footer">
@@ -1804,7 +1810,63 @@
           </div>
         </section>
 
-        <!-- Developer & Disclaimer Footer -->
+        <!-- ─── TAB 6: NEWS REPORTS (moderation) ─── -->
+        <section id="tab-reports" class="tab-section" style="display: none;">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title">
+                <i class="fa-solid fa-triangle-exclamation" style="color: var(--primary);"></i>
+                تقارير الإبلاغ على الأخبار
+              </div>
+              <div class="filter-bar">
+                <div class="search-box">
+                  <i class="fa-solid fa-magnifying-glass"></i>
+                  <input type="text" id="report-search" class="form-control" placeholder="بحث بالعنون أو السبب أو اسم المبلغ..." oninput="STATE.reportsPage = 1; debounce(loadReports, 400)()">
+                </div>
+                <select id="report-status-filter" class="form-control" style="width: auto;" onchange="STATE.reportsPage = 1; loadReports()">
+                  <option value="">الحالة: كلها</option>
+                  <option value="pending">معلق (Pending)</option>
+                  <option value="reviewed">قيد المراجعة</option>
+                  <option value="dismissed">مرفوض</option>
+                  <option value="resolved">منتهي</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="loadReports()" title="تحديث القائمة">
+                  <i class="fa-solid fa-rotate"></i>
+                </button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="pagination-bar" id="reports-pagination-top" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="changeReportsPage(-1)" id="reports-prev-btn-top">‹ السابقة</button>
+                <span id="reports-page-info-top" style="margin: 0 10px; color: var(--text-muted); font-size: 13px; font-weight: 600;">صفحة 1 من 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="changeReportsPage(1)" id="reports-next-btn-top">التالي ›</button>
+              </div>
+
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>المقال</th>
+                      <th>المبلغ</th>
+                      <th>سبب الإبلاغ</th>
+                      <th>التاريخ</th>
+                      <th style="width: 110px; text-align: center;">الحالة</th>
+                      <th style="width: 130px; text-align: center;">إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reports-table-body">
+                    <tr><td colspan="6" style="text-align: center; padding: 30px;">جارٍ تحميل تقارير الإبلاغ...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="pagination-bar" id="reports-pagination" style="display: none;">
+                <button class="btn btn-secondary btn-sm" onclick="changeReportsPage(-1)" id="reports-prev-btn">‹ السابقة</button>
+                <span id="reports-page-info" style="margin: 0 10px; color: var(--text-muted); font-size: 13px; font-weight: 600;">صفحة 1 من 1</span>
+                <button class="btn btn-secondary btn-sm" onclick="changeReportsPage(1)" id="reports-next-btn">التالي ›</button>
+              </div>
+            </div>
+          </div>
+        </section>
         <footer style="margin-top: 36px; padding: 22px 28px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px;">
           <div>
             <div style="font-size: 13px; font-weight: 700; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
@@ -1974,7 +2036,9 @@
       commentsPage: 1,
       commentsTotalPages: 1,
       usersPage: 1,
-      usersTotalPages: 1
+      usersTotalPages: 1,
+      reportsPage: 1,
+      reportsTotalPages: 1
     };
 
     // Global helper: Never use Eastern Arabic numerals in dashboard statistics
@@ -2041,7 +2105,8 @@
         'news': 'إدارة وتعديل الأخبار',
         'categories': 'أقسام وتصنيفات التطبيق',
         'comments': 'مراقبة وإدارة التعليقات',
-        'users': 'مستخدمي المنظومة'
+        'users': 'مستخدمي المنظومة',
+        'reports': 'تقارير الإبلاغ على الأخبار'
       };
       document.getElementById('page-title').innerText = titles[tabId] || 'لوحة التحكم';
 
@@ -2052,6 +2117,7 @@
       if (tabId === 'categories') loadCategoriesTable();
       if (tabId === 'comments') loadComments();
       if (tabId === 'users') loadUsers();
+      if (tabId === 'reports') loadReports();
     }
 
     // Check Auth
@@ -3666,6 +3732,133 @@
         }
       } catch (err) {
         showToast('خطأ في الاتصال', 'error');
+      }
+    }
+
+    // ─── REPORTS (moderation) ───
+    async function loadReports() {
+      const search = document.getElementById('report-search')?.value || '';
+      const status = document.getElementById('report-status-filter')?.value || '';
+      const tbody = document.getElementById('reports-table-body');
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px;"><i class="fa-solid fa-spinner fa-spin"></i> جارٍ التحميل...</td></tr>';
+
+      try {
+        const params = new URLSearchParams({ limit: 20, page: STATE.reportsPage });
+        if (search) params.append('search', search);
+        if (status) params.append('status', status);
+
+        const res = await fetch(`${API_BASE}/reports/list.php?${params.toString()}`, { credentials: 'include' });
+        const data = await res.json();
+        if (!data.success || !data.reports || data.reports.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 30px;">لا توجد تقارير إبلاغ بعد</td></tr>';
+          renderReportsPagination();
+          return;
+        }
+
+        const pagination = data.pagination || {};
+        STATE.reportsTotalPages = pagination.totalPages || 1;
+        STATE.reportsPage = pagination.page || 1;
+
+        const statusBadge = (s) => {
+          const map = {
+            pending: '<span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">معلق</span>',
+            reviewed: '<span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6;">قيد المراجعة</span>',
+            dismissed: '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">مرفوض</span>',
+            resolved: '<span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">منتهي</span>'
+          };
+          return map[s] || `<span class="badge">${escapeHtml(s)}</span>`;
+        };
+
+        tbody.innerHTML = data.reports.map(r => `
+          <tr>
+            <td style="max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+              <b>${escapeHtml(r.articleTitle || 'مقال')}</b>
+            </td>
+            <td style="max-width: 150px;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <div class="user-avatar" style="width: 24px; height: 24px; font-size: 10px;">
+                  ${(r.reportedByName || r.reportedBy || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div style="font-size: 12px;">${escapeHtml(r.reportedByName || r.reportedBy || '-')}</div>
+              </div>
+            </td>
+            <td style="max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(r.reason || '')}">
+              ${escapeHtml(r.reason || '-')}
+            </td>
+            <td>${formatDate(r.createdAt)}</td>
+            <td style="text-align: center;">${statusBadge(r.status)}</td>
+            <td style="text-align: center;">
+              <select class="form-control report-status-select" data-id="${escapeHtml(r.id)}" onchange="updateReportStatus(this)">
+                <option value="pending" ${r.status === 'pending' ? 'selected' : ''}>معلق</option>
+                <option value="reviewed" ${r.status === 'reviewed' ? 'selected' : ''}>قيد المراجعة</option>
+                <option value="dismissed" ${r.status === 'dismissed' ? 'selected' : ''}>مرفوض</option>
+                <option value="resolved" ${r.status === 'resolved' ? 'selected' : ''}>منتهي</option>
+              </select>
+            </td>
+          </tr>
+        `).join('');
+
+        renderReportsPagination();
+
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--danger); padding: 30px;">فشل تحميل التقارير</td></tr>';
+      }
+    }
+
+    function changeReportsPage(delta) {
+      const next = STATE.reportsPage + delta;
+      if (next < 1 || next > STATE.reportsTotalPages) return;
+      STATE.reportsPage = next;
+      loadReports();
+    }
+
+    function renderReportsPagination() {
+      const bar = document.getElementById('reports-pagination');
+      const barTop = document.getElementById('reports-pagination-top');
+      const info = document.getElementById('reports-page-info');
+      const infoTop = document.getElementById('reports-page-info-top');
+      const prev = document.getElementById('reports-prev-btn');
+      const prevTop = document.getElementById('reports-prev-btn-top');
+      const next = document.getElementById('reports-next-btn');
+      const nextTop = document.getElementById('reports-next-btn-top');
+      if (!bar && !barTop) return;
+      if (STATE.reportsTotalPages <= 1) {
+        if (bar) bar.style.display = 'none';
+        if (barTop) barTop.style.display = 'none';
+        return;
+      }
+      if (bar) bar.style.display = 'flex';
+      if (barTop) barTop.style.display = 'flex';
+      if (info) info.innerText = `صفحة ${STATE.reportsPage} من ${STATE.reportsTotalPages}`;
+      if (infoTop) infoTop.innerText = `صفحة ${STATE.reportsPage} من ${STATE.reportsTotalPages}`;
+      if (prev) prev.disabled = STATE.reportsPage <= 1;
+      if (prevTop) prevTop.disabled = STATE.reportsPage <= 1;
+      if (next) next.disabled = STATE.reportsPage >= STATE.reportsTotalPages;
+      if (nextTop) nextTop.disabled = STATE.reportsPage >= STATE.reportsTotalPages;
+    }
+
+    async function updateReportStatus(selectEl) {
+      const id = selectEl.getAttribute('data-id');
+      const status = selectEl.value;
+      if (!id) return;
+      try {
+        const res = await fetch(`${API_BASE}/reports/update.php`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ id, status })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('تم تحديث حالة البلاغ', 'success');
+          loadReports();
+        } else {
+          showToast(data.error || 'فشل التحديث', 'error');
+          loadReports();
+        }
+      } catch (err) {
+        showToast('خطأ في الاتصال', 'error');
+        loadReports();
       }
     }
 

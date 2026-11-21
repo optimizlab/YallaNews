@@ -18,6 +18,8 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   bool _isLogin = true;
   bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   String? _errorMessage;
 
   @override
@@ -138,12 +140,19 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _passwordController,
-                    obscureText: true,
+                    obscureText: _obscurePassword,
                     style: TextStyle(color: colors.onSurface),
                     decoration: InputDecoration(
                       hintText: l10n.translate('password'),
                       hintStyle: TextStyle(color: colors.onSurfaceVariant),
                       prefixIcon: Icon(Icons.lock_rounded, color: colors.primary),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          color: colors.onSurfaceVariant,
+                        ),
+                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      ),
                       filled: true,
                       fillColor: colors.surfaceContainerHighest,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -152,14 +161,21 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   if (!_isLogin) ...[
                     const SizedBox(height: 12),
-                    TextFormField(
+                      TextFormField(
                       controller: _confirmPasswordController,
-                      obscureText: true,
+                      obscureText: _obscureConfirmPassword,
                       style: TextStyle(color: colors.onSurface),
                       decoration: InputDecoration(
                         hintText: l10n.translate('confirmPassword'),
                         hintStyle: TextStyle(color: colors.onSurfaceVariant),
                         prefixIcon: Icon(Icons.lock_outline_rounded, color: colors.primary),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                            color: colors.onSurfaceVariant,
+                          ),
+                          onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                        ),
                         filled: true,
                         fillColor: colors.surfaceContainerHighest,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),

@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 
@@ -30,8 +32,9 @@ try {
         $stmt->execute([':score' => $score, ':url' => $url]);
     }
 
-    json_response(['success' => true]);
+    $affected = $stmt->rowCount();
+    json_response(['success' => true, 'affected' => $affected]);
 } catch (Exception $e) {
     error_log('Update source score error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to update source score'], 500);
+    json_response(['error' => 'Failed to update source score', 'details' => $e->getMessage()], 500);
 }

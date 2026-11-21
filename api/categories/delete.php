@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 
@@ -46,6 +48,5 @@ try {
     ]);
 } catch (Exception $e) {
     error_log('Delete category error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to delete category'], 500);
+    json_response(['error' => 'Failed to delete category', 'details' => $e->getMessage()], 500);
 }
-?>

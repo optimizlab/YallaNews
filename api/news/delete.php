@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 
@@ -13,8 +15,7 @@ if (!$id) {
 try {
     $db = Database::getInstance();
 
-    $sql = "DELETE FROM yn_news WHERE id = ?";
-    $db->query($sql, [$id]);
+    $db->query("DELETE FROM yn_news WHERE id = ?", [$id]);
 
     json_response([
         'success' => true,
@@ -23,6 +24,5 @@ try {
 
 } catch (Exception $e) {
     error_log('Delete article error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to delete article'], 500);
+    json_response(['error' => 'Failed to delete article', 'details' => $e->getMessage()], 500);
 }
-?>

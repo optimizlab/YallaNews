@@ -118,4 +118,53 @@ $rawContent
     _lastOllamaCheck = now;
     return _cachedOllamaAvailable;
   }
+
+  /// Real LLM chat grounded in a specific news article.
+  /// Answers ONLY from the article context; never invents facts outside it.
+  Future<String?> generateChat({
+    required String title,
+    required String summary,
+    required String content,
+    required String question,
+    String source = '',
+    String category = '',
+    String language = '',
+    List<String> history = const [],
+  }) async {
+    if (!await isOllamaAvailable()) return null;
+
+    final trimmedContent = content.length > 2500
+        ? '${content.substring(0, 2500)}...'
+        : content;
+
+    final isArabic = language == 'ar';
+    final system = isArabic
+        ? 'أنت مساعد إخباري محترف. أجب فقط بناءً على المقال الموضح أدناه. إذا لم يكن الجواب موجوداً في المقال، قل بوضوح أنك لا تملك معلومات كافية بدلاً من اختراع معلومات. كن دقيقاً ومقتضباً.'
+        : 'You are a professional news assistant. Answer ONLY based on the article provided below. If the answer is not in the article, say clearly that you do not have enough information instead of inventing facts. Be concise and accurate.';
+
+    final prompt = isArabic
+        ? '''المقال:
+العنوان: $title
+المصدر: $source
+القسم: $category
+الملخص: $summary
+المحتوى: $trimmedContent
+
+${history.isNotEmpty ? 'المحادثة السابقة:\n${history.join('\n')}\n' : ''}
+السؤال: $question
+الإجابة:'''
+        : '''ARTICLE
+Title: $title
+Source: $source
+Category: $category
+Summary: $summary
+Content: $trimmedContent
+
+${history.isNotEmpty ? 'Previous conversation:\n${history.join('\n')}\n' : ''}
+Question: $question
+Answer:''';
+
+    final result = await generateText(prompt, system: system);
+    return result?.trim().isNotEmpty == true ? result : null;
+  }
 }

@@ -1,33 +1,12 @@
 name: yallanews
 description: "Yalla News - Smart real-time Arabic and world news reader with curated summaries, offline reading, text-to-speech, dark mode, and trusted sources."
-# The following line prevents the package from being accidentally published to
-# pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: 'none'
 
-# The following defines the version and build number for your application.
-# A version number is three numbers separated by dots, like 1.2.43
-# followed by an optional build number separated by a +.
-# Both the version and the builder number may be overridden in flutter
-# build by specifying --build-name and --build-number, respectively.
-# In Android, build-name is used as versionName while build-number used as versionCode.
-# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
-# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
-# Read more about iOS versioning at
-# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
-# In Windows, build-name is used as the major, minor, and patch parts
-# of the product and file versions while build-number is used as the build suffix.
 version: 26.11.16+1
 
 environment:
   sdk: ^3.12.0
   flutter: ">=3.44.0"
-
-# Dependencies specify other packages that your package needs in order to work.
-# To automatically upgrade your package com.example.yallanews to the latest versions
-# consider running `flutter pub upgrade --major-versions`. Alternatively,
-# dependencies can be manually updated by changing the version numbers below to
-# the latest version available on pub.dev. To see which dependencies have newer
-# versions available, run `flutter pub outdated`.
 
 dependencies:
   flutter:
@@ -39,50 +18,44 @@ dependencies:
   cached_network_image: ^3.4.1
   http: ^1.2.1
   ffi: ^2.1.2
-  webview_flutter: ^4.14.1
-  webview_flutter_windows: ^1.1.1
   flutter_svg: ^2.0.10
   lottie: ^3.3.1
-  sqflite: ^2.3.0
   sqflite_common_ffi: ^2.3.0
   path_provider: ^2.1.0
   shared_preferences: ^2.5.6
+  shared_preferences_windows: ^2.4.1
   path: ^1.9.1
   html: ^0.15.0
   vector_math: ^2.1.4
-  connectivity_plus: ^7.1.1
-  flutter_tts:
-    path: third_party/flutter_tts
-  google_mobile_ads: ^9.0.0
-  url_launcher: ^6.3.1
   package_info_plus: ^9.0.1
-  workmanager: ^0.10.10
-  flutter_local_notifications: ^18.0.0
-  geolocator: ^12.0.0
   timezone: ^0.10.1
   flutter_localizations:
     sdk: flutter
-  intl: any
-  audioplayers: ^6.8.1
+  intl: ^0.20.3
+  
+  # Cross-platform plugins with Windows support
+  webview_flutter: ^4.10.0
+  url_launcher: ^6.3.1
+  flutter_local_notifications: ^18.0.0
+  geolocator: ^13.0.1
+  google_mobile_ads: ^5.3.0
+  flutter_tts: ^4.2.1
+  audioplayers: ^6.0.0
+  workmanager: ^0.5.2
 
 dependency_overrides:
-  # Compile SQLite from the bundled amalgamation instead of downloading a
-  # prebuilt binary; the sqlite3 package's published prebuilt binaries no
-  # longer match their recorded SHA-256 hashes, breaking the Windows native
-  # assets build. Version pinned to a stable release for dart API consistency.
   sqlite3: "3.8.0"
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  test: ^1.24.0
 
 flutter:
   uses-material-design: true
   generate: true
   assets:
-    - assets/news_sources_ar.json
-    - assets/news_local_db.json
     - assets/img/yallanews_logo_2.svg
     - assets/img/inoov_logo.svg
     - assets/img/play_store_icon_512.png
@@ -98,8 +71,6 @@ flutter:
     - assets/audio/adhan/adhan_turkish.mp3
     - assets/audio/adhan/adhan_moroccan.mp3
 
-# Configure the sqlite3 native asset hook to compile SQLite from the bundled
-# amalgamation instead of downloading a prebuilt binary (hash mismatch above).
 hooks:
   user_defines:
     sqlite3:

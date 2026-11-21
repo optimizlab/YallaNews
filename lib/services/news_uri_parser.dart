@@ -63,8 +63,42 @@ class NewsUriParser {
     'newsletter', 'latest-news', 'most-read', 'trending', 'popular',
     'team', 'teams', 'staff', 'فريق-العمل', 'فريق-التحرير',
     'مواقيت-الصلاة', 'اوقات-الصلاة', 'أوقات-الصلاة',
-    'home', 'index', 'archive', 'archives', 'page', 'pages'
+    'home', 'index', 'archive', 'archives', 'page', 'pages',
+    // Section / category page indicators (not individual articles)
+    'section', 'sections', 'topic', 'topics', 'rubric', 'rubriques',
+    '포럼', '섹션', '카테고리',
+    // Arabic section/category URLs
+    'الأخبار', 'أخبار', 'تقنية', 'تكنولوجيا', 'اقتصاد', 'اقتصادية',
+    'أعمال', 'سياسة', 'رياضة', 'فن', 'ثقافة', 'منوعات', 'عالم', 'دولي',
+    'محليات', 'محلي', 'صحة', 'علوم', 'سفر', 'سياحة', 'ألعاب', 'تعليم',
+    'حوادث', 'ميديا', 'فيديو', 'صور', 'عاجل', 'حصري', 'رأي', 'مقالات',
+    'تحقيقات', 'البطولات', 'بطولات', 'الدوري', 'كأس',
+    // English section/category URLs
+    'news', 'sports', 'business', 'tech', 'technology', 'world', 'health',
+    'science', 'culture', 'entertainment', 'opinion', 'analysis', 'review',
+    'lifestyle', 'travel', 'fashion', 'food', 'finance', 'economy',
+    'league', 'tournament', 'cup', 'match', 'standings',
   ];
+
+  /// Section / category index paths that, when they are the entire URL path
+  /// (or the last meaningful segment), indicate a section homepage rather than
+  /// an individual article. Checked with exact matching only to avoid blocking
+  /// real articles nested under these sections.
+  static const Set<String> _sectionIndexPaths = {
+    // Arabic
+    'الأخبار', 'أخبار', 'تقنية', 'تكنولوجيا', 'اقتصاد', 'اقتصادية',
+    'أعمال', 'سياسة', 'رياضة', 'فن', 'ثقافة', 'منوعات', 'عالم', 'دولي',
+    'محليات', 'محلي', 'صحة', 'علوم', 'سفر', 'سياحة', 'ألعاب', 'تعليم',
+    'حوادث', 'ميديا', 'فيديو', 'صور', 'عاجل', 'حصري', 'رأي', 'مقالات',
+    'تحقيقات', 'البطولات', 'بطولات', 'الدوري', 'كأس', 'أسود',
+    // English
+    'news', 'sports', 'business', 'tech', 'technology', 'world', 'health',
+    'science', 'culture', 'entertainment', 'opinion', 'analysis', 'review',
+    'lifestyle', 'travel', 'fashion', 'food', 'finance', 'economy',
+    'league', 'tournament', 'cup', 'match', 'standings',
+    // Generic
+    'section', 'sections', 'topic', 'topics', 'rubric', 'home', 'index',
+  };
 
   static const List<String> blacklistedExtensions = [
     '.css', '.js', '.json', '.xml', '.png', '.jpg', '.jpeg', '.gif', '.svg',
@@ -134,8 +168,22 @@ class NewsUriParser {
       }
     }
 
-    // 5. Structural Check: article URLs should have path segments
+    // 4b. Section index page check: reject URLs whose path is exactly (or ends
+    // with) a section/category name and has no article slug. This catches
+    // section homepages like "/الأخبار", "/رياضة", "/スポーツ" without blocking
+    // real articles nested under those sections (e.g. "/رياضة/article-slug").
     final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.length <= 2) {
+      final last = segments.last.toLowerCase();
+      final secondLast = segments.length >= 2 ? segments[segments.length - 2].toLowerCase() : '';
+      final isSectionIndex = _sectionIndexPaths.contains(last) ||
+          (secondLast.isNotEmpty &&
+              _sectionIndexPaths.contains(secondLast) &&
+              segments.length == 2);
+      if (isSectionIndex) return false;
+    }
+
+    // 5. Structural Check: article URLs should have path segments
     if (segments.isEmpty) return false; // Homepage
 
     // If there is only 1 segment, it should be substantial (likely a slug)

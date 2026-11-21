@@ -3,21 +3,40 @@ package inoov.app.yallanews
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import java.io.IOException
 
 /**
- * Receiver triggered by the full-screen prayer notification intent. It starts
- * the [AdhanAudioService] foreground service so the adhan plays even when the
- * app is closed or in the background.
+ * Receiver triggered by exact alarms at prayer times. It starts the
+ * [AdhanAudioService] foreground service which plays the adhan audio natively
+ * (via MediaPlayer) so playback works even when the app is completely closed.
+ *
+ * It also handles the STOP_ADHAN action from the notification's stop button.
  */
 class PrayerNotificationReceiver : BroadcastReceiver() {
+
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != "inoov.app.yallanews.PRAYER_NOTIFICATION_FIRE") return
-        val muezzin = intent.getStringExtra("muezzin_key") ?: "makkah"
-        val serviceIntent = Intent(context, AdhanAudioService::class.java).apply {
-            putExtra(AdhanAudioService.EXTRA_MUEZZIN, muezzin)
+        val action = intent?.action
+        when (action) {
+            PrayerAlarmManager.ACTION_PRAYER_FIRE -> {
+                val muezzin = intent?.getStringExtra(PrayerAlarmManager.EXTRA_MUEZZIN) ?: "makkah"
+                val prayerName = intent?.getStringExtra(PrayerAlarmManager.EXTRA_PRAYER_NAME) ?: "Prayer"
+                val serviceIntent = Intent(context, AdhanAudioService::class.java).apply {
+                    putExtra(AdhanAudioService.EXTRA_MUEZZIN, muezzin)
+                    putExtra(AdhanAudioService.EXTRA_PRAYER_NAME, prayerName)
+                    putExtra(AdhanAudioService.EXTRA_START_FROM_ALARM, true)
+                }
+                context.startForegroundService(serviceIntent)
+                Log.d("PrayerNotificationReceiver", "Starting adhan audio service for $prayerName ($muezzin)")
+            }
+            PrayerAlarmManager.ACTION_STOP_ADHAN -> {
+                Log.d("PrayerNotificationReceiver", "Stopping adhan audio service")
+                val stopIntent = Intent(context, AdhanAudioService::class.java)
+                context.stopService(stopIntent)
+            }
         }
-        context.startService(serviceIntent)
-        Log.d("PrayerNotificationReceiver", "Starting adhan audio service for $muezzin")
     }
 }

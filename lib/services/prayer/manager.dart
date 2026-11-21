@@ -1,4 +1,6 @@
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'provider.dart';
 import '../../models/city_registry.dart';
 import '../../models/prayer_times.dart';
@@ -170,6 +172,103 @@ class PrayerTimesManager {
       ),
       error: lastError,
     );
+  }
+
+  /// Fetch prayer times for every day of [year]/[month] for [city].
+  ///
+  /// Uses the user-selected provider with fallback. Returns all successfully
+  /// fetched days; partial results are returned if some days fail.
+  Future<List<PrayerTimes>> fetchMonth(
+    CityEntry city, {
+    required int year,
+    required int month,
+  }) async {
+    final providers = _orderedProviders();
+    PrayerProviderException? lastError;
+
+    for (final provider in providers) {
+      if (_selectedProviderId != provider.id) continue;
+
+      try {
+        return await provider.fetchMonth(city, year: year, month: month);
+      } on PrayerProviderException catch (e) {
+        lastError = e;
+        continue;
+      } catch (e) {
+        lastError = PrayerProviderException(
+          e.toString(),
+          provider: provider.id,
+        );
+        continue;
+      }
+    }
+
+    // If the selected provider fails entirely, try the other as fallback.
+    final other = _providers.firstWhere(
+      (p) => p.id != _selectedProviderId,
+      orElse: () => _fallback,
+    );
+    try {
+      return await other.fetchMonth(city, year: year, month: month);
+    } on PrayerProviderException catch (e) {
+      lastError = e;
+    } catch (e) {
+      lastError = PrayerProviderException(
+        e.toString(),
+        provider: other.id,
+      );
+    }
+
+    // Return empty list on total failure; callers should handle gracefully.
+    debugPrint('[PrayerTimesManager] fetchMonth failed: $lastError');
+    return const <PrayerTimes>[];
+  }
+
+  /// Fetch all 365/366 days of [year] for [city] using a single API call
+  /// (AlAdhan calendar endpoint). Falls back to Waqtazan if the selected
+  /// provider fails.
+  Future<List<PrayerTimes>> fetchYear(
+    CityEntry city, {
+    required int year,
+  }) async {
+    final providers = _orderedProviders();
+    PrayerProviderException? lastError;
+
+    for (final provider in providers) {
+      if (_selectedProviderId != provider.id) continue;
+
+      try {
+        return await provider.fetchYear(city, year: year);
+      } on PrayerProviderException catch (e) {
+        lastError = e;
+        continue;
+      } catch (e) {
+        lastError = PrayerProviderException(
+          e.toString(),
+          provider: provider.id,
+        );
+        continue;
+      }
+    }
+
+    // If the selected provider fails entirely, try the other as fallback.
+    final other = _providers.firstWhere(
+      (p) => p.id != _selectedProviderId,
+      orElse: () => _fallback,
+    );
+    try {
+      return await other.fetchYear(city, year: year);
+    } on PrayerProviderException catch (e) {
+      lastError = e;
+    } catch (e) {
+      lastError = PrayerProviderException(
+        e.toString(),
+        provider: other.id,
+      );
+    }
+
+    debugPrint('[PrayerTimesManager] fetchYear failed: $lastError');
+    return const <PrayerTimes>[];
   }
 
   /// Ordered list: user-selected provider first, then the other as fallback.

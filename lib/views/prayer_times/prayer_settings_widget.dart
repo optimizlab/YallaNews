@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,6 +31,8 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
   bool _use24Hour = true;
   bool _autoLocationRefresh = true;
   bool _adhanSound = false;
+  bool _isAdhanPlaying = false;
+  StreamSubscription<PlayerState>? _adhanPlayerSubscription;
   String _selectedProvider = 'waqtazan';
   String? _selectedMethod;
   final Map<Prayer, bool> _prayerEnabled = {};
@@ -45,6 +48,17 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
       _offsetMinutes[p] = 0;
       _prayerAdhanSound[p] = false;
     }
+    _adhanPlayerSubscription =
+        AdhanAudioService.instance.playerStateStream.listen((state) {
+      if (!mounted) return;
+      setState(() => _isAdhanPlaying = state == PlayerState.playing);
+    });
+  }
+
+  @override
+  void dispose() {
+    _adhanPlayerSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _saveProviderMethod() async {
@@ -136,6 +150,24 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
               secondary: const Icon(Icons.volume_up_rounded),
               subtitle: Text(l10n.translate('adhanSoundDesc')),
             ),
+            ListTile(
+              title: Text(l10n.translate('testAdhanAudio')),
+              subtitle: Text(l10n.translate('testAdhanAudioDesc')),
+              leading: Icon(
+                _isAdhanPlaying
+                    ? Icons.stop_circle_rounded
+                    : Icons.play_circle_rounded,
+                color: Color(0xFFC62828),
+              ),
+              onTap: () async {
+                if (_isAdhanPlaying) {
+                  await AdhanAudioService.instance.stopAdhan();
+                } else {
+                  await AdhanAudioService.instance.init();
+                  await AdhanAudioService.instance.playAdhan();
+                }
+              },
+            ),
           ]),
           const SizedBox(height: 16),
           _buildSection(l10n, l10n.translate('individualPrayerReminders'), [
@@ -175,7 +207,7 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
                   ),
                 ],
               );
-            }).toList(),
+            }),
           ]),
           const SizedBox(height: 16),
           _buildSection(l10n, l10n.translate('providerSettings'), [

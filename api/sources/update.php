@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 
@@ -48,11 +50,11 @@ try {
         }
         if ($category !== $currentSource['category']) {
             $catExists = $db->query(
-                'SELECT id FROM yn_categories WHERE id = ? AND active = 1 LIMIT 1',
+                'SELECT id FROM yn_categories WHERE id = ? LIMIT 1',
                 [$category]
             )->fetch();
             if (!$catExists) {
-                json_response(['error' => 'Category does not exist or is inactive'], 400);
+                json_response(['error' => 'Category does not exist'], 400);
             }
         }
         $updates[] = "category = ?";
@@ -89,4 +91,3 @@ try {
     error_log('Update source error: ' . $e->getMessage());
     json_response(['error' => 'Failed to update source', 'details' => $e->getMessage()], 500);
 }
-?>

@@ -1,7 +1,8 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
-require_once __DIR__ . '/../categories/category_helpers.php';
 
 require_get();
 
@@ -14,14 +15,23 @@ if (empty($id)) {
 
 try {
     $db = Database::getInstance();
-    $categoryColumns = category_table_columns($db);
-    $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+
+    $categoryColumns = [];
+    $categorySelect = '';
+    try {
+        require_once __DIR__ . '/../categories/category_helpers.php';
+        $categoryColumns = category_table_columns($db);
+        if (!empty($categoryColumns)) {
+            $categorySelect = implode(', ', category_join_translation_select($categoryColumns));
+        }
+    } catch (Exception $e) {
+        error_log('category helpers failed: ' . $e->getMessage());
+    }
 
     $sql = "SELECT s.id, s.name, s.url, s.category, s.country, s.language,
-                   s.status, s.score, s.last_crawled,
+                   s.status, s.score, s.last_crawled
                    $categorySelect
             FROM yn_sources s
-            LEFT JOIN yn_categories c ON s.category = c.id
             WHERE s.id = ?";
     $params = [$id];
 
@@ -69,7 +79,5 @@ try {
     echo json_encode([
         'error' => 'Failed to fetch source',
         'details' => $e->getMessage(),
-        'trace' => $e->getTraceAsString()
     ]);
 }
-?>

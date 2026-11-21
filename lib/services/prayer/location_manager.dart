@@ -53,24 +53,28 @@ class LocationManager {
     return CityRegistry.instance.bySlug(country, city);
   }
 
-  Future<ResolvedLocation> detectLocation() async {
+  Future<ResolvedLocation> detectLocation({bool forceGps = false}) async {
     final settings = AppSettings.instance;
-    final savedCountry = settings.prayerCountrySlug;
-    final savedCity = settings.prayerCitySlug;
-    if (savedCountry != null && savedCity != null) {
-      final city = CityRegistry.instance.bySlug(savedCountry, savedCity);
-      if (city != null) {
-        return ResolvedLocation(city: city, source: LocationSource.manual);
+
+    // Skip saved/manual selections when forcing GPS ("Use Current Location").
+    if (!forceGps) {
+      final savedCountry = settings.prayerCountrySlug;
+      final savedCity = settings.prayerCitySlug;
+      if (savedCountry != null && savedCity != null) {
+        final city = CityRegistry.instance.bySlug(savedCountry, savedCity);
+        if (city != null) {
+          return ResolvedLocation(city: city, source: LocationSource.manual);
+        }
+      }
+
+      final manual = _loadManualSelection();
+      if (manual != null) {
+        return ResolvedLocation(city: manual, source: LocationSource.manual);
       }
     }
 
-    final manual = _loadManualSelection();
-    if (manual != null) {
-      return ResolvedLocation(city: manual, source: LocationSource.manual);
-    }
-
     // GPS (one-shot fix, never continuous tracking).
-    if (!_isManual) {
+    if (forceGps || !_isManual) {
       try {
         final gps = await _detectViaGps();
         if (gps != null) return gps;

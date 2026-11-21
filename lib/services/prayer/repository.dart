@@ -1,4 +1,7 @@
-import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import '../platform_stubs.dart';
+import '../connectivity_service.dart';
 
 import '../../models/city_registry.dart';
 import '../../models/prayer_times.dart';
@@ -38,8 +41,9 @@ class PrayerTimesRepository {
   Future<PrayerFetchResult> getToday({
     bool forceRefresh = false,
     bool allowFallback = true,
+    bool forceGps = false,
   }) async {
-    final resolved = await _location.detectLocation();
+    final resolved = await _location.detectLocation(forceGps: forceGps);
     return _fetchForCity(
       resolved.city,
       source: resolved.source,
@@ -93,13 +97,14 @@ class PrayerTimesRepository {
       }
     }
 
-    bool hasInternet = false;
-    try {
-      final result = await Connectivity().checkConnectivity();
-      hasInternet = result.contains(ConnectivityResult.wifi) ||
-          result.contains(ConnectivityResult.mobile) ||
-          result.contains(ConnectivityResult.ethernet);
-    } catch (_) {}
+    bool hasInternet = true;
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        final result = await ConnectivityService.isWifi() ||
+            await ConnectivityService.hasInternet();
+        hasInternet = result;
+      } catch (_) {}
+    }
     if (!hasInternet) {
       final fallbackCached = await _database.getCachedTimesFor(
         countrySlug: city.countrySlug,
@@ -190,8 +195,316 @@ class PrayerTimesRepository {
     );
   }
 
+  /// Returns all cached prayer times for a given month (all days).
+  Future<List<PrayerTimes>> getAllMonthTimes({
+    required String countrySlug,
+    required String citySlug,
+    required int year,
+    required int month,
+    required String provider,
+    required String method,
+  }) async {
+    return _database.getCachedMonth(
+      countrySlug: countrySlug,
+      citySlug: citySlug,
+      year: year,
+      month: month,
+      provider: provider,
+      method: method,
+    );
+  }
+
+  /// Returns all cached prayer times for a given year (all days).
+  Future<List<PrayerTimes>> getAllYearTimes({
+    required String countrySlug,
+    required String citySlug,
+    required int year,
+    required String provider,
+    required String method,
+  }) async {
+    return _database.getCachedYear(
+      countrySlug: countrySlug,
+      citySlug: citySlug,
+      year: year,
+      provider: provider,
+      method: method,
+    );
+  }
+
   Future<CitySearchResult> resolveNearest(double lat, double lng) {
     return _manager.resolveNearest(lat, lng);
+  }
+
+  /// Fetch prayer times for the full [year]/[month] for [city].
+  ///
+  /// Uses cached data when available (no API call). Falls back to the API
+  /// when the month is not fully cached, then persists the result locally
+  /// so subsequent calls work offline.
+  Future<PrayerFetchResult> getMonth({
+    required CityEntry city,
+    required int year,
+    required int month,
+    bool forceRefresh = false,
+  }) async {
+    final provider = _manager.selectedProviderId;
+    final method = _manager.selectedMethod ?? '';
+
+    // Return cached month data if fully present and not forcing refresh.
+    if (!forceRefresh) {
+      final hasData = await _database.hasMonthData(
+        countrySlug: city.countrySlug,
+        citySlug: city.slug,
+        year: year,
+        month: month,
+        provider: provider,
+        method: method,
+      );
+      if (hasData) {
+        final monthTimes = await _database.getCachedMonth(
+          countrySlug: city.countrySlug,
+          citySlug: city.slug,
+          year: year,
+          month: month,
+          provider: provider,
+          method: method,
+        );
+        if (monthTimes.isNotEmpty) {
+          return PrayerFetchResult(
+            times: monthTimes.first,
+            metadata: CalculationMetadata(
+              provider: provider,
+              method: method,
+              providerAvailable: false,
+            ),
+          );
+        }
+      }
+    }
+
+    // No usable cache: fetch from API.
+    bool hasInternet = true;
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        final result = await ConnectivityService.isWifi() ||
+            await ConnectivityService.hasInternet();
+        hasInternet = result;
+      } catch (_) {}
+    }
+
+    if (!hasInternet) {
+      // Last resort: return whatever partial cache exists.
+      final partial = await _database.getCachedMonth(
+        countrySlug: city.countrySlug,
+        citySlug: city.slug,
+        year: year,
+        month: month,
+        provider: provider,
+        method: method,
+      );
+      if (partial.isNotEmpty) {
+        return PrayerFetchResult(
+          times: partial.first,
+          metadata: CalculationMetadata(
+            provider: provider,
+            method: method,
+            providerAvailable: false,
+          ),
+        );
+      }
+      return PrayerFetchResult(
+        times: _emptyTimes(city),
+        metadata: CalculationMetadata(
+          provider: provider,
+          method: method,
+          providerAvailable: false,
+        ),
+        error: const PrayerProviderException('offline', provider: 'unknown'),
+      );
+    }
+
+    final monthTimes = await _manager.fetchMonth(
+      city,
+      year: year,
+      month: month,
+    );
+
+    if (monthTimes.isNotEmpty) {
+      await _database.cacheMonth(monthTimes);
+      return PrayerFetchResult(
+        times: monthTimes.first,
+        metadata: CalculationMetadata(
+          provider: provider,
+          method: method,
+          providerAvailable: true,
+        ),
+      );
+    }
+
+    // API failed entirely; try partial cache as last resort.
+    final partial = await _database.getCachedMonth(
+      countrySlug: city.countrySlug,
+      citySlug: city.slug,
+      year: year,
+      month: month,
+      provider: provider,
+      method: method,
+    );
+    if (partial.isNotEmpty) {
+      return PrayerFetchResult(
+        times: partial.first,
+        metadata: CalculationMetadata(
+          provider: provider,
+          method: method,
+          providerAvailable: false,
+        ),
+      );
+    }
+
+    return PrayerFetchResult(
+      times: _emptyTimes(city),
+      metadata: CalculationMetadata(
+        provider: provider,
+        method: method,
+        providerAvailable: false,
+      ),
+      error: const PrayerProviderException(
+        'failed to fetch month',
+        provider: 'unknown',
+      ),
+    );
+  }
+
+  /// Fetch prayer times for the full [year] for [city].
+  ///
+  /// Uses cached data when available (no API call). Falls back to the API
+  /// when the year is not cached, then persists the result locally
+  /// so subsequent calls work offline.
+  Future<PrayerFetchResult> getYear({
+    required CityEntry city,
+    required int year,
+    bool forceRefresh = false,
+  }) async {
+    final provider = _manager.selectedProviderId;
+    final method = _manager.selectedMethod ?? '';
+
+    // Return cached year data if present and not forcing refresh.
+    if (!forceRefresh) {
+      final hasData = await _database.hasYearData(
+        countrySlug: city.countrySlug,
+        citySlug: city.slug,
+        year: year,
+        provider: provider,
+        method: method,
+      );
+      if (hasData) {
+        final yearTimes = await _database.getCachedYear(
+          countrySlug: city.countrySlug,
+          citySlug: city.slug,
+          year: year,
+          provider: provider,
+          method: method,
+        );
+        if (yearTimes.isNotEmpty) {
+          return PrayerFetchResult(
+            times: yearTimes.first,
+            metadata: CalculationMetadata(
+              provider: provider,
+              method: method,
+              providerAvailable: false,
+            ),
+          );
+        }
+      }
+    }
+
+    // No usable cache: fetch from API.
+    bool hasInternet = true;
+    if (Platform.isAndroid || Platform.isIOS) {
+      try {
+        final result = await ConnectivityService.isWifi() ||
+            await ConnectivityService.hasInternet();
+        hasInternet = result;
+      } catch (_) {}
+    }
+
+    if (!hasInternet) {
+      // Last resort: return whatever partial cache exists.
+      final partial = await _database.getCachedYear(
+        countrySlug: city.countrySlug,
+        citySlug: city.slug,
+        year: year,
+        provider: provider,
+        method: method,
+      );
+      if (partial.isNotEmpty) {
+        return PrayerFetchResult(
+          times: partial.first,
+          metadata: CalculationMetadata(
+            provider: provider,
+            method: method,
+            providerAvailable: false,
+          ),
+        );
+      }
+      return PrayerFetchResult(
+        times: _emptyTimes(city),
+        metadata: CalculationMetadata(
+          provider: provider,
+          method: method,
+          providerAvailable: false,
+        ),
+        error: const PrayerProviderException('offline', provider: 'unknown'),
+      );
+    }
+
+    final yearTimes = await _manager.fetchYear(
+      city,
+      year: year,
+    );
+
+    if (yearTimes.isNotEmpty) {
+      await _database.cacheYear(yearTimes);
+      return PrayerFetchResult(
+        times: yearTimes.first,
+        metadata: CalculationMetadata(
+          provider: provider,
+          method: method,
+          providerAvailable: true,
+        ),
+      );
+    }
+
+    // API failed entirely; try partial cache as last resort.
+    final partial = await _database.getCachedYear(
+      countrySlug: city.countrySlug,
+      citySlug: city.slug,
+      year: year,
+      provider: provider,
+      method: method,
+    );
+    if (partial.isNotEmpty) {
+      return PrayerFetchResult(
+        times: partial.first,
+        metadata: CalculationMetadata(
+          provider: provider,
+          method: method,
+          providerAvailable: false,
+        ),
+      );
+    }
+
+    return PrayerFetchResult(
+      times: _emptyTimes(city),
+      metadata: CalculationMetadata(
+        provider: provider,
+        method: method,
+        providerAvailable: false,
+      ),
+      error: const PrayerProviderException(
+        'failed to fetch year',
+        provider: 'unknown',
+      ),
+    );
   }
 
   Future<List<CitySearchResult>> searchCities(String query) {

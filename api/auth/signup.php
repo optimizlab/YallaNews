@@ -15,11 +15,11 @@ $phoneNumber = sanitize_string($data['phoneNumber'] ?? '', 32);
 validate_required(['email' => $email, 'password' => $password, 'displayName' => $displayName]);
 
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    json_response(['error' => 'Invalid email format'], 400);
+    json_response(['success' => false, 'error' => 'Invalid email format'], 400);
 }
 
 if (strlen($password) < 8) {
-    json_response(['error' => 'Password must be at least 8 characters'], 400);
+    json_response(['success' => false, 'error' => 'Password must be at least 8 characters'], 400);
 }
 
 try {
@@ -28,7 +28,7 @@ try {
     $sql = "SELECT id FROM yn_users WHERE email = ?";
     $stmt = $db->query($sql, [$email]);
     if ($stmt->fetch()) {
-        json_response(['error' => 'Email already exists'], 409);
+        json_response(['success' => false, 'error' => 'Email already exists'], 409);
     }
 
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
@@ -69,6 +69,6 @@ try {
 
 } catch (Exception $e) {
     error_log('Signup error: ' . $e->getMessage());
-    json_response(['error' => 'Signup failed'], 500);
+    json_response(['success' => false, 'error' => 'Signup failed'], 500);
 }
 ?>

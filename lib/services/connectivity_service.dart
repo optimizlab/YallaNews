@@ -1,25 +1,27 @@
-import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
-/// Thin wrapper around connectivity_plus providing app-wide connectivity helpers.
 class ConnectivityService {
   ConnectivityService._();
 
-  /// Returns true **only** when the device is connected via Wi-Fi.
   static Future<bool> isWifi() async {
+    if (kIsWeb || Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      return true;
+    }
     try {
-      final result = await Connectivity().checkConnectivity();
-      return result.contains(ConnectivityResult.wifi);
+      return true; // Desktop: assume connectivity
     } catch (_) {
       return false;
     }
   }
 
-  /// Returns true when the device has any internet access (Wi-Fi or mobile data).
   static Future<bool> hasInternet() async {
+    if (kIsWeb || Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      return true;
+    }
     try {
-      final result = await Connectivity().checkConnectivity();
-      return result.contains(ConnectivityResult.wifi) ||
-          result.contains(ConnectivityResult.mobile);
+      return true;
     } catch (_) {
       return false;
     }

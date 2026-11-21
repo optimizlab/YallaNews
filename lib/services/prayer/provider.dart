@@ -49,6 +49,21 @@ abstract class PrayerTimesProvider {
   /// Fetch prayer times for [city] on [date] (defaults to today).
   Future<PrayerTimes> fetchTimings(CityEntry city, {DateTime? date});
 
+  /// Fetch prayer times for every day of [year]/[month] for [city].
+  /// Returns a list of [PrayerTimes], one per day.
+  Future<List<PrayerTimes>> fetchMonth(
+    CityEntry city, {
+    required int year,
+    required int month,
+  });
+
+  /// Fetch prayer times for all 365/366 days of [year] for [city].
+  /// Returns a list of [PrayerTimes], one per day.
+  Future<List<PrayerTimes>> fetchYear(
+    CityEntry city, {
+    required int year,
+  });
+
   /// Search for cities matching [query].
   Future<List<CitySearchResult>> searchCities(String query);
 
@@ -156,6 +171,76 @@ class WaqtazanProvider implements PrayerTimesProvider {
       );
     }
     return _parseResponse(response.body, city);
+  }
+
+  @override
+  Future<List<PrayerTimes>> fetchMonth(
+    CityEntry city, {
+    required int year,
+    required int month,
+  }) async {
+    final daysInMonth = DateTime(year, month + 1, 0).day;
+    final results = <PrayerTimes>[];
+    for (final day in List.generate(daysInMonth, (i) => i + 1)) {
+      final date = DateTime(year, month, day);
+      try {
+        final times = await fetchTimings(city, date: date);
+        results.add(times);
+      } catch (_) {
+        // Skip individual day failures; continue with remaining days.
+      }
+    }
+    return results;
+  }
+
+  /// Fetch all 365/366 days of [year] by iterating through each month.
+  /// Waqtazan does not have a single-year endpoint, so we aggregate
+  /// monthly results.
+  @override
+  Future<List<PrayerTimes>> fetchYear(
+    CityEntry city, {
+    required int year,
+  }) async {
+    final results = <PrayerTimes>[];
+    final missingDays = <int>[];
+
+    for (final month in List.generate(12, (i) => i + 1)) {
+      try {
+        final monthResults = await fetchMonth(city, year: year, month: month);
+        results.addAll(monthResults);
+      } catch (_) {
+        // If an entire month fails, mark all its days as missing.
+        final daysInMonth = DateTime(year, month + 1, 0).day;
+        final startDay = DateTime(year, month, 1)
+            .difference(DateTime(year, 1, 1))
+            .inDays
+            .abs()
+            .toInt()
+            + 1;
+        for (final d in List.generate(daysInMonth, (i) => startDay + i)) {
+          missingDays.add(d);
+        }
+      }
+    }
+
+    // Validate all calendar dates are present.
+    final presentDays = <int>{};
+    for (final r in results) {
+      presentDays.add(r.localDate.day);
+    }
+    final expectedDays = DateTime(year + 1, 1, 0).day;
+    for (final d in List.generate(expectedDays, (i) => i + 1)) {
+      if (!presentDays.contains(d)) missingDays.add(d);
+    }
+
+    if (missingDays.isNotEmpty) {
+      throw PrayerProviderException(
+        'missing ${missingDays.length} days: ${missingDays.take(10).join(", ")}',
+        provider: id,
+      );
+    }
+
+    return results;
   }
 
   @override
@@ -343,6 +428,163 @@ class AlAdhanProvider implements PrayerTimesProvider {
       );
     }
     return _parseResponse(response.body, city, method: method);
+  }
+
+  @override
+  Future<List<PrayerTimes>> fetchMonth(
+    CityEntry city, {
+    required int year,
+    required int month,
+  }) async {
+    final daysInMonth = DateTime(year, month + 1, 0).day;
+    final method = _defaultMethodFor(country: city.countrySlug);
+    final results = <PrayerTimes>[];
+    for (final day in List.generate(daysInMonth, (i) => i + 1)) {
+      final date = DateTime(year, month, day);
+      final dateStr = _fmt(date);
+      try {
+        final uri = Uri.parse(
+          '$baseUrl/v1/timingsByCity/$dateStr?city=${Uri.encodeComponent(city.cityName)}&country=${Uri.encodeComponent(city.countryName)}&method=$method',
+        );
+        final response = await _client.get(uri).timeout(_timeout);
+        if (response.statusCode != 200) continue;
+        results.add(_parseResponse(response.body, city, method: method));
+      } catch (_) {
+        // Skip individual day failures; continue with remaining days.
+      }
+    }
+    return results;
+  }
+
+  /// Fetch all 365/366 days of [year] in one API call using AlAdhan's
+  /// calendar endpoint: /v1/calendar/{year}?latitude=&longitude=
+  @override
+  Future<List<PrayerTimes>> fetchYear(
+    CityEntry city, {
+    required int year,
+  }) async {
+    final method = _defaultMethodFor(country: city.countrySlug);
+    final uri = Uri.parse(
+      '$baseUrl/v1/calendar/$year'
+      '?latitude=${city.latitude}'
+      '&longitude=${city.longitude}'
+      '&method=$method',
+    );
+    final response = await _client.get(uri).timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw PrayerProviderException(
+        'HTTP ${response.statusCode}',
+        provider: id,
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final code = data['code'] as int?;
+    if (code != 200) {
+      throw PrayerProviderException(
+        'API returned code $code',
+        provider: id,
+      );
+    }
+
+    final rawList = data['data'] as List?;
+    if (rawList == null || rawList.isEmpty) {
+      throw PrayerProviderException(
+        'empty calendar data',
+        provider: id,
+      );
+    }
+
+    final results = <PrayerTimes>[];
+    final expectedDays = DateTime(year + 1, 1, 0).day;
+    final missingDays = <int>[];
+
+    for (final item in rawList) {
+      final timings = item['timings'] as Map? ?? {};
+      final dateInfo = item['date'] as Map? ?? {};
+      final gregorian = dateInfo['gregorian'] as Map? ?? {};
+      final day = gregorian['day'] as int?;
+      final month = gregorian['month'] as int?;
+      final year = gregorian['year'] as int?;
+      final hijri = dateInfo['hijri'] as Map? ?? {};
+
+      if (day == null || month == null || year == null) {
+        missingDays.add(missingDays.length + 1);
+        continue;
+      }
+
+      final target = DateTime(year, month, day);
+      final prayerMapping = <Prayer, String>{
+        Prayer.fajr: 'Fajr',
+        Prayer.dhuhr: 'Dhuhr',
+        Prayer.asr: 'Asr',
+        Prayer.maghrib: 'Maghrib',
+        Prayer.isha: 'Isha',
+      };
+
+      final Map<Prayer, PrayerTime> prayerTimes = {};
+      prayerMapping.forEach((prayer, key) {
+        final value = timings[key] as String?;
+        if (value == null) return;
+        final local = _parseAlAdhanTime(value, target: target);
+        final utc = local.toUtc();
+        prayerTimes[prayer] = PrayerTime(
+          prayer: prayer,
+          utcTime: utc,
+          localTime: toCityTime(utc, city.timeZone),
+          formatted: value,
+        );
+      });
+
+      final sunrise = timings['Sunrise'] as String?;
+      if (sunrise != null) {
+        final local = _parseAlAdhanTime(sunrise, target: target);
+        final utc = local.toUtc();
+        prayerTimes[Prayer.sunrise] = PrayerTime(
+          prayer: Prayer.sunrise,
+          utcTime: utc,
+          localTime: toCityTime(utc, city.timeZone),
+          formatted: sunrise,
+        );
+      }
+
+      results.add(PrayerTimes(
+        countryIso: city.countryIso,
+        countrySlug: city.countrySlug,
+        countryName: city.countryName,
+        cityName: city.cityName,
+        citySlug: city.slug,
+        latitude: city.latitude,
+        longitude: city.longitude,
+        timeZone: city.timeZone,
+        localDate: target,
+        hijriDate: hijri['date'] as String? ?? '',
+        isRamadan: false,
+        times: prayerTimes,
+        provider: id,
+        method: method,
+        lastSynced: DateTime.now(),
+        fromCache: false,
+      ));
+    }
+
+    // Validate all calendar dates are present.
+    final presentDays = <int>{};
+    for (final r in results) {
+      presentDays.add(r.localDate.day);
+    }
+    for (final d in List.generate(expectedDays, (i) => i + 1)) {
+      if (!presentDays.contains(d)) missingDays.add(d);
+    }
+
+    if (missingDays.isNotEmpty) {
+      throw PrayerProviderException(
+        'missing ${missingDays.length} days: ${missingDays.take(10).join(", ")}',
+        provider: id,
+      );
+    }
+
+    return results;
   }
 
   @override

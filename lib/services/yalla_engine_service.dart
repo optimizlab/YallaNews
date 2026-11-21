@@ -18,6 +18,7 @@ import 'engine_ffi.dart';
 import 'arabic_normalizer.dart';
 import 'msn_image_fetcher.dart';
 import 'news_intelligence.dart';
+import 'news_brain_ffi.dart';
 
 enum EngineMode {
   ffi, // Native Direct C++ DLL via Dart FFI
@@ -330,8 +331,29 @@ class YallaEngineService extends ChangeNotifier {
 
   static bool hasValidTitle(String? title) {
     if (title == null || title.isEmpty) return false;
-    final words = title.trim().split(RegExp(r'\s+'));
-    return words.length >= 3;
+    final t = title.trim();
+    // Reject placeholders and noise
+    if (t.length < 5 || t.length > 200) return false;
+    if (RegExp(r'^\s*[\.\-_,:;!?…]{2,}\s*$').hasMatch(t)) return false;
+    if (t.toLowerCase() == 'test' || t.toLowerCase() == 'news') return false;
+    final words = t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.length < 3 || words.length > 30) return false;
+    // Reject titles that mix unrelated scripts (e.g. Arabic + Chinese together)
+    // which indicates a scraping artifact, not a real headline.
+    bool hasArabic = t.contains(RegExp(r'[\u0600-\u06FF]'));
+    bool hasCjk = t.contains(RegExp(r'[\u4E00-\u9FFF\u3400-\u4DBF]'));
+    bool hasCyrillic = t.contains(RegExp(r'[\u0400-\u04FF]'));
+    int scriptCount = (hasArabic ? 1 : 0) + (hasCjk ? 1 : 0) + (hasCyrillic ? 1 : 0);
+    if (scriptCount > 1) return false;
+    // Reject titles that are just the site name / nav boilerplate
+    final lower = t.toLowerCase();
+    const siteOnly = {
+      'al jazeera','الجزيرة','bbc','cnn','reuters','le monde','hespress',
+      'mosaique fm','almasryalyoum','google','facebook','twitter','instagram',
+      'youtube','whatsapp','telegram'
+    };
+    if (siteOnly.contains(lower)) return false;
+    return true;
   }
 
   // ─── Keyword Extractor ────────────────────────────────────────────────────────
@@ -1623,6 +1645,22 @@ final descMatch = RegExp(
       // Decode HTML entities and strip HTML tags for summary
       final decodedTitle = _decodeHtml(title);
       final cleanedTitle = cleanTitle(decodedTitle, url);
+
+      // ── Early press-editor rejection: section / category / nav pages ──
+      // Reject before any expensive content extraction if the title alone
+      // reveals a non-news entry (section header, category label, digest, etc.).
+      if (TinyLLMService.isNonNewsEntry(
+        title: cleanedTitle,
+        content: '',
+        summary: '',
+      )) {
+        addLog('[SYSTEM] Rejected non-news entry (title only): "$cleanedTitle"');
+        if (!silent) {
+          addLog('[SYSTEM] Skipping non-news URL: $url');
+        }
+        return {};
+      }
+
       final decodedSummary = _stripHtmlTags(_decodeHtml(effectiveSummary));
       var decodedContent = _decodeHtml(extractedContent);
       
@@ -1731,11 +1769,27 @@ final descMatch = RegExp(
       
        // Reject non-news entries (section headers, tutorials, courses, digests)
        // before they are packaged as articles.
-       if (TinyLLMService.isNonNewsEntry(
+       final isNonNews = TinyLLMService.isNonNewsEntry(
          title: cleanedTitle,
          content: tinyLlmCleanedContent,
          summary: decodedSummary,
-       )) {
+       );
+
+       // Press-editor AI validation via newsBrain C++ DLL.
+       bool isRealNews = true;
+       if (NewsBrainService.instance.isAvailable) {
+         isRealNews = await NewsBrainService.instance.isRealNews(
+           title: cleanedTitle,
+           content: tinyLlmCleanedContent,
+           summary: decodedSummary,
+           url: url,
+         );
+         if (!isRealNews) {
+           addLog('[NEWSBRAIN] Rejected non-real-news: "$cleanedTitle"');
+         }
+       }
+
+       if (isNonNews || !isRealNews) {
          addLog('[SYSTEM] Rejected non-news entry: "$cleanedTitle"');
          if (!silent) {
            addLog('[SYSTEM] Skipping non-news article: $url');

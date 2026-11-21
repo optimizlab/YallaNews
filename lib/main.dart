@@ -7,17 +7,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'l10n/app_localizations.dart';
 import 'services/analytics_service.dart';
 import 'services/app_settings.dart';
 import 'services/auth_service.dart';
-import 'services/prayer/provider.dart';
-import 'services/prayer/location_manager.dart';
+import 'services/prayer/adhan_audio_service.dart';
 import 'services/prayer/adhan_service.dart';
+import 'services/prayer/provider.dart';
+import 'services/platform_stubs.dart';
 import 'services/server_api_service.dart';
-import 'services/reward_ad_service.dart';
-import 'services/native_ad_service.dart';
 import 'services/yalla_engine_service.dart';
 import 'services/tts_service.dart';
 import 'services/ai_service.dart';
@@ -59,27 +57,16 @@ Future<void> main() async {
     }
     sqfliteFfiInit();
   }
-  if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+  if (PlatformAds.isAvailable) {
     try {
-      if (kDebugMode) {
-        await MobileAds.instance.updateRequestConfiguration(
-          RequestConfiguration(
-            testDeviceIds: <String>['6BAC26B50B09436B98991395B02B91C1'],
-          ),
-        );
-      }
-      await MobileAds.instance.initialize();
-      await RewardAdService.instance.initialize();
-      // Native ads are preloaded into a pool so the feed never waits on one.
-      await NativeAdService.instance.initialize();
-      NativeAdService.instance.ensurePreloaded();
-    } on MissingPluginException catch (_) {
+      PlatformAds.initialize();
     } catch (_) {}
   }
   // Restore the user's login session before the UI is built so a connected
   // user stays logged in across app restarts.
   await AuthService.instance.init();
   await AdhanService.instance.init();
+  await AdhanAudioService.instance.init();
   // Restore saved preferences (theme mode, locale, ...) before the UI is built
   // so the selected theme is applied on all views from the first frame.
   await AppSettings.instance.loadSettings();

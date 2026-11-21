@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/category_helpers.php';
@@ -9,7 +11,22 @@ try {
     $db = Database::getInstance();
     $all = ($_GET['all'] ?? '') === '1';
 
-    $categoryColumns = category_table_columns($db);
+    $categoryColumns = [];
+    try {
+        $categoryColumns = category_table_columns($db);
+    } catch (Exception $e) {
+        error_log('category_table_columns failed: ' . $e->getMessage());
+    }
+
+    if (empty($categoryColumns)) {
+        json_response([
+            'success' => true,
+            'categories' => [],
+            'count' => 0,
+        ]);
+        return;
+    }
+
     $selectCols = category_select_columns($categoryColumns);
 
     $sql = 'SELECT ' . implode(', ', array_unique($selectCols)) . ' FROM yn_categories';
@@ -50,5 +67,5 @@ try {
     json_response($response);
 } catch (Exception $e) {
     error_log('List categories error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to fetch categories'], 500);
+    json_response(['error' => 'Failed to fetch categories', 'details' => $e->getMessage()], 500);
 }

@@ -14,6 +14,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- Required to query activities that can process text -->
     <queries>
@@ -69,12 +70,13 @@
             </intent-filter>
         </receiver>
 
-        <!-- Prayer Times: receiver triggered by the full-screen prayer notification -->
+        <!-- Prayer Times: receiver triggered by exact alarms and notification actions -->
         <receiver
             android:name=".PrayerNotificationReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="inoov.app.yallanews.PRAYER_NOTIFICATION_FIRE" />
+                <action android:name="inoov.app.yallanews.STOP_ADHAN" />
             </intent-filter>
         </receiver>
 

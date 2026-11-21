@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../services/ai_service.dart';
+import '../services/app_settings.dart';
 import '../widgets/cached_news_image.dart';
 
 class AskThisNewsWidget extends StatefulWidget {
@@ -54,11 +55,19 @@ class _AskThisNewsWidgetState extends State<AskThisNewsWidget>
     // so swallow the error here — the widget still works offline via fallback.
     unawaited(AIService.instance.initialize().catchError((_) => null));
 
-    _messages.add(ChatMessage(
-      text: 'Hello! I have read this article. What would you like to know?',
-      isUser: false,
-      timestamp: DateTime.now(),
-    ));
+    // Defer the welcome message so AppLocalizations.of(context) (an InheritedWidget
+    // lookup) runs after initState completes, avoiding the
+    // "called before initState() completed" framework error.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final l10n = AppLocalizations.of(context);
+        _messages.add(ChatMessage(
+          text: l10n.translate('aiWelcomeMessage'),
+          isUser: false,
+          timestamp: DateTime.now(),
+        ));
+      }
+    });
   }
 
   void _onAiChanged() {
@@ -169,7 +178,7 @@ Rules:
 - Base every answer ONLY on the article title, summary, and content provided.
 - If the answer is not in the article, say so clearly instead of inventing facts.
 - Be concise, accurate, and helpful.
-- Reply in the same language as the user's question.
+- Reply in the app language: ${AppSettings.instance.locale?.languageCode ?? 'en'}.
 - Do not include meta-commentary, just the answer.
 
 ARTICLE
@@ -323,18 +332,24 @@ Assistant:''';
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
 
-    return Column(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            border: Border(
-              bottom: BorderSide(
-                color: theme.colorScheme.outline.withValues(alpha: 0.1),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height -
+            MediaQuery.of(context).padding.top -
+            MediaQuery.of(context).padding.bottom,
+      ),
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              border: Border(
+                bottom: BorderSide(
+                  color: theme.colorScheme.outline.withValues(alpha: 0.1),
+                ),
               ),
             ),
-          ),
-          child: Material(
+            child: Material(
             color: Colors.transparent,
             child: InkWell(
               onTap: _toggleExpanded,
@@ -437,12 +452,12 @@ Assistant:''';
                     ? _buildChatContent(context, theme, l10n)
                     : const SizedBox.shrink(),
               );
-            },
-          ),
-        ),
-      ],
-    );
-  }
+                    },),
+                  ),
+                ],
+              ),
+            );
+}
 
   Widget _buildChatContent(BuildContext context, ThemeData theme, AppLocalizations l10n) {
     if (!_isExpanded) {
@@ -667,6 +682,7 @@ Assistant:''';
                 onSubmitted: (_) => _sendMessage(),
                 maxLines: null,
                 textInputAction: TextInputAction.send,
+                enabled: true,
               ),
             ),
             const SizedBox(width: 8),
@@ -705,54 +721,55 @@ Assistant:''';
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16),
-                topRight: const Radius.circular(16),
-                bottomLeft: const Radius.circular(16),
-                bottomRight: const Radius.circular(4),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(16),
+                  topRight: const Radius.circular(16),
+                  bottomLeft: const Radius.circular(16),
+                  bottomRight: const Radius.circular(4),
+                ),
               ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  msg.text,
-                  style: GoogleFonts.outfit(
-                    fontSize: 13,
-                    height: 1.5,
-                    color: theme.colorScheme.onPrimaryContainer,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    msg.text,
+                    style: GoogleFonts.outfit(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: theme.colorScheme.onPrimary,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.done_all_rounded,
-                      size: 14,
-                      color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      AppLocalizations.of(context).translate('send'),
-                      style: GoogleFonts.outfit(
-                        fontSize: 10,
-                        color: theme.colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.done_all_rounded,
+                        size: 14,
+                        color: theme.colorScheme.onPrimary.withValues(alpha: 0.7),
                       ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                      const SizedBox(width: 4),
+                      Text(
+                        AppLocalizations.of(context).translate('send'),
+                        style: GoogleFonts.outfit(
+                          fontSize: 10,
+                          color: theme.colorScheme.onPrimary.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
           ),
         ],
       );
     }
 
     return Row(
+      mainAxisSize: MainAxisSize.max,
       mainAxisAlignment: MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -760,7 +777,7 @@ Assistant:''';
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: MainAxisSize.max,
               children: [
                 CircleAvatar(
                   radius: 16,
@@ -772,7 +789,11 @@ Assistant:''';
                   ),
                 ),
                 const SizedBox(width: 8),
-                Flexible(
+                Expanded(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.72,
+                    ),
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -781,21 +802,24 @@ Assistant:''';
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           msg.text,
+                          softWrap: true,
                           style: GoogleFonts.outfit(
                             fontSize: 13,
                             height: 1.5,
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: theme.colorScheme.onPrimaryContainer,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
+                 ),
+               ),
+               ],
+             ),
             if (msg.isError) ...[
               const SizedBox(height: 4),
               Text(

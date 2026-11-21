@@ -163,30 +163,30 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
             drawer: widget.drawer,
             body: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                NavigationRail(
-                  selectedIndex: widget.currentIndex,
-                  onDestinationSelected: widget.onNavigationChanged,
-                  labelType: NavigationRailLabelType.all,
-                  minWidth: 80,
-                  selectedLabelTextStyle: GoogleFonts.outfit(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: theme.colorScheme.primary,
+                children: [
+                  NavigationRail(
+                    selectedIndex: widget.currentIndex,
+                    onDestinationSelected: widget.onNavigationChanged,
+                    labelType: NavigationRailLabelType.all,
+                    minWidth: 80,
+                    selectedLabelTextStyle: GoogleFonts.outfit(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+                    unselectedLabelTextStyle: GoogleFonts.outfit(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    destinations: widget.destinations.map((d) {
+                      return NavigationRailDestination(
+                        icon: Icon(d.icon),
+                        selectedIcon: Icon(d.selectedIcon ?? d.icon),
+                        label: Text(d.label),
+                      );
+                    }).toList(),
                   ),
-                  unselectedLabelTextStyle: GoogleFonts.outfit(
-                    fontSize: 12,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  destinations: widget.destinations.map((d) {
-                    return NavigationRailDestination(
-                      icon: Icon(d.icon),
-                      selectedIcon: Icon(d.selectedIcon ?? d.icon),
-                      label: Text(d.label),
-                    );
-                  }).toList(),
-                ),
-                const VerticalDivider(thickness: 1, width: 1),
+                  const VerticalDivider(thickness: 1, width: 1),
                 Expanded(
                   child: Center(
                     child: ConstrainedBox(

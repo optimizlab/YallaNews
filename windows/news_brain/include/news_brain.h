@@ -65,6 +65,12 @@ NEWSBRAIN_EXPORT double newsbrain_analyze_sentiment(const char* text);
 // Score whether an extracted page is a real news article (0.0 to 1.0).
 NEWSBRAIN_EXPORT double newsbrain_score_article_quality(const char* title, const char* content, const char* summary);
 
+// Press-editor AI validation: returns 1 when the item looks like a real news
+// article, 0 when it is a section header, category page, nav link, digest, or
+// any non-article boilerplate. Works across Arabic and all languages.
+// Parameters: title, content, summary, url (url may be nullptr).
+NEWSBRAIN_EXPORT int newsbrain_is_real_news(const char* title, const char* content, const char* summary, const char* url);
+
 #ifdef __cplusplus
 }
 #endif

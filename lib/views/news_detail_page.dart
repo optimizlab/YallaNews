@@ -10,14 +10,13 @@ import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../services/tts_service.dart';
 import '../services/ai_service.dart';
 import '../services/ai_ffi.dart';
 import '../widgets/ask_this_news_widget.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_windows/webview_flutter_windows.dart'
-    as windows_webview;
+import '../services/platform_stubs.dart'
+   show WebViewController, WebViewWidget, WebViewPopupWindowPolicy,
+        JavaScriptMode, LaunchMode, launchUrl;
 import '../services/comment_service.dart';
 import '../services/user_service.dart';
 import '../services/auth_service.dart';
@@ -46,13 +45,11 @@ class _WindowsSourceReaderPage extends StatefulWidget {
   const _WindowsSourceReaderPage({required this.url});
 
   @override
-  State<_WindowsSourceReaderPage> createState() =>
-      _WindowsSourceReaderPageState();
+  State<_WindowsSourceReaderPage> createState() => _WindowsSourceReaderPageState();
 }
 
 class _WindowsSourceReaderPageState extends State<_WindowsSourceReaderPage> {
-  final windows_webview.WebviewController _controller =
-      windows_webview.WebviewController();
+  final WebViewController _controller = WebViewController();
   String? _error;
 
   @override
@@ -64,9 +61,7 @@ class _WindowsSourceReaderPageState extends State<_WindowsSourceReaderPage> {
   Future<void> _initialize() async {
     try {
       await _controller.initialize();
-      await _controller.setPopupWindowPolicy(
-        windows_webview.WebviewPopupWindowPolicy.deny,
-      );
+      await _controller.setPopupWindowPolicy(WebViewPopupWindowPolicy.deny);
       await _controller.setDefaultContextMenusEnabled(true);
       await _controller.loadUrl(widget.url.toString());
       if (mounted) setState(() {});
@@ -110,17 +105,13 @@ class _WindowsSourceReaderPageState extends State<_WindowsSourceReaderPage> {
                       'Microsoft WebView2 Runtime is required to read sources inside the app.',
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    Text(_error!, textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
                   ],
                 ),
               ),
             )
           : _controller.value.isInitialized
-          ? windows_webview.Webview(_controller)
+          ? WebViewWidget(controller: _controller)
           : const Center(child: CircularProgressIndicator()),
     );
   }
@@ -150,10 +141,7 @@ class _SpeakingIndicatorState extends State<_SpeakingIndicator>
           width: 4,
           height: 8 + (_controller.value * (i + 1) * 5),
           margin: const EdgeInsets.symmetric(horizontal: 2),
-          decoration: BoxDecoration(
-            color: widget.color,
-            borderRadius: BorderRadius.circular(4),
-          ),
+          decoration: BoxDecoration(color: widget.color, borderRadius: BorderRadius.circular(4)),
         ),
       ),
     ),
@@ -228,79 +216,87 @@ class _ArticleActionsSheetState extends State<_ArticleActionsSheet> {
     final l10n = AppLocalizations.of(context);
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 32,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(
-                    widget.article.title,
-                    style: GoogleFonts.outfit(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                  ),
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: SingleChildScrollView(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 32,
+                  offset: const Offset(0, 12),
                 ),
-                const SizedBox(height: 8),
-                const Divider(height: 1),
-                ..._actions.entries.map((entry) {
-                final icon = entry.key;
-                final key = entry.value;
-                final label = switch (key) {
-                  'like' => l10n.translate('like'),
-                  'share' => l10n.translate('share'),
-                  'save' => l10n.translate('save'),
-                  'translate' => l10n.translate('translate'),
-                  'askThisNews' => l10n.translate('askThisNews'),
-                  'report' => l10n.translate('report'),
-                  _ => key,
-                };
-                final isReport = key == 'report';
-                final color = isReport
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.onSurface;
-                return ListTile(
-                  leading: Icon(icon, color: color, size: 24),
-                  title: Text(
-                    label,
-                    style: GoogleFonts.outfit(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: color,
+              ],
+            ),
+            child: Material(
+              color: theme.colorScheme.surface,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 20),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Text(
+                        widget.article.title,
+                        style: GoogleFonts.outfit(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
                     ),
-                  ),
-                  onTap: () => _handle(key),
-                  dense: true,
-                  visualDensity: const VisualDensity(vertical: -1),
-                );
-              }),
-              const SizedBox(height: 8),
-            ],
+                    const SizedBox(height: 8),
+                    const Divider(height: 1),
+                    ..._actions.entries.map((entry) {
+                      final icon = entry.key;
+                      final key = entry.value;
+                      final label = switch (key) {
+                        'like' => l10n.translate('like'),
+                        'share' => l10n.translate('share'),
+                        'save' => l10n.translate('save'),
+                        'translate' => l10n.translate('translate'),
+                        'askThisNews' => l10n.translate('askThisNews'),
+                        'report' => l10n.translate('report'),
+                        _ => key,
+                      };
+                      final isReport = key == 'report';
+                      final color = isReport
+                          ? theme.colorScheme.error
+                          : theme.colorScheme.onSurface;
+                      return ListTile(
+                        leading: Icon(icon, color: color, size: 24),
+                        title: Text(
+                          label,
+                          style: GoogleFonts.outfit(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                            color: color,
+                          ),
+                        ),
+                        onTap: () => _handle(key),
+                        dense: true,
+                        visualDensity: const VisualDensity(vertical: -1),
+                      );
+                    }),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
-    ),
     );
   }
 }
@@ -346,8 +342,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   // ─── Reward ad tracking ──────────────────────────────────────────────
   int? _articleReadStartTime;
 
-  String get effectiveContent =>
-      _enrichedContent.isNotEmpty ? _enrichedContent : article.content;
+  String get effectiveContent => _enrichedContent.isNotEmpty ? _enrichedContent : article.content;
   String get effectiveImageUrl =>
       _enrichedImageUrl.isNotEmpty ? _enrichedImageUrl : article.imageUrl;
 
@@ -364,9 +359,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     _loadRelatedArticles();
     _trackRead();
     AuthService.instance.addListener(_onAuthChanged);
-    TTSService.instance.setActiveDetailPage(article.url);
-    _isSpeaking = TTSService.instance.isPlaying &&
-        TTSService.instance.currentArticle?.url == article.url;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) TTSService.instance.setActiveDetailPage(article.url);
+    });
+    _isSpeaking =
+        TTSService.instance.isPlaying && TTSService.instance.currentArticle?.url == article.url;
     TTSService.instance.playingNotifier.addListener(_onTtsStateChanged);
     TTSService.instance.articleNotifier.addListener(_onTtsStateChanged);
   }
@@ -374,7 +371,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    TTSService.instance.setActiveDetailPage(article.url);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) TTSService.instance.setActiveDetailPage(article.url);
+    });
   }
 
   void _onTtsStateChanged() {
@@ -405,20 +404,16 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     final prefs = await SharedPreferences.getInstance();
     if (mounted)
       setState(
-        () =>
-            _isOfflineSaved = (prefs.getStringList('offline_saved_urls') ?? [])
-                .contains(article.url),
+        () => _isOfflineSaved = (prefs.getStringList('offline_saved_urls') ?? []).contains(
+          article.url,
+        ),
       );
   }
 
   Future<void> _loadRelatedArticles() async {
     final language = _relatedLanguage(article);
     setState(() {
-      _relatedArticles = _pickRelatedArticles(
-        article,
-        article.relatedArticles,
-        limit: 6,
-      );
+      _relatedArticles = _pickRelatedArticles(article, article.relatedArticles, limit: 6);
       _isLoadingRelated = true;
     });
     try {
@@ -453,9 +448,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         });
       }
     } catch (error, stackTrace) {
-      debugPrint(
-        '[RELATED] Failed to load related articles: $error\n$stackTrace',
-      );
+      debugPrint('[RELATED] Failed to load related articles: $error\n$stackTrace');
       if (mounted) setState(() => _isLoadingRelated = false);
     }
   }
@@ -465,10 +458,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     await Clipboard.setData(ClipboardData(text: shareText));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Link copied to clipboard'),
-          duration: Duration(seconds: 2),
-        ),
+        const SnackBar(content: Text('Link copied to clipboard'), duration: Duration(seconds: 2)),
       );
     }
   }
@@ -480,16 +470,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       barrierLabel: 'articleActions',
       transitionDuration: const Duration(milliseconds: 350),
       transitionBuilder: (context, animation, secondaryAnimation, child) {
-        final curve = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-        );
+        final curve = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
         return ScaleTransition(
           scale: Tween<double>(begin: 0.85, end: 1.0).animate(curve),
-          child: FadeTransition(
-            opacity: curve,
-            child: child,
-          ),
+          child: FadeTransition(opacity: curve, child: child),
         );
       },
       pageBuilder: (context, animation, secondaryAnimation) => _ArticleActionsSheet(
@@ -507,21 +491,55 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   Future<void> _reportArticle() async {
     if (!await _requireAuthentication()) return;
     if (!(await _requireInternet())) return;
-    final subject = Uri.encodeComponent('Report article: ${article.title}');
-    final body = Uri.encodeComponent(
-      'I want to report this article:\n${article.url}\n\nReason: ',
-    );
-    final uri = Uri.parse(
-      'mailto:support@inoov.com?subject=$subject&body=$body',
-    );
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-      if (mounted)
-        _showActionMessage(
-          AppLocalizations.of(context).translate('reportOpened'),
+
+    final l10n = AppLocalizations.of(context);
+    String? reason;
+    await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: Text(l10n.translate('reportReason')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(l10n.translate('reportReasonHint')),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: l10n.translate('reportReasonPlaceholder'),
+                  border: const OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                maxLength: 500,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(l10n.translate('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final trimmed = controller.text.trim();
+                Navigator.of(dialogContext).pop(trimmed.isEmpty ? null : trimmed);
+              },
+              child: Text(l10n.translate('send')),
+            ),
+          ],
         );
-    } else if (mounted) {
-      _showActionMessage(AppLocalizations.of(context).translate('noEmailApp'));
+      },
+    );
+
+    if (reason == null || reason.isEmpty) return;
+
+    try {
+      await ServerApiService.reportArticle(article.url, reason);
+      if (mounted) _showActionMessage(l10n.translate('reportSent'));
+    } catch (_) {
+      if (mounted) _showActionMessage(l10n.translate('reportFailed'));
     }
   }
 
@@ -529,9 +547,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     final loggedIn = await ServerApiService.isLoggedIn();
     if (loggedIn) return true;
     if (!mounted) return false;
-    await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage()));
     if (!mounted) return false;
     await _loadLikeState();
     return ServerApiService.isLoggedIn();
@@ -540,9 +556,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   void _showActionMessage(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
-      );
+      ..showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 2)));
   }
 
   /// Shows a connection screen when there is no internet and returns false.
@@ -554,9 +568,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: Text(
-          AppLocalizations.of(context).translate('noInternetConnection'),
-        ),
+        title: Text(AppLocalizations.of(context).translate('noInternetConnection')),
         content: Text(AppLocalizations.of(context).translate('noInternetDesc')),
         actions: [
           TextButton(
@@ -584,10 +596,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     if (_articleReadStartTime != null) {
       final spentMs = DateTime.now().millisecondsSinceEpoch - _articleReadStartTime!;
       if (spentMs >= 1000) {
-        Future<void>.microtask(() => RewardAdService.instance.recordArticleRead(
-          null,
-          placement: 'news_detail_read',
-        ));
+        Future<void>.microtask(
+          () => RewardAdService.instance.recordArticleRead(null, placement: 'news_detail_read'),
+        );
       }
     }
     super.dispose();
@@ -608,14 +619,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   Future<void> _loadKnowledge() async {
     setState(() => _isLoadingKnowledge = true);
     try {
-      var entities = await KnowledgeExtractionService.instance
-          .getEntitiesForArticle(article.url);
-      var events = await KnowledgeExtractionService.instance
-          .getEventsForArticle(article.url);
-      var topics = await KnowledgeExtractionService.instance
-          .getTopicsForArticle(article.url);
-      var claims = await KnowledgeExtractionService.instance
-          .getClaimsForArticle(article.url);
+      var entities = await KnowledgeExtractionService.instance.getEntitiesForArticle(article.url);
+      var events = await KnowledgeExtractionService.instance.getEventsForArticle(article.url);
+      var topics = await KnowledgeExtractionService.instance.getTopicsForArticle(article.url);
+      var claims = await KnowledgeExtractionService.instance.getClaimsForArticle(article.url);
 
       if (entities.isEmpty && events.isEmpty && topics.isEmpty) {
         await KnowledgeExtractionService.instance.extractAndStore(
@@ -624,37 +631,22 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           effectiveContent,
           article.category,
         );
-        entities = await KnowledgeExtractionService.instance
-            .getEntitiesForArticle(article.url);
-        events = await KnowledgeExtractionService.instance.getEventsForArticle(
-          article.url,
-        );
-        topics = await KnowledgeExtractionService.instance.getTopicsForArticle(
-          article.url,
-        );
-        claims = await KnowledgeExtractionService.instance.getClaimsForArticle(
-          article.url,
-        );
+        entities = await KnowledgeExtractionService.instance.getEntitiesForArticle(article.url);
+        events = await KnowledgeExtractionService.instance.getEventsForArticle(article.url);
+        topics = await KnowledgeExtractionService.instance.getTopicsForArticle(article.url);
+        claims = await KnowledgeExtractionService.instance.getClaimsForArticle(article.url);
       }
 
       // Knowledge records can be stale or produced from a page shell. Keep
       // only facts grounded in this article's title/body; unrelated topics
       // such as other competitions must never reach the reader UI.
       final story = '${article.title} ${article.summary} $effectiveContent';
-      entities = entities
-          .where((e) => _isGroundedInStory(e.value, story))
-          .toList();
-      events = events
-          .where((e) => _isGroundedInStory(e.label, story, minMatches: 2))
-          .toList();
+      entities = entities.where((e) => _isGroundedInStory(e.value, story)).toList();
+      events = events.where((e) => _isGroundedInStory(e.label, story, minMatches: 2)).toList();
       topics = topics
-          .where(
-            (t) => _isGroundedInStory(t.primaryTopic, story, minMatches: 2),
-          )
+          .where((t) => _isGroundedInStory(t.primaryTopic, story, minMatches: 2))
           .toList();
-      claims = claims
-          .where((c) => _isGroundedInStory(c.claimText, story, minMatches: 3))
-          .toList();
+      claims = claims.where((c) => _isGroundedInStory(c.claimText, story, minMatches: 3)).toList();
 
       if (mounted) {
         setState(() {
@@ -714,11 +706,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     return AppSettings.instance.locale?.languageCode ?? '';
   }
 
-  static bool _isGroundedInStory(
-    String value,
-    String story, {
-    int minMatches = 1,
-  }) {
+  static bool _isGroundedInStory(String value, String story, {int minMatches = 1}) {
     final normalize = (String input) => input
         .toLowerCase()
         .replaceAll(RegExp(r'[^\w\u0600-\u06FF\s]'), ' ')
@@ -747,13 +735,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       'and',
       'news',
     };
-    final words = phrase
-        .split(' ')
-        .where((w) => w.length >= 3 && !stop.contains(w))
-        .toSet();
+    final words = phrase.split(' ').where((w) => w.length >= 3 && !stop.contains(w)).toSet();
     final matches = words.where(source.contains).length;
-    return matches >= minMatches &&
-        (words.length <= 2 || matches / words.length >= 0.5);
+    return matches >= minMatches && (words.length <= 2 || matches / words.length >= 0.5);
   }
 
   String _stripHtml(String html) {
@@ -773,8 +757,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     final parts = <String>[];
     if (title.isNotEmpty) parts.add(title);
     if (summary.isNotEmpty && summary != title) parts.add(summary);
-    if (content.isNotEmpty && content != summary && content != title)
-      parts.add(content);
+    if (content.isNotEmpty && content != summary && content != title) parts.add(content);
 
     return parts.join('. ');
   }
@@ -868,9 +851,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
 
     setState(() => _isEnriching = true);
     try {
-      final response = await http
-          .get(Uri.parse(article.url))
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(Uri.parse(article.url)).timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) return;
 
       final html = response.body;
@@ -922,11 +903,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   String _extractArticleContent(String html) {
     String cleaned = html;
     cleaned = cleaned.replaceAll(
-      RegExp(
-        r'<script\b[^>]*>.*?</script>',
-        dotAll: true,
-        caseSensitive: false,
-      ),
+      RegExp(r'<script\b[^>]*>.*?</script>', dotAll: true, caseSensitive: false),
       '',
     );
     cleaned = cleaned.replaceAll(
@@ -938,19 +915,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       '',
     );
     cleaned = cleaned.replaceAll(
-      RegExp(
-        r'<header\b[^>]*>.*?</header>',
-        dotAll: true,
-        caseSensitive: false,
-      ),
+      RegExp(r'<header\b[^>]*>.*?</header>', dotAll: true, caseSensitive: false),
       '',
     );
     cleaned = cleaned.replaceAll(
-      RegExp(
-        r'<footer\b[^>]*>.*?</footer>',
-        dotAll: true,
-        caseSensitive: false,
-      ),
+      RegExp(r'<footer\b[^>]*>.*?</footer>', dotAll: true, caseSensitive: false),
       '',
     );
     cleaned = cleaned.replaceAll(
@@ -958,20 +927,12 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       '',
     );
     cleaned = cleaned.replaceAll(
-      RegExp(
-        r'<iframe\b[^>]*>.*?</iframe>',
-        dotAll: true,
-        caseSensitive: false,
-      ),
+      RegExp(r'<iframe\b[^>]*>.*?</iframe>', dotAll: true, caseSensitive: false),
       '',
     );
 
     final articlePatterns = [
-      RegExp(
-        r'<article[^>]*>(.*?)</article>',
-        dotAll: true,
-        caseSensitive: false,
-      ),
+      RegExp(r'<article[^>]*>(.*?)</article>', dotAll: true, caseSensitive: false),
       RegExp(
         '<div[^>]+class=["\'][^"\']*(?:article|content|post|entry|body)[^"\']*["\'][^>]*>(.*?)</div>',
         dotAll: true,
@@ -1007,18 +968,14 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       working = bodyMatch != null ? bodyMatch.group(1)! : cleaned;
     }
 
-    final pTags =
-        RegExp(r'<p[^>]*>(.*?)</p>', dotAll: true, caseSensitive: false)
-            .allMatches(working)
-            .map((m) => (m.group(1) ?? '').trim())
-            .where((t) => t.isNotEmpty)
-            .toList();
+    final pTags = RegExp(
+      r'<p[^>]*>(.*?)</p>',
+      dotAll: true,
+      caseSensitive: false,
+    ).allMatches(working).map((m) => (m.group(1) ?? '').trim()).where((t) => t.isNotEmpty).toList();
 
     if (pTags.isEmpty) {
-      working = working.replaceAll(
-        RegExp(r'<br\s*/?>', caseSensitive: false),
-        '\n',
-      );
+      working = working.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
       working = working.replaceAll(
         RegExp(
           r'</?(p|div|li|tr|td|h[1-6]|blockquote|pre|ul|ol|section|article)[^>]*>',
@@ -1043,10 +1000,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
 
     var result = buffer.toString().trim();
     if (result.isEmpty) {
-      result = working.replaceAll(
-        RegExp(r'<br\s*/?>', caseSensitive: false),
-        '\n',
-      );
+      result = working.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
       result = result.replaceAll(
         RegExp(
           r'</?(p|div|li|tr|td|h[1-6]|blockquote|pre|ul|ol|section|article)[^>]*>',
@@ -1060,24 +1014,12 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       result = result.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
     }
 
-    result = result.replaceAll(
-      RegExp(r'تابعنا على.*', caseSensitive: false),
-      '',
-    );
+    result = result.replaceAll(RegExp(r'تابعنا على.*', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'اشترك في.*', caseSensitive: false), '');
-    result = result.replaceAll(
-      RegExp(r'حقوق النشر.*', caseSensitive: false),
-      '',
-    );
-    result = result.replaceAll(
-      RegExp(r'جميع الحقوق.*', caseSensitive: false),
-      '',
-    );
+    result = result.replaceAll(RegExp(r'حقوق النشر.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'جميع الحقوق.*', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'اضغط هنا.*', caseSensitive: false), '');
-    result = result.replaceAll(
-      RegExp(r'شارك المقال.*', caseSensitive: false),
-      '',
-    );
+    result = result.replaceAll(RegExp(r'شارك المقال.*', caseSensitive: false), '');
     result = result.replaceAll(
       RegExp(
         r'شارك\s+(Telegram|LinkedIn|Messenger|Facebook|Twitter|WhatsApp|Instagram|YouTube|TikTok).*',
@@ -1092,50 +1034,22 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       ),
       '',
     );
-    result = result.replaceAll(
-      RegExp(r'للمزيد من الأخبار.*', caseSensitive: false),
-      '',
-    );
-    result = result.replaceAll(
-      RegExp(r'الرئيسية\s*/\s*الأخبار\s*/.*', caseSensitive: false),
-      '',
-    );
-    result = result.replaceAll(
-      RegExp(r'الرئيسية\s*/\s*.*', caseSensitive: false),
-      '',
-    );
-    result = result.replaceAll(
-      RegExp(r'الصفحه\s+الرئيسية.*', caseSensitive: false),
-      '',
-    );
-    result = result.replaceAll(
-      RegExp(r'الصفحه\s+الرئيسيه.*', caseSensitive: false),
-      '',
-    );
+    result = result.replaceAll(RegExp(r'للمزيد من الأخبار.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'الرئيسية\s*/\s*الأخبار\s*/.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'الرئيسية\s*/\s*.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'الصفحه\s+الرئيسية.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'الصفحه\s+الرئيسيه.*', caseSensitive: false), '');
     result = result.replaceAll(RegExp(r'تطبيق.*', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'www\..*?\.(com|ma|net|org)', caseSensitive: false), '');
+    result = result.replaceAll(RegExp(r'https?://[^\s]+', caseSensitive: false), '');
     result = result.replaceAll(
-      RegExp(r'www\..*?\.(com|ma|net|org)', caseSensitive: false),
-      '',
-    );
-    result = result.replaceAll(
-      RegExp(r'https?://[^\s]+', caseSensitive: false),
-      '',
-    );
-    result = result.replaceAll(
-      RegExp(
-        r'[^\w\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\p{P}\p{N}]',
-        caseSensitive: false,
-      ),
+      RegExp(r'[^\w\s\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\p{P}\p{N}]', caseSensitive: false),
       ' ',
     );
     result = result.replaceAll(RegExp(r'\n{3,}'), '\n\n');
     result = result.replaceAll(RegExp(r'[ \t]+'), ' ').trim();
 
-    final paragraphs = result
-        .split('\n')
-        .map((p) => p.trim())
-        .where((p) => p.isNotEmpty)
-        .toList();
+    final paragraphs = result.split('\n').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
     final seen = <String>{};
     final unique = <String>[];
     for (final p in paragraphs) {
@@ -1287,17 +1201,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ),
         actions: [
           IconButton(
-            icon: Icon(
-              Icons.share_rounded,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
+            icon: Icon(Icons.share_rounded, color: Theme.of(context).colorScheme.onSurface),
             onPressed: _shareArticle,
           ),
           IconButton(
-            icon: Icon(
-              Icons.more_vert_rounded,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
+            icon: Icon(Icons.more_vert_rounded, color: Theme.of(context).colorScheme.onSurface),
             onPressed: _showArticleActionsSheet,
           ),
         ],
@@ -1342,9 +1250,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           if (_isSpeaking)
             Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: _SpeakingIndicator(
-                color: Theme.of(context).colorScheme.primary,
-              ),
+              child: _SpeakingIndicator(color: Theme.of(context).colorScheme.primary),
             ),
           FloatingActionButton(
             heroTag: 'article_tts_${article.url.hashCode}',
@@ -1366,19 +1272,13 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.surfaceContainer,
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Text(
-                    CategoryService.instance.getCategoryName(
-                      article.category,
-                      context,
-                    ),
+                    CategoryService.instance.getCategoryName(article.category, context),
                     style: GoogleFonts.outfit(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -1449,9 +1349,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                                 style: GoogleFonts.outfit(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                               TextSpan(text: article.author),
@@ -1467,14 +1365,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             if (article.shortTitle.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.primaryContainer.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: SelectableText(
@@ -1492,15 +1385,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.outline.withOpacity(0.2),
-                  ),
+                  border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.2)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1550,10 +1437,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                         children: [
                           CachedNewsImage(
                             imageUrl: article.imageUrl,
-                            fallbackImageUrl:
-                                NewsModel.getFallbackImage(article.category),
-                            searchQuery:
-                                '${article.title}',
+                            fallbackImageUrl: NewsModel.getFallbackImage(article.category),
+                            searchQuery: '${article.title}',
                             width: double.infinity,
                             fit: BoxFit.cover,
                             errorWidget: Container(
@@ -1561,10 +1446,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                               decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
-                                    Theme.of(context)
-                                        .colorScheme
-                                        .primaryContainer
-                                        .withOpacity(0.4),
+                                    Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
                                     const Color(0xFF1A1A2E),
                                   ],
                                   begin: Alignment.topLeft,
@@ -1591,10 +1473,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                                 gradient: LinearGradient(
                                   begin: Alignment.bottomCenter,
                                   end: Alignment.topCenter,
-                                  colors: [
-                                    Colors.black.withOpacity(0.4),
-                                    Colors.transparent,
-                                  ],
+                                  colors: [Colors.black.withOpacity(0.4), Colors.transparent],
                                 ),
                               ),
                             ),
@@ -1628,10 +1507,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                       Container(
                         width: 14,
                         height: 14,
-                        decoration: BoxDecoration(
-                          color: sentimentColor,
-                          shape: BoxShape.circle,
-                        ),
+                        decoration: BoxDecoration(color: sentimentColor, shape: BoxShape.circle),
                       ),
                       const SizedBox(width: 10),
                       Text(
@@ -1660,9 +1536,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                       width: double.infinity,
                       child: LinearProgressIndicator(
                         value: (sentimentScore + 1) / 2,
-                        backgroundColor: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
+                        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                         color: sentimentColor,
                       ),
                     ),
@@ -1683,29 +1557,18 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                       runSpacing: 8,
                       children: (article.entities ?? []).map((entity) {
                         return Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainer,
+                            color: Theme.of(context).colorScheme.surfaceContainer,
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.outlineVariant,
-                            ),
+                            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                           ),
                           child: Text(
                             entity,
                             style: GoogleFonts.robotoMono(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         );
@@ -1714,8 +1577,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     const SizedBox(height: 20),
                   ],
 
-                  if ((article.structuredData['persons'] as List<dynamic>?)
-                          ?.isNotEmpty ??
+                  if ((article.structuredData['persons'] as List<dynamic>?)?.isNotEmpty ??
                       false) ...[
                     Text(
                       l10n.translate('keyPersons'),
@@ -1729,45 +1591,29 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children:
-                          (article.structuredData['persons'] as List<dynamic>)
-                              .map((p) {
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primaryContainer,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    p.toString(),
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onPrimaryContainer,
-                                    ),
-                                  ),
-                                );
-                              })
-                              .toList(),
+                      children: (article.structuredData['persons'] as List<dynamic>).map((p) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Theme.of(context).colorScheme.primary),
+                          ),
+                          child: Text(
+                            p.toString(),
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
                     const SizedBox(height: 16),
                   ],
 
-                  if ((article.structuredData['dates'] as List<dynamic>?)
-                          ?.isNotEmpty ??
-                      false) ...[
+                  if ((article.structuredData['dates'] as List<dynamic>?)?.isNotEmpty ?? false) ...[
                     Text(
                       l10n.translate('keyDates'),
                       style: GoogleFonts.outfit(
@@ -1780,44 +1626,29 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children:
-                          (article.structuredData['dates'] as List<dynamic>)
-                              .map((d) {
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.secondaryContainer,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.secondary,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    d.toString(),
-                                    style: GoogleFonts.outfit(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSecondaryContainer,
-                                    ),
-                                  ),
-                                );
-                              })
-                              .toList(),
+                      children: (article.structuredData['dates'] as List<dynamic>).map((d) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Theme.of(context).colorScheme.secondary),
+                          ),
+                          child: Text(
+                            d.toString(),
+                            style: GoogleFonts.outfit(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Theme.of(context).colorScheme.onSecondaryContainer,
+                            ),
+                          ),
+                        );
+                      }).toList(),
                     ),
                     const SizedBox(height: 16),
                   ],
 
-                  if ((article.structuredData['events'] as List<dynamic>?)
-                          ?.isNotEmpty ??
+                  if ((article.structuredData['events'] as List<dynamic>?)?.isNotEmpty ??
                       false) ...[
                     Text(
                       l10n.translate('keyEvents'),
@@ -1830,43 +1661,35 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     const SizedBox(height: 10),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
-                      children:
-                          (article.structuredData['events'] as List<dynamic>)
-                              .map((e) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Container(
-                                        margin: const EdgeInsets.only(top: 4),
-                                        width: 8,
-                                        height: 8,
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.tertiary,
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          e.toString(),
-                                          style: GoogleFonts.outfit(
-                                            fontSize: 12,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurface,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                      children: (article.structuredData['events'] as List<dynamic>).map((e) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                margin: const EdgeInsets.only(top: 4),
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.tertiary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  e.toString(),
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 12,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                   ),
-                                );
-                              })
-                              .toList(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -1884,25 +1707,18 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     runSpacing: 8,
                     children: article.keywords.map((kw) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: Theme.of(context).colorScheme.surfaceContainer,
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: Theme.of(context).colorScheme.outlineVariant,
-                          ),
+                          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
                         ),
                         child: Text(
                           "#$kw",
                           style: GoogleFonts.robotoMono(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       );
@@ -1913,12 +1729,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             ),
             const SizedBox(height: 20),
             // ── Blended article banner ──────────────────────────────────────
-            if (article.category.toLowerCase() == 'sports')
-              _buildSportsDashboard(context),
-            if (article.isBlended) ...[
-              _buildBlendedBanner(context),
-              const SizedBox(height: 20),
-            ],
+            if (article.category.toLowerCase() == 'sports') _buildSportsDashboard(context),
+            if (article.isBlended) ...[_buildBlendedBanner(context), const SizedBox(height: 20)],
             Text(
               l10n.translate('fullArticle'),
               style: GoogleFonts.outfit(
@@ -1966,9 +1778,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               ),
             ),
             TextButton(
-              onPressed: _relatedArticles.isEmpty
-                  ? null
-                  : () => _showAllRelated(context),
+              onPressed: _relatedArticles.isEmpty ? null : () => _showAllRelated(context),
               child: Text(
                 l10n.translate('seeAll'),
                 style: GoogleFonts.outfit(
@@ -1997,10 +1807,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 )
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    final cardWidth = (constraints.maxWidth * 0.72).clamp(
-                      150.0,
-                      220.0,
-                    );
+                    final cardWidth = (constraints.maxWidth * 0.72).clamp(150.0, 220.0);
                     return ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: _relatedArticles.length,
@@ -2010,9 +1817,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                         return GestureDetector(
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => NewsDetailPage(article: rel),
-                            ),
+                            MaterialPageRoute(builder: (_) => NewsDetailPage(article: rel)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2024,29 +1829,19 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                                     CachedNewsImage(
                                       imageUrl: rel.imageUrl.isNotEmpty
                                           ? rel.imageUrl
-                                          : NewsModel.getFallbackImage(
-                                              rel.category,
-                                            ),
-                                      fallbackImageUrl:
-                                          NewsModel.getFallbackImage(
-                                              rel.category,
-                                            ),
-                                       searchQuery:
-                                           '${rel.title}',
+                                          : NewsModel.getFallbackImage(rel.category),
+                                      fallbackImageUrl: NewsModel.getFallbackImage(rel.category),
+                                      searchQuery: '${rel.title}',
                                       width: cardWidth,
                                       height: 120,
                                       fit: BoxFit.cover,
                                       errorWidget: Container(
                                         width: cardWidth,
                                         height: 120,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.surfaceContainer,
+                                        color: Theme.of(context).colorScheme.surfaceContainer,
                                         child: Icon(
                                           Icons.article_outlined,
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                     ),
@@ -2056,9 +1851,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                                           color: Colors.black.withOpacity(0.25),
                                           child: Icon(
                                             Icons.article_outlined,
-                                            color: Colors.white.withOpacity(
-                                              0.6,
-                                            ),
+                                            color: Colors.white.withOpacity(0.6),
                                             size: 32,
                                           ),
                                         ),
@@ -2076,9 +1869,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                                   style: GoogleFonts.outfit(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                     height: 1.3,
                                   ),
                                 ),
@@ -2088,9 +1879,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                                 rel.displaySourceName,
                                 style: GoogleFonts.outfit(
                                   fontSize: 11,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -2110,8 +1899,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            _RelatedArticlesPage(article: article, related: _relatedArticles),
+        builder: (_) => _RelatedArticlesPage(article: article, related: _relatedArticles),
       ),
     );
   }
@@ -2154,9 +1942,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : Icon(
-                          _isLiked
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
+                          _isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                           size: 20,
                           color: _isLiked
                               ? const Color(0xFFC62828)
@@ -2178,9 +1964,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             ),
           ),
           _buildActionChip(
-            _isOfflineSaved
-                ? Icons.download_done_rounded
-                : Icons.download_outlined,
+            _isOfflineSaved ? Icons.download_done_rounded : Icons.download_outlined,
             l10n.translate('offline'),
             null,
             () => _toggleOfflineSave(),
@@ -2192,12 +1976,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             null,
             () => _openCommentsForUser(context),
           ),
-          _buildActionChip(
-            Icons.flag_outlined,
-            l10n.translate('report'),
-            null,
-            _reportArticle,
-          ),
+          _buildActionChip(Icons.flag_outlined, l10n.translate('report'), null, _reportArticle),
         ],
       ),
     );
@@ -2210,9 +1989,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     if (!(await _requireInternet())) return;
     if (!AuthService.instance.isLoggedIn) {
       if (!mounted) return;
-      await Navigator.of(
-        context,
-      ).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage()));
       if (mounted) await _loadLikeState();
       return;
     }
@@ -2270,10 +2047,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       children: [
         if (_isLoadingKnowledge)
           const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
+            child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
           )
         else if (_knowledgeEntities.isNotEmpty ||
             _knowledgeEvents.isNotEmpty ||
@@ -2306,10 +2080,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                   runSpacing: 8,
                   children: _knowledgeEntities.map((e) {
                     return Chip(
-                      label: Text(
-                        e.value,
-                        style: GoogleFonts.outfit(fontSize: 12),
-                      ),
+                      label: Text(e.value, style: GoogleFonts.outfit(fontSize: 12)),
                       backgroundColor: Theme.of(
                         context,
                       ).colorScheme.primaryContainer.withOpacity(0.2),
@@ -2357,10 +2128,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                   runSpacing: 8,
                   children: _knowledgeTopics.map((t) {
                     return Chip(
-                      label: Text(
-                        t.primaryTopic,
-                        style: GoogleFonts.outfit(fontSize: 12),
-                      ),
+                      label: Text(t.primaryTopic, style: GoogleFonts.outfit(fontSize: 12)),
                       backgroundColor: Theme.of(
                         context,
                       ).colorScheme.secondaryContainer.withOpacity(0.2),
@@ -2412,19 +2180,14 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: CircularProgressIndicator(),
-                ),
+                child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
               );
             }
             final comments = snapshot.data ?? [];
             if (comments.isEmpty) {
               return Text(
                 l10n.translate('noComments'),
-                style: GoogleFonts.outfit(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+                style: GoogleFonts.outfit(color: Theme.of(context).colorScheme.onSurfaceVariant),
               );
             }
             return Column(
@@ -2440,9 +2203,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                           context,
                         ).colorScheme.primaryContainer.withOpacity(0.15),
                         child: Text(
-                          comment.userName.isNotEmpty
-                              ? comment.userName[0]
-                              : '?',
+                          comment.userName.isNotEmpty ? comment.userName[0] : '?',
                           style: GoogleFonts.outfit(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -2468,9 +2229,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                               comment.text,
                               style: GoogleFonts.outfit(
                                 fontSize: 14,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],
@@ -2491,9 +2250,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
+                side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
               ),
               onPressed: () => _openCommentsForUser(context),
               icon: const Icon(Icons.login_rounded, size: 18),
@@ -2509,9 +2266,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: Theme.of(context).colorScheme.primary,
-                side: BorderSide(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+                side: BorderSide(color: Theme.of(context).colorScheme.primary),
               ),
               onPressed: () async {
                 await _showCommentDialog(context);
@@ -2543,8 +2298,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     final commentUserName = (user != null && user.displayName.isNotEmpty)
         ? user.displayName
         : ((user != null && user.email.isNotEmpty)
-            ? user.email.split('@').first
-            : l10n.translate('guestUser'));
+              ? user.email.split('@').first
+              : l10n.translate('guestUser'));
     final hasUser = user != null || AuthService.instance.isLoggedIn;
     await showDialog(
       context: context,
@@ -2558,10 +2313,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
                   l10n.translate('sessionExpired'),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
               )
@@ -2569,18 +2321,16 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               TextField(
                 controller: commentController,
                 maxLines: 4,
-                decoration: InputDecoration(
-                  hintText: l10n.translate('writeComment'),
-                ),
+                decoration: InputDecoration(hintText: l10n.translate('writeComment')),
               ),
           ],
         ),
         actions: [
           TextButton(
-          onPressed: () {
-    TTSService.instance.setActiveDetailPage(null);
-            Navigator.pop(context);
-          },
+            onPressed: () {
+              TTSService.instance.setActiveDetailPage(null);
+              Navigator.pop(context);
+            },
             child: Text(l10n.translate('cancel')),
           ),
           if (hasUser)
@@ -2610,13 +2360,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     final msg = e.toString();
                     if (msg.contains('401') || msg.contains('Unauthorized')) {
                       Navigator.pop(context);
-                      _showActionMessage(
-                        l10n.translate('sessionExpired'),
-                      );
+                      _showActionMessage(l10n.translate('sessionExpired'));
                     } else {
-                      _showActionMessage(
-                        '${l10n.translate('commentFailed')}: $e',
-                      );
+                      _showActionMessage('${l10n.translate('commentFailed')}: $e');
                     }
                   }
                 }
@@ -2649,10 +2395,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       }
     } catch (_) {
       // Revert optimistic update on error
-      if (mounted)
-        _showActionMessage(
-          AppLocalizations.of(context).translate('likeUpdateFailed'),
-        );
+      if (mounted) _showActionMessage(AppLocalizations.of(context).translate('likeUpdateFailed'));
       await _loadLikeState();
     } finally {
       if (mounted) setState(() => _likeLoading = false);
@@ -2679,8 +2422,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     final l10n = AppLocalizations.of(context);
     final connected = await ConnectivityService.hasInternet();
     if (!connected) {
-      if (mounted)
-        _showActionMessage(l10n.translate('noInternetConnection'));
+      if (mounted) _showActionMessage(l10n.translate('noInternetConnection'));
       return;
     }
     final isArabic = article.language.isEmpty || article.language.startsWith('ar');
@@ -2716,8 +2458,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ),
       );
     } catch (_) {
-      if (mounted)
-        _showActionMessage(l10n.translate('error'));
+      if (mounted) _showActionMessage(l10n.translate('error'));
     }
   }
 
@@ -2733,26 +2474,25 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              height: 4,
-              width: 40,
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 4,
+                width: 40,
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: AskThisNewsWidget(
-                article: article,
-                startOpen: true,
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: AskThisNewsWidget(article: article, startOpen: true),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2761,9 +2501,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   Future<void> _toggleOfflineSave() async {
     if (!(await _requireInternet())) return;
     final prefs = await SharedPreferences.getInstance();
-    final urls = List<String>.from(
-      prefs.getStringList('offline_saved_urls') ?? const <String>[],
-    );
+    final urls = List<String>.from(prefs.getStringList('offline_saved_urls') ?? const <String>[]);
     if (_isOfflineSaved) {
       urls.remove(article.url);
       await NewsDatabase.instance.deleteArticleByUrl(article.url);
@@ -2788,16 +2526,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     );
     final List<Widget> widgets = [];
 
-    final imgRegex = RegExp(
-      r'<img\s+src="([^"]+)"[^>]*>',
-      caseSensitive: false,
-    );
+    final imgRegex = RegExp(r'<img\s+src="([^"]+)"[^>]*>', caseSensitive: false);
     int lastMatchEnd = 0;
 
     for (final match in imgRegex.allMatches(text)) {
-      final String precedingText = text
-          .substring(lastMatchEnd, match.start)
-          .trim();
+      final String precedingText = text.substring(lastMatchEnd, match.start).trim();
       if (precedingText.isNotEmpty) {
         final String cleanPreceding = _stripHtmlTags(precedingText);
         debugPrint('Preceding text length: ${cleanPreceding.length}');
@@ -2833,9 +2566,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       debugPrint('No widgets generated, adding fallback text');
       widgets.add(
         Text(
-          text.isEmpty
-              ? AppLocalizations.of(context).translate('noContentAvailable')
-              : text,
+          text.isEmpty ? AppLocalizations.of(context).translate('noContentAvailable') : text,
           style: GoogleFonts.outfit(
             fontSize: 16,
             color: Theme.of(context).colorScheme.onSurface,
@@ -2877,10 +2608,8 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
 
     final random = Random();
     paragraphIndices.shuffle(random);
-    final selected = paragraphIndices
-        .take(adCount.clamp(0, paragraphIndices.length))
-        .toList()
-        ..sort();
+    final selected = paragraphIndices.take(adCount.clamp(0, paragraphIndices.length)).toList()
+      ..sort();
 
     final result = <Widget>[];
     int selIdx = 0;
@@ -2979,9 +2708,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => FullScreenImageScreen(imageUrl: imgUrl),
-          ),
+          MaterialPageRoute(builder: (context) => FullScreenImageScreen(imageUrl: imgUrl)),
         );
       },
       child: ClipRRect(
@@ -2989,11 +2716,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         child: CachedNewsImage(
           imageUrl: imgUrl,
           fallbackImageUrl: NewsModel.getFallbackImage(article.category),
-                                   searchQuery:
-                                       '${article.title}',
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                  placeholder: _buildImagePlaceholder(article.category, size: 200),
+          searchQuery: '${article.title}',
+          width: double.infinity,
+          fit: BoxFit.cover,
+          placeholder: _buildImagePlaceholder(article.category, size: 200),
           errorWidget: _buildImagePlaceholder(article.category, size: 200),
         ),
       ),
@@ -3079,9 +2805,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
       final entityColor = entityIndex >= 0
           ? entityColors[entityIndex]
           : Theme.of(context).colorScheme.primary;
-      final entityType = entityIndex >= 0
-          ? entityTypes[entityIndex]
-          : 'unknown';
+      final entityType = entityIndex >= 0 ? entityTypes[entityIndex] : 'unknown';
 
       spans.add(
         TextSpan(
@@ -3189,27 +2913,18 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   Widget _buildBadge(String text, Color bg, Color fg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
-      ),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
       child: Text(
         text,
-        style: GoogleFonts.outfit(
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          color: fg,
-        ),
+        style: GoogleFonts.outfit(fontSize: 9, fontWeight: FontWeight.w800, color: fg),
       ),
     );
   }
 
   Widget _buildSportsDashboard(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final sportsData =
-        article.structuredData['sports_data'] as Map<String, dynamic>?;
-    final matchScores =
-        article.structuredData['match_scores'] as List<dynamic>?;
+    final sportsData = article.structuredData['sports_data'] as Map<String, dynamic>?;
+    final matchScores = article.structuredData['match_scores'] as List<dynamic>?;
 
     if ((sportsData == null || sportsData.isEmpty) &&
         (matchScores == null || matchScores.isEmpty)) {
@@ -3242,11 +2957,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             children: [
               Row(
                 children: [
-                  const Icon(
-                    Icons.sports_soccer,
-                    color: Colors.white,
-                    size: 22,
-                  ),
+                  const Icon(Icons.sports_soccer, color: Colors.white, size: 22),
                   const SizedBox(width: 10),
                   Text(
                     l10n.translate('sportsIntelligence'),
@@ -3280,20 +2991,17 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 const SizedBox(height: 16),
               ],
               if (sportsData != null) ...[
-                if (sportsData['goals'] != null &&
-                    (sportsData['goals'] as List).isNotEmpty)
+                if (sportsData['goals'] != null && (sportsData['goals'] as List).isNotEmpty)
                   _buildSportsItem(
                     l10n.translate('goalsScorers'),
                     (sportsData['goals'] as List).join(', '),
                   ),
-                if (sportsData['players'] != null &&
-                    (sportsData['players'] as List).isNotEmpty)
+                if (sportsData['players'] != null && (sportsData['players'] as List).isNotEmpty)
                   _buildSportsItem(
                     l10n.translate('keyPlayers'),
                     (sportsData['players'] as List).join(', '),
                   ),
-                if (sportsData['cards'] != null &&
-                    (sportsData['cards'] as List).isNotEmpty)
+                if (sportsData['cards'] != null && (sportsData['cards'] as List).isNotEmpty)
                   _buildSportsItem(
                     l10n.translate('matchCards'),
                     (sportsData['cards'] as List).join(', '),
@@ -3352,10 +3060,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFF6A11CB).withOpacity(0.35),
-          width: 1.2,
-        ),
+        border: Border.all(color: const Color(0xFF6A11CB).withOpacity(0.35), width: 1.2),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3389,10 +3094,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 3,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.35),
                     borderRadius: BorderRadius.circular(20),
@@ -3463,30 +3165,18 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               spacing: 8,
               runSpacing: 8,
               children: attrs.map((attr) {
-                final name =
-                    (attr['name'] as String?) ??
-                    (attr['domain'] as String?) ??
-                    '';
+                final name = (attr['name'] as String?) ?? (attr['domain'] as String?) ?? '';
                 return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: const Color(0xFF6A11CB).withOpacity(0.10),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: const Color(0xFF6A11CB).withOpacity(0.30),
-                    ),
+                    border: Border.all(color: const Color(0xFF6A11CB).withOpacity(0.30)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.public,
-                        size: 12,
-                        color: Color(0xFF6A11CB),
-                      ),
+                      const Icon(Icons.public, size: 12, color: Color(0xFF6A11CB)),
                       const SizedBox(width: 5),
                       Text(
                         name,
@@ -3532,17 +3222,12 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ...attrs.asMap().entries.map((entry) {
           final i = entry.key;
           final attr = entry.value;
-          final name =
-              (attr['name'] as String?) ??
-              (attr['domain'] as String?) ??
-              'Source';
+          final name = (attr['name'] as String?) ?? (attr['domain'] as String?) ?? 'Source';
           final sourceUrl = (attr['url'] as String?) ?? '';
           final sourceTitle = (attr['title'] as String?) ?? '';
           final date = (attr['publishDate'] as String?) ?? '';
           return InkWell(
-            onTap: sourceUrl.isEmpty
-                ? null
-                : () => _openSourceUrl(context, sourceUrl),
+            onTap: sourceUrl.isEmpty ? null : () => _openSourceUrl(context, sourceUrl),
             borderRadius: BorderRadius.circular(12),
             child: Container(
               margin: const EdgeInsets.only(bottom: 10),
@@ -3550,9 +3235,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainer,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -3598,9 +3281,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.outfit(
                               fontSize: 12,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -3611,18 +3292,14 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                               Icon(
                                 Icons.schedule,
                                 size: 12,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 date.split('T').first,
                                 style: GoogleFonts.outfit(
                                   fontSize: 11,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ],
@@ -3664,13 +3341,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   Widget _buildSingleSourceRow(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final publisher = article.displaySourceName;
-    final author = article.authorName.isNotEmpty
-        ? article.authorName
-        : article.author;
+    final author = article.authorName.isNotEmpty ? article.authorName : article.author;
     return InkWell(
-      onTap: article.url.isEmpty
-          ? null
-          : () => _openSourceUrl(context, article.url),
+      onTap: article.url.isEmpty ? null : () => _openSourceUrl(context, article.url),
       borderRadius: BorderRadius.circular(12),
       child: Container(
         width: double.infinity,
@@ -3678,17 +3351,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainer,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
         ),
         child: Row(
           children: [
-            Icon(
-              Icons.link,
-              size: 16,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            Icon(Icons.link, size: 16, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -3764,10 +3431,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
           appBar: AppBar(
             title: Text(
               Uri.tryParse(url)?.host ?? url,
-              style: GoogleFonts.outfit(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
+              style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.w600),
             ),
             backgroundColor: Theme.of(context).colorScheme.surface,
             foregroundColor: Theme.of(context).colorScheme.onSurface,
@@ -3815,18 +3479,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
             child: article.logs.isEmpty
                 ? Text(
                     l10n.translate('executionLogNotAvailable'),
-                    style: GoogleFonts.robotoMono(
-                      color: Colors.grey,
-                      fontSize: 12,
-                    ),
+                    style: GoogleFonts.robotoMono(color: Colors.grey, fontSize: 12),
                   )
                 : Text(
                     article.logs,
-                    style: GoogleFonts.robotoMono(
-                      fontSize: 12,
-                      color: Colors.white60,
-                      height: 1.5,
-                    ),
+                    style: GoogleFonts.robotoMono(fontSize: 12, color: Colors.white60, height: 1.5),
                   ),
           ),
         ],
@@ -3838,8 +3495,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
 class FullScreenImageScreen extends StatelessWidget {
   final String imageUrl;
 
-  const FullScreenImageScreen({Key? key, required this.imageUrl})
-    : super(key: key);
+  const FullScreenImageScreen({Key? key, required this.imageUrl}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -3848,9 +3504,7 @@ class FullScreenImageScreen extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
-        iconTheme: IconThemeData(
-          color: Theme.of(context).colorScheme.onSurface,
-        ),
+        iconTheme: IconThemeData(color: Theme.of(context).colorScheme.onSurface),
       ),
       body: Center(
         child: InteractiveViewer(
@@ -3895,8 +3549,7 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
   Future<void> _loadRelated() async {
     try {
       final language = _NewsDetailPageState._relatedLanguage(widget.article);
-      final candidates =
-          widget.article.category.trim().isEmpty || language.isEmpty
+      final candidates = widget.article.category.trim().isEmpty || language.isEmpty
           ? <NewsModel>[]
           : await ServerApiService.getNews(
               limit: 100,
@@ -3905,11 +3558,10 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
               relatedOnly: true,
               excludeUrl: widget.article.url,
             );
-      final related = _NewsDetailPageState._pickRelatedArticles(
-        widget.article,
-        [...widget.related, ...candidates],
-        limit: 20,
-      );
+      final related = _NewsDetailPageState._pickRelatedArticles(widget.article, [
+        ...widget.related,
+        ...candidates,
+      ], limit: 20);
       if (mounted) {
         setState(() {
           _related = related;
@@ -3917,9 +3569,7 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
         });
       }
     } catch (error, stackTrace) {
-      debugPrint(
-        '[RELATED] Failed to load all related articles: $error\n$stackTrace',
-      );
+      debugPrint('[RELATED] Failed to load all related articles: $error\n$stackTrace');
       if (mounted) {
         setState(() {
           _related = _NewsDetailPageState._pickRelatedArticles(
@@ -3980,16 +3630,12 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
                   elevation: 2,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
+                    side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
                   ),
                   child: InkWell(
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => NewsDetailPage(article: rel),
-                      ),
+                      MaterialPageRoute(builder: (_) => NewsDetailPage(article: rel)),
                     ),
                     borderRadius: BorderRadius.circular(12),
                     child: Padding(
@@ -4002,8 +3648,7 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
                               imageUrl: rel.imageUrl.isNotEmpty
                                   ? rel.imageUrl
                                   : NewsModel.getFallbackImage(rel.category),
-                              fallbackImageUrl:
-                                  NewsModel.getFallbackImage(rel.category),
+                              fallbackImageUrl: NewsModel.getFallbackImage(rel.category),
                               searchQuery: '${rel.title}',
                               width: 90,
                               height: 70,
@@ -4011,14 +3656,10 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
                               errorWidget: Container(
                                 width: 90,
                                 height: 70,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainer,
+                                color: Theme.of(context).colorScheme.surfaceContainer,
                                 child: Icon(
                                   Icons.article_outlined,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -4035,9 +3676,7 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
                                   style: GoogleFonts.outfit(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
+                                    color: Theme.of(context).colorScheme.onSurface,
                                     height: 1.3,
                                   ),
                                 ),
@@ -4046,9 +3685,7 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
                                   rel.displaySourceName,
                                   style: GoogleFonts.outfit(
                                     fontSize: 11,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -4056,9 +3693,7 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
                                   _getDisplayDate(rel),
                                   style: GoogleFonts.outfit(
                                     fontSize: 11,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],

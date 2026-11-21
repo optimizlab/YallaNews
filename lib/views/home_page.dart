@@ -1423,18 +1423,20 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SizedBox(
-                height: 180,
-                width: 240,
-                child: Lottie.asset(
-                  'assets/animations/empty_news.json',
-                  fit: BoxFit.contain,
-                  repeat: true,
-                  animate: true,
-                  errorBuilder: (_, __, ___) => Icon(
-                    Icons.newspaper_rounded,
-                    size: 72,
-                    color: Theme.of(context).colorScheme.primary,
+              Center(
+                child: SizedBox(
+                  width: (MediaQuery.of(context).size.width - 64).clamp(0.0, 240.0),
+                  height: 180,
+                  child: Lottie.asset(
+                    'assets/animations/empty_news.json',
+                    fit: BoxFit.contain,
+                    repeat: true,
+                    animate: true,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.newspaper_rounded,
+                      size: 72,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                 ),
               ),
@@ -2275,8 +2277,9 @@ class _HomePageState extends State<HomePage> {
       backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
       child: SafeArea(
-        child: Column(
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
             const SizedBox(height: 16),
             Container(
               width: 80,
@@ -2417,6 +2420,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

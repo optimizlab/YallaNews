@@ -1,7 +1,8 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
-require_once __DIR__ . '/../news/news_schema.php';
 
 no_cache_headers();
 require_admin();
@@ -19,22 +20,30 @@ if (empty($id)) {
 try {
     $db = Database::getInstance();
 
-    $newsColumns = news_table_columns($db);
     $source = $db->query(
         'SELECT name, url FROM yn_sources WHERE id = ? LIMIT 1',
         [$id]
     )->fetch();
+
+    $newsColumns = [];
+    try {
+        $cols = $db->query('SHOW COLUMNS FROM yn_news')->fetchAll(PDO::FETCH_COLUMN, 0);
+        $newsColumns = array_fill_keys($cols, true);
+    } catch (Exception $e) {
+        error_log('SHOW COLUMNS yn_news failed: ' . $e->getMessage());
+    }
+
     $conditions = [];
     $params = [];
-    if (news_has_column($newsColumns, 'source_id')) {
+    if (isset($newsColumns['source_id'])) {
         $conditions[] = 'source_id = ?';
         $params[] = $id;
     }
-    if (news_has_column($newsColumns, 'source_name') && $source) {
+    if (isset($newsColumns['source_name']) && $source) {
         $conditions[] = 'source_name = ?';
         $params[] = $source['name'];
     }
-    if (news_has_column($newsColumns, 'source_url') && $source) {
+    if (isset($newsColumns['source_url']) && $source) {
         $conditions[] = 'source_url = ?';
         $params[] = $source['url'];
     }
@@ -48,7 +57,6 @@ try {
     }
 
     if ($newsCount > 0) {
-        // Soft delete / archive instead of permanent deletion when articles exist
         $db->query("UPDATE yn_sources SET status = 'archived' WHERE id = ?", [$id]);
         json_response([
             'success' => true,
@@ -68,4 +76,3 @@ try {
     error_log('Delete source error: ' . $e->getMessage());
     json_response(['error' => 'Failed to delete source', 'details' => $e->getMessage()], 500);
 }
-?>

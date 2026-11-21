@@ -224,4 +224,124 @@ NEWSBRAIN_EXPORT double newsbrain_score_article_quality(const char* title, const
     return std::max(0.0, std::min(1.0, score));
 }
 
+/// Press-editor AI validation: returns 1.0 when the item looks like a real
+/// news article, 0.0 when it is a section header, category page, nav link,
+/// year digest, roundup, or any non-article boilerplate. Works across Arabic
+/// and all other languages.
+NEWSBRAIN_EXPORT int newsbrain_is_real_news(const char* title, const char* content, const char* summary, const char* url) {
+    const std::string t = title ? title : "";
+    const std::string c = content ? content : "";
+    const std::string s = summary ? summary : "";
+    const std::string u = url ? url : "";
+    std::string all = t + " " + s + " " + c;
+    std::string lower = all;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+    // ── 0. Title must be substantive ──
+    if (t.empty()) return 0;
+
+    // ── 1. Reject obvious section/category/page boilerplate by keyword ──
+    static const char* sectionMarkers[] = {
+        // Arabic section / category labels
+        "الأخبار التقنية", "الأخبار الاقتصادية", "الأخبار الرياضية",
+        "الأخبار السياسية", "الأخبار العامة", "الأخبار المحلية",
+        "الأخبار العالمية", "الأخبار", "أخبار", "تقنية", "تكنولوجيا",
+        "اقتصاد", "اقتصادية", "أعمال", "سياسة", "رياضة", "فن",
+        "ثقافة", "منوعات", "عالم", "دولي", "محليات", "محلي", "صحة", "علوم",
+        "سفر", "سياحة", "ألعاب", "تعليم", "حوادث", "ميديا", "فيديو", "صور",
+        "بث مباشر", "مباشر", "عاجل", "حصري", "رأي", "مقالات", "تحقيقات",
+        "البطولات", "بطولات", "أسود العالم", "الدوري", "كأس", "أهم البطولات",
+        // English section / category labels
+        "news", "markets", "business", "tech", "technology", "world", "sports",
+        "health", "science", "culture", "entertainment", "features", "opinion",
+        "analysis", "review", "reviews", "lifestyle", "travel", "fashion", "food",
+        "cars", "automobile", "property", "real estate", "futures", "commodities",
+        "stocks", "shares", "finance", "economy",
+        "home", "homepage", "index", "main",
+    };
+    for (const auto* m : sectionMarkers) {
+        if (lower.find(m) != std::string::npos) {
+            // Only reject when the title is short / mostly the section word.
+            size_t titleLen = t.size();
+            if (titleLen <= 60) return 0;
+        }
+    }
+
+    // ── 2. Reject titles that are pure section vocabulary ──
+    // Tokenize on whitespace and punctuation.
+    std::string tokenBuf;
+    std::vector<std::string> tokens;
+    for (char ch : t) {
+        if (std::isalnum(static_cast<unsigned char>(ch)) ||
+            (static_cast<unsigned char>(ch) >= 0x0600 && static_cast<unsigned char>(ch) <= 0x06FF)) {
+            tokenBuf += std::tolower(static_cast<unsigned char>(ch));
+        } else {
+            if (!tokenBuf.empty()) { tokens.push_back(tokenBuf); tokenBuf.clear(); }
+        }
+    }
+    if (!tokenBuf.empty()) tokens.push_back(tokenBuf);
+
+    if (!tokens.empty() && tokens.size() <= 6) {
+        bool allSection = true;
+        for (const auto& tok : tokens) {
+            bool isSection = false;
+            for (const auto* m : sectionMarkers) {
+                if (tok == m) { isSection = true; break; }
+            }
+            if (!isSection) { allSection = false; break; }
+        }
+        if (allSection) return 0;
+    }
+
+    // ── 3. Reject year round-ups / digests / best-of ──
+    static const char* digestSignals[] = {
+        "حصاد عام", "حصاد السنة", "مراجعة عام", "ملخص عام", "أهم الأخبار",
+        "أبرز الأحداث", "year in review", "year roundup", "roundup",
+        "best of", "top stories", "award winners", "awards",
+    };
+    for (const auto* m : digestSignals) {
+        if (lower.find(m) != std::string::npos) return 0;
+    }
+
+    // ── 4. Reject tutorial / how-to / course content ──
+    static const char* tutorialSignals[] = {
+        "دورة", "دورات", "كورس", "كورسات", "درس", "دروس", "تدريب", "تدريبات",
+        "تعليم", "كيفية", "طريقة", "خطوات", "دليل", "إرشادات", "شرح", "شرحات",
+        "tutorial", "tutorials", "course", "courses", "lesson", "lessons",
+        "training", "how to", "how-to", "guide", "guides", "manual", "walkthrough",
+        "step by step", "learn",
+    };
+    for (const auto* m : tutorialSignals) {
+        if (lower.find(m) != std::string::npos) return 0;
+    }
+
+    // ── 5. Content must look like a real article body ──
+    size_t contentLen = c.size();
+    size_t summaryLen = s.size();
+    if (contentLen < 120 && summaryLen < 60) return 0;
+
+    // Must contain narrative punctuation (sentence endings) — real articles do.
+    bool hasSentenceEnding = (c.find('.') != std::string::npos) ||
+                             (c.find('؟') != std::string::npos) ||
+                             (c.find('!') != std::string::npos) ||
+                             (c.find('।') != std::string::npos);
+    if (!hasSentenceEnding && contentLen < 300) return 0;
+
+    // ── 6. URL-level hints: reject homepage / category / tag URLs ──
+    std::string lowerUrl = u;
+    std::transform(lowerUrl.begin(), lowerUrl.end(), lowerUrl.begin(), [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    static const char* nonArticleUrlSegments[] = {
+        "/category/", "/categories/", "/tag/", "/tags/",
+        "/author/", "/authors/", "/search", "/archive", "/archives",
+        "/home", "/index", "/page/", "/live", "/video", "/videos",
+        "/gallery", "/photos", "/opinion", "/opinions",
+        "/section", "/sections", "/topic/", "/topics/",
+    };
+    for (const auto* seg : nonArticleUrlSegments) {
+        if (lowerUrl.find(seg) != std::string::npos) return 0;
+    }
+
+    return 1;
+}
+
 } // extern "C"

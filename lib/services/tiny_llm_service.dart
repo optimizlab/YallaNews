@@ -376,6 +376,7 @@ DAILY BRIEFING:''';
     'ثقافة', 'منوعات', 'عالم', 'دولي', 'محليات', 'محلي', 'صحة', 'علوم',
     'سفر', 'سياحة', 'ألعاب', 'تعليم', 'حوادث', 'ميديا', 'فيديو', 'صور',
     'بث مباشر', 'مباشر', 'عاجل', 'حصري', 'رأي', 'مقالات', 'تحقيقات',
+    'البطولات', 'بطولات', 'العالم', 'أسود', 'الدوري', 'كأس',
     'main', 'home', 'homepage', 'index',
     // English section / category labels
     'news', 'markets', 'business', 'tech', 'technology', 'world', 'sports',
@@ -384,6 +385,34 @@ DAILY BRIEFING:''';
     'cars', 'automobile', 'property', 'real estate', 'futures', 'commodities',
     'stocks', 'shares', 'finance', 'economy',
   };
+
+  /// Section/category vocabulary used to detect titles that are purely
+  /// section labels (e.g. "أهم البطولات", "أسود العالم", "أخبار رياضية").
+  static final Set<String> _sectionVocabulary = {
+    // Arabic
+    'الأخبار', 'أخبار', 'تقنية', 'تكنولوجيا', 'اقتصاد', 'اقتصادية', 'أعمال',
+    'سياسة', 'رياضة', 'فن', 'ثقافة', 'منوعات', 'عالم', 'دولي', 'محليات',
+    'محلي', 'صحة', 'علوم', 'سفر', 'سياحة', 'ألعاب', 'تعليم', 'حوادث',
+    'ميديا', 'فيديو', 'صور', 'عاجل', 'حصري', 'رأي', 'مقالات', 'تحقيقات',
+    'البطولات', 'بطولات', 'العالم', 'الدوري', 'كأس', 'كرة', 'قدم', 'سلة',
+    'الكورة', 'كورة', 'مباراة', 'مباريات', 'فريق', 'فريقين', 'لاعب', 'لاعبين',
+    // English
+    'news', 'sports', 'business', 'tech', 'technology', 'world', 'health',
+    'science', 'culture', 'entertainment', 'opinion', 'analysis', 'review',
+    'lifestyle', 'travel', 'fashion', 'food', 'finance', 'economy',
+    'league', 'tournament', 'cup', 'match', 'team', 'player', 'score',
+  };
+
+  /// Known publisher / source name tokens that trail real headlines on
+  /// Arabic and international news sites (e.g. " - اليوم 24", " | جريدة المنتخب").
+  static final List<String> _publisherTokens = [
+    // Arabic
+    'اليوم 24', 'اليوم24', 'اليوم', 'جريدة المنتخب', 'المنتخب', 'جريدة',
+    'صحيفة', 'هسبريس', 'هبة بريس', 'لي360', 'le360', 'كووورة', 'kora',
+    'الجزيرة', 'alarabiya', 'العربية', 'سكاي نيوز', 'स्काई',
+    // English
+    'reuters', 'bbc', 'cnn', 'al jazeera', 'ap news', 'associated press',
+  ];
 
   /// Round-up / digest / best-of signals that describe a period rather than a
   /// single news event and must not be treated as news.
@@ -420,11 +449,19 @@ DAILY BRIEFING:''';
 
     final lower = t.toLowerCase();
 
+    // 0. Strip trailing publisher names first so the bare section/category
+    //    title can be inspected (e.g. "أهم البطولات | جريدة المنتخب" ->
+    //    "أهم البطولات", "حوادث - اليوم 24" -> "حوادث").
+    String bare = _stripPublisherSuffix(lower);
+    if (bare.isNotEmpty && bare != lower) {
+      // Re-evaluate with the publisher stripped.
+      if (_isSectionOrCategory(bare, content, summary)) return true;
+    }
+
     // 1. Exact section-header match (e.g. "الأخبار التقنية").
     if (_nonNewsTitles.contains(lower)) return true;
 
-    // 2. Section header followed by separator (e.g. "الأخبار التقنية: ...").
-    //    Catches titles that start with a known section word then a colon/pipe/dash.
+    // 2. Section header followed by separator (e.g. "الأخبار técnica: ...").
     final sectionStart = _nonNewsTitles.firstWhere(
       (s) => lower.startsWith('$s:') || lower.startsWith('$s |') ||
           lower.startsWith('$s –') || lower.startsWith('$s -'),
@@ -433,17 +470,8 @@ DAILY BRIEFING:''';
     if (sectionStart.isNotEmpty) return true;
 
     // 3. Pure category label: short title where every word is a known
-    //    section word (e.g. "Futures & Commodities").
-    final words =
-        t.split(RegExp(r'[\s&]+')).where((w) => w.isNotEmpty).toList();
-    if (words.length >= 1 && words.length <= 4) {
-      final allSection = words.every((w) {
-        final wl =
-            w.toLowerCase().replaceAll(RegExp(r'[^\w\u0600-\u06FF]'), '');
-        return wl.isNotEmpty && _nonNewsTitles.contains(wl);
-      });
-      if (allSection) return true;
-    }
+    //    section word (e.g. "Futures & Commodities", "أهم البطولات").
+    if (_isSectionOrCategory(lower, content, summary)) return true;
 
     // 4. Year round-up / digest / best-of (not a single news event).
     if (_nonNewsRoundupSignals.any((s) => lower.contains(s))) return true;
@@ -456,6 +484,63 @@ DAILY BRIEFING:''';
     if (t.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length <= 4 &&
         '${summary.trim()} ${content.trim()}'.trim().length < 40) {
       return true;
+    }
+
+    return false;
+  }
+
+  /// Strips a known publisher token from the end of a lowercased title.
+  static String _stripPublisherSuffix(String lower) {
+    String result = lower;
+    for (final token in _publisherTokens) {
+      final tl = token.toLowerCase();
+      // Match token at end, optionally preceded by a separator.
+      final regex = RegExp(
+        r'\s*[-|:—–]?\s*' + RegExp.escape(tl) + r'\s*\$',
+        caseSensitive: false,
+      );
+      final stripped = result.replaceAll(regex, '').trim();
+      if (stripped != result && stripped.isNotEmpty) {
+        result = stripped;
+        break;
+      }
+    }
+    return result;
+  }
+
+  /// Returns true when [text] is a short title whose words are all section /
+  /// category vocabulary, or a title that starts with a section word followed
+  /// by a separator.
+  static bool _isSectionOrCategory(String text, String content, String summary) {
+    final t = text.trim();
+    if (t.isEmpty) return false;
+
+    final lower = t.toLowerCase();
+
+    // Section word followed by separator (catches "حوادث -", "رياضة |", etc.)
+    final sectionStart = _sectionVocabulary.firstWhere(
+      (s) => lower.startsWith('$s:') || lower.startsWith('$s |') ||
+          lower.startsWith('$s –') || lower.startsWith('$s -') ||
+          lower.startsWith('$s '),
+      orElse: () => '',
+    );
+    if (sectionStart.isNotEmpty) {
+      // Require the remainder to be short / publisher-like, otherwise it may
+      // be a real headline that happens to start with a common word.
+      final remainder = t.substring(sectionStart.length).trim();
+      if (remainder.length <= 30) return true;
+    }
+
+    // Pure category label: every word is section vocabulary.
+    final words =
+        t.split(RegExp(r'[\s&]+')).where((w) => w.isNotEmpty).toList();
+    if (words.length >= 1 && words.length <= 6) {
+      final allSection = words.every((w) {
+        final wl =
+            w.toLowerCase().replaceAll(RegExp(r'[^\w\u0600-\u06FF]'), '');
+        return wl.isNotEmpty && _sectionVocabulary.contains(wl);
+      });
+      if (allSection) return true;
     }
 
     return false;

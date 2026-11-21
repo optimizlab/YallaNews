@@ -4,13 +4,20 @@ import 'dart:isolate';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' show parse;
 
 import '../database/news_db.dart';
 import '../models/news_model.dart';
 import '../models/news_source.dart';
+import 'candidate_queue.dart';
+import 'freshness_engine.dart';
 import 'memory_optimizer.dart';
+import 'publication_date_extractor.dart';
+import 'source_discovery.dart';
+import 'source_scheduler.dart';
+import 'web_view_crawler_service.dart';
 import 'yalla_engine_service.dart';
 import 'news_uri_parser.dart';
 import 'news_intelligence.dart';
@@ -24,6 +31,7 @@ import 'device_benchmark.dart';
 import 'news_brain_ffi.dart';
 import 'engine_ffi.dart';
 import 'tiny_llm_service.dart';
+import 'real_news_validator.dart';
 
 String _normalizeCrawlerLanguage(String language) {
   final normalized = language.trim().toLowerCase().replaceAll('_', '-');
@@ -110,10 +118,11 @@ Future<Map<String, dynamic>> _crawlSourceInIsolate(
       debugPrint(
         '[CRAWLER ISOLATE] HTTP ${response.statusCode} source=$sourceUrl',
       );
-      // Some publishers block their homepage while leaving their RSS feed
-      // public. Try the feed before giving up on the source.
       final feedArticles = await _discoverRssArticles(sourceUrl, maxUrls);
       if (feedArticles.isNotEmpty) {
+        debugPrint(
+          '[CRAWLER ISOLATE] RSS fallback found ${feedArticles.length} articles for $sourceUrl',
+        );
         return {'success': true, 'is_source': true, 'articles': feedArticles};
       }
       return {
@@ -146,10 +155,6 @@ Future<Map<String, dynamic>> _crawlSourceInIsolate(
           continue;
         }
         if (linkUri.host.isEmpty && !href.startsWith('/')) continue;
-        // Resolve relative publisher links against the source page. The
-        // previous condition only resolved links with an empty path, causing
-        // normal links such as `/news/story-slug` to be discarded because
-        // their host was still empty.
         final absolute = linkUri.host.isEmpty ? baseUri.resolve(href) : linkUri;
         if (absolute.host != baseUri.host) continue;
         final path = absolute.path;
@@ -160,15 +165,11 @@ Future<Map<String, dynamic>> _crawlSourceInIsolate(
           continue;
 
         final lowerPath = path.toLowerCase();
-        // `/news/` and `/articles/` are commonly valid article paths. Only
-        // reject known listing/section paths here.
         if (lowerPath.contains('/section/')) continue;
 
         final segments = absolute.pathSegments
             .where((s) => s.isNotEmpty)
             .toList();
-        // Many publishers use short two-segment article URLs such as
-        // `/story-slug` or `/news/story-slug`.
         if (segments.length < 1) continue;
         final lastSegment = segments.last.toLowerCase();
         if (lastSegment.length < 5 && !RegExp(r'^\d+$').hasMatch(lastSegment))
@@ -176,9 +177,7 @@ Future<Map<String, dynamic>> _crawlSourceInIsolate(
 
         final normalized = absolute.toString();
         if (!NewsUriParser.isValidArticleUrl(normalized)) continue;
-        if (!articleUrls.add(normalized)) {
-          continue;
-        }
+        if (!articleUrls.add(normalized)) continue;
 
         int score = 0;
         final depth = path.split('/').where((s) => s.isNotEmpty).length;
@@ -207,9 +206,6 @@ Future<Map<String, dynamic>> _crawlSourceInIsolate(
           .take(maxUrls)
           .map((c) => c['url'] as String)
           .toList();
-      // Prefer RSS when the homepage is JS-rendered, has no article links, or
-      // only contains navigation links. This is also useful for publishers
-      // that intentionally omit stories from their public landing page.
       if (limited.isEmpty) {
         limited = await _discoverRssArticles(sourceUrl, maxUrls);
       }
@@ -219,254 +215,271 @@ Future<Map<String, dynamic>> _crawlSourceInIsolate(
       return {'success': true, 'is_source': true, 'articles': limited};
     }
 
-    final titleMatch = RegExp(
-      r'<title[^>]*>([^<]+)</title>',
-      caseSensitive: false,
-    ).firstMatch(html);
-    final title = titleMatch != null ? titleMatch.group(1)! : 'Untitled';
+    // Single article extraction — now WITH publication date.
+    final extracted = await _extractArticleFromHtml(
+      html,
+      sourceUrl,
+      sourceLanguage,
+    );
+    return extracted;
+  } catch (e) {
+    debugPrint('[CRAWLER ISOLATE] Exception extracting $sourceUrl: $e');
+    return {'success': false, 'url': sourceUrl, 'reason': e.toString()};
+  }
+}
 
-    final descMatch = RegExp(
-      """<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["'][^>]*>""",
-      caseSensitive: false,
-    ).firstMatch(html);
-    final summary = descMatch != null ? descMatch.group(1)! : '';
+/// Extract a single article from HTML, including publication date.
+Future<Map<String, dynamic>> _extractArticleFromHtml(
+    String html, String pageUrl, String sourceLanguage) async {
+  final titleMatch = RegExp(
+    r'<title[^>]*>([^<]+)</title>',
+    caseSensitive: false,
+  ).firstMatch(html);
+  final title = titleMatch != null ? titleMatch.group(1)! : 'Untitled';
 
-    final ogDescMatch = RegExp(
-      """<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']*)["'][^>]*>""",
-      caseSensitive: false,
-    ).firstMatch(html);
-    final ogDescription = ogDescMatch != null ? ogDescMatch.group(1)! : '';
-    final effectiveSummary = summary.length > ogDescription.length
-        ? summary
-        : ogDescription;
+  final descMatch = RegExp(
+    """<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["'][^>]*>""",
+    caseSensitive: false,
+  ).firstMatch(html);
+  final summary = descMatch != null ? descMatch.group(1)! : '';
 
-    final ogTitleMatch = RegExp(
-      """<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']*)["'][^>]*>""",
-      caseSensitive: false,
-    ).firstMatch(html);
-    final twitterTitleMatch = RegExp(
-      """<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']*)["'][^>]*>""",
-      caseSensitive: false,
-    ).firstMatch(html);
-    final metaTitle = ogTitleMatch != null
-        ? ogTitleMatch.group(1)!
-        : (twitterTitleMatch != null ? twitterTitleMatch.group(1)! : '');
+  final ogDescMatch = RegExp(
+    """<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']*)["'][^>]*>""",
+    caseSensitive: false,
+  ).firstMatch(html);
+  final ogDescription = ogDescMatch != null ? ogDescMatch.group(1)! : '';
+  final effectiveSummary = summary.length > ogDescription.length
+      ? summary
+      : ogDescription;
 
-    final twitterDescMatch = RegExp(
-      """<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']*)["'][^>]*>""",
+  final ogTitleMatch = RegExp(
+    """<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']*)["'][^>]*>""",
+    caseSensitive: false,
+  ).firstMatch(html);
+  final twitterTitleMatch = RegExp(
+    """<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']*)["'][^>]*>""",
+    caseSensitive: false,
+  ).firstMatch(html);
+  final metaTitle = ogTitleMatch != null
+      ? ogTitleMatch.group(1)!
+      : (twitterTitleMatch != null ? twitterTitleMatch.group(1)! : '');
+
+  final twitterDescMatch = RegExp(
+    """<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']*)["'][^>]*>""",
+    caseSensitive: false,
+  ).firstMatch(html);
+
+  final hasValidMetaTitle = metaTitle.isNotEmpty && metaTitle.length >= 3;
+  final hasValidSummary =
+      effectiveSummary.isNotEmpty && effectiveSummary.length >= 10;
+  final hasValidTwitter =
+      twitterTitleMatch != null || twitterDescMatch != null;
+  final hasValidTitle = title.isNotEmpty && title.length >= 3;
+
+  if (!hasValidMetaTitle &&
+      !hasValidSummary &&
+      !hasValidTwitter &&
+      !hasValidTitle) {
+    return {
+      'success': false,
+      'url': pageUrl,
+      'reason': 'No valid meta/social tags found',
+    };
+  }
+
+  String content = html.replaceAll(
+    RegExp(
+      r'<script\b[^>]*>.*?</script>',
+      dotAll: true,
       caseSensitive: false,
-    ).firstMatch(html);
+    ),
+    '',
+  );
+  content = content.replaceAll(
+    RegExp(r'<style\b[^>]*>.*?</style>', dotAll: true, caseSensitive: false),
+    '',
+  );
 
-    final hasValidMetaTitle = metaTitle.isNotEmpty && metaTitle.length >= 3;
-    final hasValidSummary =
-        effectiveSummary.isNotEmpty && effectiveSummary.length >= 10;
-    final hasValidTwitter =
-        twitterTitleMatch != null || twitterDescMatch != null;
-    final hasValidTitle = title.isNotEmpty && title.length >= 3;
+  final contentPatterns = [
+    "<article[^>]*>(.*?)</article>",
+    "<main[^>]*>(.*?)</main>",
+    "<div[^>]+class=[\"'][^\"']*(?:article|content|post|entry)[^\"']*[\"'][^>]*>(.*?)</div>",
+    "<div[^>]+id=[\"'][^\"']*(?:article|content|post|entry)[^\"']*[\"'][^>]*>(.*?)</div>",
+  ];
 
-    if (!hasValidMetaTitle &&
-        !hasValidSummary &&
-        !hasValidTwitter &&
-        !hasValidTitle) {
-      return {
-        'success': false,
-        'url': sourceUrl,
-        'reason': 'No valid meta/social tags found',
-      };
+  String extractedContent = '';
+  for (final pattern in contentPatterns) {
+    final match = RegExp(
+      pattern,
+      dotAll: true,
+      caseSensitive: false,
+    ).firstMatch(content);
+    if (match != null && match.group(1) != null) {
+      extractedContent = match.group(1)!;
+      break;
     }
+  }
 
-    String content = html.replaceAll(
+  if (extractedContent.isEmpty) {
+    final bodyMatch = RegExp(
+      r'<body[^>]*>(.*?)</body>',
+      dotAll: true,
+      caseSensitive: false,
+    ).firstMatch(html);
+    extractedContent = bodyMatch != null ? bodyMatch.group(1)! : '';
+  }
+
+  extractedContent = extractedContent
+      .replaceAll(RegExp(r'<[^>]+>'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  final decodedTitle = _decodeHtmlIsolate(
+    metaTitle.isNotEmpty ? metaTitle : title,
+  );
+  final sourceName = '';
+  final cleanedTitle = _cleanTitleIsolate(
+    decodedTitle,
+    pageUrl,
+    sourceName.isEmpty ? null : <String>[sourceName],
+  );
+  final decodedSummary = _stripHtmlTags(_decodeHtmlIsolate(effectiveSummary));
+
+  // ── Publication date extraction ──
+  final dateExtractor = PublicationDateExtractor();
+  final pubDate = dateExtractor.extractFromArticleHtml(html, baseUri: Uri.parse(pageUrl));
+  final publishedAt = pubDate.isoUtc;
+  final updatedAt = pubDate.source.contains('modified') ? publishedAt : '';
+
+  final ngramContent = ContentNgramScorer.buildRichContent(
+    rawHtml: html,
+    title: cleanedTitle,
+    description: decodedSummary,
+  );
+
+  final paragraphs = ngramContent
+      .split('\n\n')
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty && !_isPageMetadataLineIsolate(p))
+      .toList();
+
+  String? originalArticleImage;
+  final ogImageMatch =
       RegExp(
-        r'<script\b[^>]*>.*?</script>',
-        dotAll: true,
+        r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']*)["'][^>]*>""",
         caseSensitive: false,
-      ),
-      '',
-    );
-    content = content.replaceAll(
-      RegExp(r'<style\b[^>]*>.*?</style>', dotAll: true, caseSensitive: false),
-      '',
-    );
-
-    final contentPatterns = [
-      "<article[^>]*>(.*?)</article>",
-      "<main[^>]*>(.*?)</main>",
-      "<div[^>]+class=[\"'][^\"']*(?:article|content|post|entry)[^\"']*[\"'][^>]*>(.*?)</div>",
-      "<div[^>]+id=[\"'][^\"']*(?:article|content|post|entry)[^\"']*[\"'][^>]*>(.*?)</div>",
-    ];
-
-    String extractedContent = '';
-    for (final pattern in contentPatterns) {
-      final match = RegExp(
-        pattern,
-        dotAll: true,
-        caseSensitive: false,
-      ).firstMatch(content);
-      if (match != null && match.group(1) != null) {
-        extractedContent = match.group(1)!;
-        break;
-      }
-    }
-
-    if (extractedContent.isEmpty) {
-      final bodyMatch = RegExp(
-        r'<body[^>]*>(.*?)</body>',
-        dotAll: true,
+      ).firstMatch(html) ??
+      RegExp(
+        r"""<meta[^>]+content=["']([^"']*)["'][^>]+property=["']og:image["'][^>]*>""",
         caseSensitive: false,
       ).firstMatch(html);
-      extractedContent = bodyMatch != null ? bodyMatch.group(1)! : '';
-    }
+  if (ogImageMatch != null &&
+      ogImageMatch.group(1) != null &&
+      ogImageMatch.group(1)!.trim().isNotEmpty) {
+    originalArticleImage = ogImageMatch.group(1)!.trim();
+  }
 
-    extractedContent = extractedContent
-        .replaceAll(RegExp(r'<[^>]+>'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-
-    final decodedTitle = _decodeHtmlIsolate(
-      metaTitle.isNotEmpty ? metaTitle : title,
-    );
-    final sourceName = (task['sourceName'] as String?)?.trim();
-    final cleanedTitle = _cleanTitleIsolate(
-      decodedTitle,
-      sourceUrl,
-      sourceName == null || sourceName.isEmpty ? null : <String>[sourceName],
-    );
-    final decodedSummary = _stripHtmlTags(_decodeHtmlIsolate(effectiveSummary));
-
-    final ngramContent = ContentNgramScorer.buildRichContent(
-      rawHtml: html,
-      title: cleanedTitle,
-      description: decodedSummary,
-    );
-
-    final paragraphs = ngramContent
-        .split('\n\n')
-        .map((p) => p.trim())
-        .where((p) => p.isNotEmpty && !_isPageMetadataLineIsolate(p))
-        .toList();
-
-    // 1. Extract genuine article image from OpenGraph, Twitter card, or HTML tags
-    String? originalArticleImage;
-    final ogImageMatch =
+  if (originalArticleImage == null || originalArticleImage.isEmpty) {
+    final twitterImageMatch =
         RegExp(
-          r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']*)["'][^>]*>""",
+          r"""<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']*)["'][^>]*>""",
           caseSensitive: false,
         ).firstMatch(html) ??
         RegExp(
-          r"""<meta[^>]+content=["']([^"']*)["'][^>]+property=["']og:image["'][^>]*>""",
+          r"""<meta[^>]+content=["']([^"']*)["'][^>]+name=["']twitter:image["'][^>]*>""",
           caseSensitive: false,
         ).firstMatch(html);
-    if (ogImageMatch != null &&
-        ogImageMatch.group(1) != null &&
-        ogImageMatch.group(1)!.trim().isNotEmpty) {
-      originalArticleImage = ogImageMatch.group(1)!.trim();
+    if (twitterImageMatch != null &&
+        twitterImageMatch.group(1) != null &&
+        twitterImageMatch.group(1)!.trim().isNotEmpty) {
+      originalArticleImage = twitterImageMatch.group(1)!.trim();
     }
-
-    if (originalArticleImage == null || originalArticleImage.isEmpty) {
-      final twitterImageMatch =
-          RegExp(
-            r"""<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']*)["'][^>]*>""",
-            caseSensitive: false,
-          ).firstMatch(html) ??
-          RegExp(
-            r"""<meta[^>]+content=["']([^"']*)["'][^>]+name=["']twitter:image["'][^>]*>""",
-            caseSensitive: false,
-          ).firstMatch(html);
-      if (twitterImageMatch != null &&
-          twitterImageMatch.group(1) != null &&
-          twitterImageMatch.group(1)!.trim().isNotEmpty) {
-        originalArticleImage = twitterImageMatch.group(1)!.trim();
-      }
-    }
-
-    if (originalArticleImage == null || originalArticleImage.isEmpty) {
-      final articleImgMatch = RegExp(
-        r"""<(?:article|main)[^>]*>.*?<img[^>]+src=["']([^"']+)["']""",
-        dotAll: true,
-        caseSensitive: false,
-      ).firstMatch(html);
-      if (articleImgMatch != null && articleImgMatch.group(1) != null) {
-        final src = articleImgMatch.group(1)!.trim();
-        originalArticleImage = _resolveCrawlerImageUrl(src, sourceUrl);
-      }
-    }
-
-    // Resolve relative URL if needed
-    if (originalArticleImage != null && originalArticleImage.isNotEmpty) {
-      originalArticleImage = _resolveCrawlerImageUrl(
-        originalArticleImage,
-        sourceUrl,
-      );
-    }
-
-    // Fast fallback only if HTML contained no image
-    String? articleImage = originalArticleImage;
-    if (articleImage == null || articleImage.isEmpty) {
-      try {
-        articleImage = await MsnImageFetcher.fetchRandomImage(
-          cleanedTitle,
-        ).timeout(const Duration(seconds: 2));
-      } catch (_) {}
-    }
-
-    var decodedContent = injectSingleImage(paragraphs, articleImage);
-    if (decodedContent.isEmpty) decodedContent = decodedSummary;
-
-    if (RegExp(
-          r'<img\s+src=',
-          caseSensitive: false,
-        ).allMatches(decodedContent).length >
-        3) {
-      final imgRegex = RegExp(
-        r'<img\s+src="([^"]+)"[^>]*>',
-        caseSensitive: false,
-      );
-      final matches = imgRegex.allMatches(decodedContent).toList();
-      if (matches.length > 3) {
-        final first = matches.first;
-        decodedContent = decodedContent.substring(0, first.end);
-        decodedContent = '$decodedContent\n\n$decodedSummary';
-      }
-    }
-
-    final formatted = TinyLLMService.instance.formatArticleFields(
-      title: cleanedTitle,
-      summary: decodedSummary,
-      content: decodedContent,
-    );
-    final formattedTitle = formatted['title']!.isEmpty
-        ? cleanedTitle
-        : formatted['title']!;
-    final formattedSummary = formatted['summary']!;
-    // TinyLLM can preserve or rejoin page chrome after the first extraction.
-    // Apply the metadata filter again to the final text so dates, labels and
-    // author rows never become visible story paragraphs.
-    final formattedContent = _cleanFormattedContentIsolate(
-      formatted['content']!.isEmpty ? decodedContent : formatted['content']!,
-    );
-    final classificationText = '$formattedTitle $formattedSummary';
-    final detectedCategory = await NewsIntelligence.classifyCategory(
-      classificationText,
-      url: sourceUrl,
-      title: cleanedTitle,
-    );
-
-    return {
-      'success': true,
-      'is_source': false,
-      'url': sourceUrl,
-      'title': formattedTitle,
-      'summary': formattedSummary,
-      'content': formattedContent,
-      'category': detectedCategory,
-      'language': sourceLanguage,
-      'image_url': articleImage ?? '',
-      'publishDate': '',
-      'status': 'published',
-    };
-  } catch (e) {
-    return {'success': false, 'url': sourceUrl, 'reason': e.toString()};
   }
+
+  if (originalArticleImage == null || originalArticleImage.isEmpty) {
+    final articleImgMatch = RegExp(
+      r"""<(?:article|main)[^>]*>.*?<img[^>]+src=["']([^"']+)["']""",
+      dotAll: true,
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (articleImgMatch != null && articleImgMatch.group(1) != null) {
+      final src = articleImgMatch.group(1)!.trim();
+      originalArticleImage = _resolveCrawlerImageUrl(src, pageUrl);
+    }
+  }
+
+  if (originalArticleImage != null && originalArticleImage.isNotEmpty) {
+    originalArticleImage = _resolveCrawlerImageUrl(
+      originalArticleImage,
+      pageUrl,
+    );
+  }
+
+  String? articleImage = originalArticleImage;
+  if (articleImage == null || articleImage.isEmpty) {
+    try {
+      articleImage = await MsnImageFetcher.fetchRandomImage(
+        cleanedTitle,
+      ).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
+
+  var decodedContent = injectSingleImage(paragraphs, articleImage);
+  if (decodedContent.isEmpty) decodedContent = decodedSummary;
+
+  if (RegExp(
+        r'<img\s+src=',
+        caseSensitive: false,
+      ).allMatches(decodedContent).length >
+      3) {
+    final imgRegex = RegExp(
+      r'<img\s+src="([^"]+)"[^>]*>',
+      caseSensitive: false,
+    );
+    final matches = imgRegex.allMatches(decodedContent).toList();
+    if (matches.length > 3) {
+      final first = matches.first;
+      decodedContent = decodedContent.substring(0, first.end);
+      decodedContent = '$decodedContent\n\n$decodedSummary';
+    }
+  }
+
+  final formatted = TinyLLMService.instance.formatArticleFields(
+    title: cleanedTitle,
+    summary: decodedSummary,
+    content: decodedContent,
+  );
+  final formattedTitle = formatted['title']!.isEmpty
+      ? cleanedTitle
+      : formatted['title']!;
+  final formattedSummary = formatted['summary']!;
+  final formattedContent = _cleanFormattedContentIsolate(
+    formatted['content']!.isEmpty ? decodedContent : formatted['content']!,
+  );
+  final classificationText = '$formattedTitle $formattedSummary';
+  final detectedCategory = await NewsIntelligence.classifyCategory(
+    classificationText,
+    url: pageUrl,
+    title: cleanedTitle,
+  );
+
+  return {
+    'success': true,
+    'is_source': false,
+    'url': pageUrl,
+    'title': formattedTitle,
+    'summary': formattedSummary,
+    'content': formattedContent,
+    'category': detectedCategory,
+    'language': sourceLanguage,
+    'image_url': articleImage ?? '',
+    'publishDate': publishedAt,
+    'published_at': publishedAt,
+    'updated_at': updatedAt,
+    'date_source': pubDate.source,
+    'date_confidence': pubDate.confidence,
+    'status': 'published',
+  };
 }
 
 bool _isPageMetadataLineIsolate(String value) {
@@ -541,7 +554,7 @@ Future<List<String>> _discoverRssArticles(String sourceUrl, int maxUrls) async {
         final linkElement = item.querySelector('link');
         final link =
             (linkElement?.attributes['href'] ?? linkElement?.text)?.trim() ??
-            '';
+                '';
         if (link.isEmpty) continue;
         final uri = Uri.tryParse(link);
         if (uri == null || uri.host.isEmpty) continue;
@@ -830,6 +843,7 @@ class BackgroundCrawlerService {
   bool _isRunning = false;
   bool get isRunning => _isRunning;
   int _crawlGeneration = 0;
+  int _totalArticlesEmitted = 0;
 
   Isolate? _crawlerIsolate;
   ReceivePort? _receivePort;
@@ -844,8 +858,14 @@ class BackgroundCrawlerService {
   static const int _memoryWarningThresholdMb = 500;
   static const int _memoryCriticalThresholdMb = 900;
 
+  final FreshnessEngine _freshnessEngine = FreshnessEngine();
+  final CandidateQueue _candidateQueue = CandidateQueue();
+  final RealNewsValidator _realNewsValidator = RealNewsValidator();
+  final SourceScheduler _sourceScheduler = SourceScheduler.instance;
+
   StreamSubscription? _connectivitySubscription;
   Future<void>? _activeCrawl;
+  BuildContext? _webViewContext;
 
   final _articleStreamController = StreamController<NewsModel>.broadcast();
   Stream<NewsModel> get articleStream => _articleStreamController.stream;
@@ -874,10 +894,14 @@ class BackgroundCrawlerService {
 
   Future<void> startSilentCrawl({
     required YallaEngineService engineService,
+    BuildContext? context,
     VoidCallback? onProgress,
     VoidCallback? onComplete,
-    bool requireWifi = true,
+    bool requireWifi = false,
   }) {
+    if (context != null) {
+      _webViewContext = context;
+    }
     final active = _activeCrawl;
     if (active != null) {
       onComplete?.call();
@@ -915,16 +939,18 @@ class BackgroundCrawlerService {
       return;
     }
 
+    // Clear duplicate tracking for this crawl run.
+    _realNewsValidator.clearDuplicates();
+
+    // Never Wi-Fi gated: crawl on any connection.
     if (requireWifi) {
       final isWifi = await ConnectivityService.isWifi();
       if (generation != _crawlGeneration) return;
       if (!isWifi) {
         engineService.addLog(
-          '[SILENT CRAWLER] WiFi not connected. Resetting crawler scheduler per process_2 policy.',
+          '[SILENT CRAWLER] Not on Wi-Fi — crawling on available connection instead.',
         );
-        _stateStreamController.add(const CrawlerState(reset: true));
-        onComplete?.call();
-        return;
+        // Do NOT return; continue on mobile data.
       }
     }
 
@@ -935,6 +961,7 @@ class BackgroundCrawlerService {
     if (generation != _crawlGeneration) return;
 
     _isRunning = true;
+    _totalArticlesEmitted = 0;
     debugPrint('[SILENT CRAWLER] started');
     _stateStreamController.add(const CrawlerState(running: true));
     engineService.addLog(
@@ -953,13 +980,10 @@ class BackgroundCrawlerService {
       final db = NewsDatabase.instance;
       final appLanguage = AppSettings.instance.locale?.languageCode ?? 'ar';
       final appCountry = AppSettings.instance.countryCode;
-      final lastCrawlTime = await db.getLastCrawlTime('__global__');
-      final lastVisitedTimestamp = lastCrawlTime?.millisecondsSinceEpoch ?? 0;
 
-      final sourcesToCrawl = <NewsSource>[];
-      // Sync sources from the API first so all languages are available,
-      // then fall back to the local DB. If no sources match the user's
-      // language, crawl all available sources so the feed is never empty.
+      // Register per-source schedules so each source is crawled on its own cadence.
+      _registerSourceSchedules(db, appLanguage, appCountry);
+
       final allLocalSources = await db.getAllSources(syncApi: true);
       final matchedSources = allLocalSources.where((s) {
         final languageMatch =
@@ -971,22 +995,12 @@ class BackgroundCrawlerService {
             s.countryCode == appCountry;
         return languageMatch && countryMatch;
       }).toList();
-      final sourcesToUse = matchedSources.isNotEmpty
-          ? matchedSources
-          : allLocalSources;
-      sourcesToUse.shuffle();
+      final sourcesToUse = matchedSources;
       final selected = throttle < sourcesToUse.length
           ? sourcesToUse.take(throttle).toList()
           : List<NewsSource>.from(sourcesToUse);
-      sourcesToCrawl.addAll(selected);
-      debugPrint(
-        '[SILENT CRAWLER] local sources=${sourcesToCrawl.length} language=$appLanguage',
-      );
-      debugPrint(
-        '[SILENT CRAWLER] sources selected=${sourcesToCrawl.length} language=$appLanguage',
-      );
 
-      if (sourcesToCrawl.isEmpty) {
+      if (selected.isEmpty) {
         debugPrint('[SILENT CRAWLER] no sources available');
         engineService.addLog('[SILENT CRAWLER] No sources available.');
         _isRunning = false;
@@ -996,23 +1010,10 @@ class BackgroundCrawlerService {
 
       BenchmarkResult benchmarkProfile;
       try {
-        final benchmarkSource = sourcesToCrawl.isNotEmpty
-            ? (sourcesToCrawl..shuffle()).first
-            : null;
-        if (benchmarkSource == null) {
-          engineService.addLog(
-            '[BENCHMARK] No sources available for benchmark.',
-          );
-          benchmarkProfile = _safeStartupBenchmark();
-        } else {
-          // Do not block the first crawl on a network benchmark. Some news
-          // sites keep connections open or return bot-check pages, which made
-          // the crawler appear stuck before it processed any source.
-          engineService.addLog(
-            '[BENCHMARK] Skipped for startup; crawling with safe limits.',
-          );
-          benchmarkProfile = _safeStartupBenchmark();
-        }
+        engineService.addLog(
+          '[BENCHMARK] Skipped for startup; crawling with safe limits.',
+        );
+        benchmarkProfile = _safeStartupBenchmark();
       } catch (e) {
         engineService.addLog('[BENCHMARK] Benchmark failed: $e');
         benchmarkProfile = await _fallbackBenchmark(engineService);
@@ -1031,7 +1032,7 @@ class BackgroundCrawlerService {
         'pause=${limits.pauseBetweenArticles.inMilliseconds}ms',
       );
 
-      if (sourcesToCrawl.isEmpty) {
+      if (selected.isEmpty) {
         engineService.addLog('[SILENT CRAWLER] No sources to crawl.');
         _isRunning = false;
         _stateStreamController.add(const CrawlerState(running: false));
@@ -1039,7 +1040,7 @@ class BackgroundCrawlerService {
         return;
       }
 
-      final limitedSources = sourcesToCrawl
+      final limitedSources = selected
           .take(limits.sourcesToCrawl)
           .toList();
       limitedSources.shuffle(Random());
@@ -1058,10 +1059,18 @@ class BackgroundCrawlerService {
 
         final source = limitedSources[i];
         debugPrint('[SILENT CRAWLER] processing source=${source.url}');
+
+        // Per-source due check via scheduler (respects backoff).
+        final sched = _sourceScheduler.getSchedule(source.url);
+        if (sched != null && !sched.isDue) {
+          engineService.addLog(
+            '[SILENT CRAWLER] [${i + 1}/${limitedSources.length}] ${source.name}: not due yet, skipping.',
+          );
+          onProgress?.call();
+          continue;
+        }
+
         final last = await db.getLastCrawlTime(source.url);
-        // A fresh app session must be able to refresh sources again. The old
-        // 35-minute gate made the crawler appear dead after a previous run,
-        // especially during testing and on devices that restart the app.
         if (last != null && DateTime.now().difference(last).inMinutes < 5) {
           engineService.addLog(
             '[SILENT CRAWLER] [${i + 1}/${limitedSources.length}] ${source.name}: last crawled ${DateTime.now().difference(last).inMinutes} min ago, skipping.',
@@ -1075,20 +1084,16 @@ class BackgroundCrawlerService {
         );
 
         try {
-          // A single unreachable or slow publisher must never block the whole
-          // crawler queue. Network calls inside a source crawler can otherwise
-          // leave the Android isolate waiting indefinitely.
           final crawlDeadline = DateTime.now()
               .add(const Duration(seconds: 15));
-          final quality =
-              await _crawlSourceInBackground(
-                source,
-                engineService,
-                maxUrls: maxUrls,
-                perSourceLimit: perSourceLimit,
-                pauseBetweenArticles: pauseBetweenArticles,
-                deadline: crawlDeadline,
-              );
+          final quality = await _crawlSourceInBackground(
+            source,
+            engineService,
+            maxUrls: maxUrls,
+            perSourceLimit: perSourceLimit,
+            pauseBetweenArticles: pauseBetweenArticles,
+            deadline: crawlDeadline,
+          );
           debugPrint(
             '[SILENT CRAWLER] source result=${source.url} quality=$quality',
           );
@@ -1101,15 +1106,17 @@ class BackgroundCrawlerService {
               await ServerApiService.updateSourceScore(source.url, quality);
             } catch (_) {}
           }
+          _sourceScheduler.markSuccess(source.url);
           engineService.addLog('[SILENT CRAWLER] √ ${source.name} done.');
         } catch (e) {
+          _sourceScheduler.markError(source.url);
           engineService.addLog('[SILENT CRAWLER] X ${source.name} failed: $e');
         }
 
         await Future.delayed(pauseBetweenSources);
       }
 
-      engineService.addLog('[SILENT CRAWLER] Background crawl complete!');
+      engineService.addLog('[SILENT CRAWLER] Background crawl complete! Total articles emitted: $_totalArticlesEmitted');
     } catch (e) {
       engineService.addLog('[SILENT CRAWLER] Fatal error: $e');
     } finally {
@@ -1119,6 +1126,69 @@ class BackgroundCrawlerService {
       _stateStreamController.add(const CrawlerState(running: false));
       onComplete?.call();
     }
+  }
+
+  /// Register per-source schedules for all known sources.
+  void _registerSourceSchedules(
+      NewsDatabase db, String appLanguage, String appCountry) {
+    // Default per-publisher schedules (respectful rate limits).
+    final defaults = <SourceSchedule>[
+      SourceSchedule(
+        sourceUrl: 'https://www.hespress.com',
+        sourceName: 'Hespress',
+        refreshInterval: const Duration(hours: 1),
+        maxCandidatesPerRun: 50,
+        maxDownloadsPerRun: 10,
+        priority: 100,
+        enabled: true,
+      ),
+      SourceSchedule(
+        sourceUrl: 'https://www.almasryalyoum.com',
+        sourceName: 'Al Masry Al Youm',
+        refreshInterval: const Duration(hours: 1),
+        maxCandidatesPerRun: 50,
+        maxDownloadsPerRun: 10,
+        priority: 90,
+        enabled: true,
+      ),
+      SourceSchedule(
+        sourceUrl: 'https://www.mosaiquefm.net',
+        sourceName: 'Mosaique FM',
+        refreshInterval: const Duration(hours: 2),
+        maxCandidatesPerRun: 30,
+        maxDownloadsPerRun: 8,
+        priority: 80,
+        enabled: true,
+      ),
+      SourceSchedule(
+        sourceUrl: 'https://www.lemonde.fr',
+        sourceName: 'Le Monde',
+        refreshInterval: const Duration(hours: 1),
+        maxCandidatesPerRun: 50,
+        maxDownloadsPerRun: 10,
+        priority: 95,
+        enabled: true,
+      ),
+      SourceSchedule(
+        sourceUrl: 'https://www.reuters.com',
+        sourceName: 'Reuters',
+        refreshInterval: const Duration(hours: 1),
+        maxCandidatesPerRun: 50,
+        maxDownloadsPerRun: 10,
+        priority: 90,
+        enabled: true,
+      ),
+      SourceSchedule(
+        sourceUrl: 'https://www.aljazeera.net',
+        sourceName: 'Al Jazeera',
+        refreshInterval: const Duration(hours: 1),
+        maxCandidatesPerRun: 50,
+        maxDownloadsPerRun: 10,
+        priority: 95,
+        enabled: true,
+      ),
+    ];
+    _sourceScheduler.registerAll(defaults);
   }
 
   Future<void> _startCrawlerIsolate(YallaEngineService engineService) async {
@@ -1235,10 +1305,14 @@ class BackgroundCrawlerService {
       'maxUrls': 1,
       'sourceLanguage': sourceLanguage,
     });
+    debugPrint('[CRAWLER] Requesting article extraction: $url');
 
     try {
       final result = await completer.future.timeout(
         const Duration(seconds: 8),
+      );
+      debugPrint(
+        '[CRAWLER] Article extraction result for $url: success=${result?['success']}',
       );
       return result;
     } catch (e) {
@@ -1263,335 +1337,287 @@ class BackgroundCrawlerService {
     DateTime? deadline,
   }) async {
     if (_crawlerSendPort == null) return null;
+    final db = NewsDatabase.instance;
     final crawlLanguage = _resolveCrawlerLanguage(
       source.language,
       AppSettings.instance.locale?.languageCode ?? 'ar',
     );
 
-    final requestId = _nextRequestId++;
-    final completer = Completer<Map<String, dynamic>?>();
-    _pendingRequests[requestId] = completer;
-
-    _crawlerSendPort!.send({
-      'action': 'crawl',
-      'requestId': requestId,
-      'sourceUrl': source.url,
-      'sourceName': source.name,
-      'maxUrls': maxUrls,
-      'perSourceLimit': perSourceLimit,
-      'validCategoryIds': CategoryService.instance.initialized
-          ? CategoryService.instance.categoryIds
-          : null,
-      'sourceLanguage': crawlLanguage,
-    });
-
+    // ── Discovery: RSS → sitemap → category → homepage → WebView ──
+    final discovery = SourceDiscovery();
+    final discovered = <DiscoveredUrl>[];
     try {
-      final result = await completer.future.timeout(
-        const Duration(seconds: 30),
-      );
-      if (result == null || result['success'] != true) {
-        engineService.addLog(
-          '[CRAWL PASS 1] Failed for ${source.url}: ${result?['reason'] ?? 'unknown error'}',
-        );
-        return null;
-      }
-
-      List<String> rawUrls = [];
-      if (result['is_source'] == true) {
-        final raw = result['articles'] ?? const [];
-        if (raw is List) {
-          rawUrls = raw.map((u) => u.toString()).toList();
-        }
-      } else {
-        NewsModel article;
-        if (!kIsWeb && NewsBrainService.instance.isAvailable) {
-          try {
-            final brainArticle = await NewsBrainService.instance
-                .extractArticleUrl(source.url);
-            if (brainArticle != null) {
-              article = brainArticle.toNewsModel(category: source.category);
-              engineService.addLog(
-                '[NEWSBRAIN] Extracted single article via C++ engine: ${article.title}',
-              );
-            } else {
-              article = NewsModel.fromJson(result, source.url);
-            }
-          } catch (_) {
-            article = NewsModel.fromJson(result, source.url);
-          }
-        } else {
-          article = NewsModel.fromJson(result, source.url);
-        }
-        article = article.copyWith(
-          sourceName: article.sourceName.isEmpty
-              ? source.name
-              : article.sourceName,
-          sourceUrl: article.sourceUrl.isEmpty ? source.url : article.sourceUrl,
-          language: article.language.isEmpty
-              ? crawlLanguage
-              : _resolveCrawlerLanguage(article.language, crawlLanguage),
-        );
-        if (!YallaEngineService.hasValidTitle(article.title) ||
-            !_isValidCrawledNews(article)) {
-          engineService.addLog(
-            '[VALIDATION] Skipped invalid article: ${article.url}',
-          );
-          return 0.0;
-        }
-        final categoryIds = CategoryService.instance.categoryIds;
-        final classifiedCategory = await NewsIntelligence.classifyCategory(
-          '${article.title} ${article.summary}',
-          url: article.url,
-          title: article.title,
-          validCategoryIds: categoryIds.isEmpty ? null : categoryIds,
-        );
-        article = article.copyWith(category: classifiedCategory);
-        if (article.imageUrl.isEmpty) {
-          article = article.copyWith(
-            imageUrl: NewsModel.getFallbackImage(article.category),
-          );
-        }
-        if (hasNativeEngine &&
-            scoreArticleQuality(
-                  article.title,
-                  article.content,
-                  article.summary,
-                ) <
-                0.45) {
-          engineService.addLog(
-            '[QUALITY GATE] Rejected non-news page: ${article.url}',
-          );
-          return 0.0;
-        }
-        await _publishValidatedArticle(article, engineService);
-        return 0.5;
-      }
-
-      if (rawUrls.isEmpty) {
-        engineService.addLog(
-          '[CRAWL PASS 1] No articles discovered from ${source.url}',
-        );
-        return null;
-      }
-
+      discovered.addAll(await discovery.discover(source.url, maxUrls: maxUrls));
+    } catch (e) {
       engineService.addLog(
-        '[CRAWL PASS 1] Discovered ${rawUrls.length} candidate URLs.',
+        '[DISCOVERY] Failed for ${source.url}: $e',
       );
-
-      if (rawUrls.length > maxUrls) {
-        rawUrls = rawUrls.take(maxUrls).toList();
-      }
-
-      final sourceUri = Uri.tryParse(source.url);
-      String sourceHost = sourceUri?.host.toLowerCase() ?? '';
-      if (sourceHost.startsWith('www.')) sourceHost = sourceHost.substring(4);
-
-      if (sourceHost.isNotEmpty) {
-        rawUrls = rawUrls.where((url) {
-          final uri = Uri.tryParse(url);
-          if (uri == null) return false;
-          String host = uri.host.toLowerCase();
-          if (host.startsWith('www.')) host = host.substring(4);
-          return host == sourceHost || host.endsWith('.$sourceHost');
-        }).toList();
-      }
-
-      if (rawUrls.isEmpty) {
-        engineService.addLog(
-          '[CRAWL FILTER] No URLs passed source-domain filter for ${source.url}.',
-        );
-        return 0.0;
-      }
-
-      final db = NewsDatabase.instance;
-      final blacklistCheckedUrls = <String>[];
-      for (final url in rawUrls) {
-        final urlHash = NewsModel.hashUrl(url);
-        final isBlacklisted = await db.isUrlBlacklisted(urlHash);
-        if (!isBlacklisted) blacklistCheckedUrls.add(url);
-      }
-
-      if (blacklistCheckedUrls.isEmpty) {
-        engineService.addLog('[CRAWL PASS 2] All URLs blacklisted.');
-        return 0.0;
-      }
-
-      final limitedUrls = blacklistCheckedUrls.take(perSourceLimit).toList();
-      int successCount = 0;
-      int failureCount = 0;
-
-      final bool smallMemory = _isSmallMemoryPlatform();
-      final bool forceSingleUrl =
-          smallMemory && await ConnectivityService.isWifi();
-      final int effectivePerSourceLimit = forceSingleUrl ? 1 : perSourceLimit;
-      final int effectiveBatchSize = forceSingleUrl ? 1 : 3;
-
-      if (forceSingleUrl) {
-        engineService.addLog(
-          '[CRAWL] Small memory + WiFi: forcing single-URL crawl',
-        );
-      }
-
-      final Set<String> seenHashes = <String>{};
-      final List<NewsModel> batchArticles = <NewsModel>[];
-      for (final url in limitedUrls.take(effectivePerSourceLimit)) {
-        if (!_isRunning) break;
-        if (deadline != null && DateTime.now().isAfter(deadline)) {
-          engineService.addLog(
-            '[SILENT CRAWLER] deadline reached for ${source.url}, stopping.',
-          );
-          break;
-        }
-
-        final urlHash = NewsModel.hashUrl(url);
-        if (seenHashes.contains(urlHash)) {
-          engineService.addLog(
-            '[DEDUP] Skipping duplicate URL hash in this run: $url',
-          );
-          failureCount++;
-          continue;
-        }
-        seenHashes.add(urlHash);
-
-        final alreadyInDb = await db.articleUrlExists(url);
-        if (alreadyInDb) {
-          engineService.addLog('[DEDUP] Skipping existing article in DB: $url');
-          failureCount++;
-          continue;
-        }
-
-        try {
-          NewsModel? article;
-          bool usedNewsBrain = false;
-
-          if (!kIsWeb && NewsBrainService.instance.isAvailable) {
-            try {
-              final brainArticle = await NewsBrainService.instance
-                  .extractArticleUrl(url);
-              if (brainArticle != null) {
-                article = brainArticle.toNewsModel();
-                usedNewsBrain = true;
-                engineService.addLog(
-                  '[NEWSBRAIN] Extracted article via C++ engine: ${article.title}',
-                );
-              }
-            } catch (_) {}
-          }
-
-          if (article == null ||
-              !YallaEngineService.hasValidTitle(article.title) ||
-              !_isValidCrawledNews(article)) {
-            if (usedNewsBrain) {
-              engineService.addLog(
-                '[NEWSBRAIN] Article failed validation, falling back to isolate parser for: $url',
-              );
-            }
-            final result = await _processArticleUrl(
-              url,
-              sourceLanguage: crawlLanguage,
-              sourceName: source.name,
-            );
-            if (result == null ||
-                result['success'] != true ||
-                result['is_source'] == true) {
-              failureCount++;
-              engineService.addLog(
-                '[CRAWL PASS 2] Failed to extract $url: '
-                '${result?['reason'] ?? 'unknown error'}',
-              );
-              continue;
-            }
-            article = NewsModel.fromJson(result, url);
-          }
-
-          var currentArticle = article.copyWith(
-            sourceName: article.sourceName.isEmpty
-                ? source.name
-                : article.sourceName,
-            sourceUrl: article.sourceUrl.isEmpty
-                ? source.url
-                : article.sourceUrl,
-            language: article.language.isEmpty
-                ? crawlLanguage
-                : _resolveCrawlerLanguage(article.language, crawlLanguage),
-          );
-          final validCategoryIds = CategoryService.instance.categoryIds;
-          final classifiedCategory = await NewsIntelligence.classifyCategory(
-            '${currentArticle.title} ${currentArticle.summary}',
-            url: currentArticle.url,
-            title: currentArticle.title,
-            validCategoryIds: validCategoryIds.isEmpty
-                ? null
-                : validCategoryIds,
-          );
-          currentArticle = currentArticle.copyWith(
-            category: classifiedCategory,
-          );
-
-          if (currentArticle.imageUrl.isEmpty) {
-            final categorySlug = currentArticle.category.toLowerCase();
-            final seed = Uri.parse(url).path.hashCode.abs() % 1000;
-            currentArticle = currentArticle.copyWith(
-              imageUrl:
-                  'https://placehold.co/600x400/EEE/31343C?text=$categorySlug+$seed',
-            );
-          }
-
-          if (!_isValidCrawledNews(currentArticle)) {
-            engineService.addLog('[VALIDATION] Skipped invalid article: $url');
-            failureCount++;
-            continue;
-          }
-
-          if (hasNativeEngine) {
-            final qualityScore = scoreArticleQuality(
-              currentArticle.title,
-              currentArticle.content,
-              currentArticle.summary,
-            );
-            if (qualityScore < 0.45) {
-              engineService.addLog(
-                '[QUALITY GATE] Rejected low-score page (${qualityScore.toStringAsFixed(2)}): $url',
-              );
-              failureCount++;
-              continue;
-            }
-          }
-
-          batchArticles.add(currentArticle);
-          successCount++;
-
-          if (batchArticles.length >= effectiveBatchSize) {
-            for (final a in batchArticles) {
-              await _publishValidatedArticle(a, engineService);
-            }
-            batchArticles.clear();
-            await Future.delayed(pauseBetweenArticles);
-          }
-        } catch (e) {
-          failureCount++;
-          engineService.addLog('[CRAWL] Error processing $url: $e');
-        }
-
-        await Future.delayed(pauseBetweenArticles);
-      }
-
-      if (batchArticles.isNotEmpty) {
-        for (final a in batchArticles) {
-          await _publishValidatedArticle(a, engineService);
-        }
-        batchArticles.clear();
-      }
-
-      final quality = successCount / max(limitedUrls.length, 1);
-      engineService.addLog(
-        '[CRAWL PASS 3] Complete. Success: $successCount, Failures: $failureCount, Quality: ${quality.toStringAsFixed(2)}.',
-      );
-      return quality;
-    } finally {
-      _pendingRequests.remove(requestId);
-      _abandonedRequestIds.remove(requestId);
     }
+
+    // WebView fallback for JS-heavy sites when discovery found nothing.
+    if (discovered.isEmpty && _webViewContext != null) {
+      engineService.addLog(
+        '[WEBVIEW CRAWLER] No links via feeds/sitemap/homepage for ${source.url}, trying WebView...',
+      );
+      try {
+        final webviewUrls = await WebViewCrawlerService.instance
+            .extractArticleUrls(
+              context: _webViewContext!,
+              url: source.url,
+              loadTimeout: const Duration(seconds: 20),
+            )
+            .timeout(const Duration(seconds: 25));
+        for (final u in webviewUrls) {
+          discovered.add(DiscoveredUrl(
+            url: u,
+            discoveryMethod: 'webview',
+          ));
+        }
+        engineService.addLog(
+          '[WEBVIEW CRAWLER] WebView discovered ${webviewUrls.length} links from ${source.url}',
+        );
+      } catch (e) {
+        engineService.addLog(
+          '[WEBVIEW CRAWLER] WebView failed for ${source.url}: $e',
+        );
+      }
+    }
+
+    // Build candidates and enqueue with freshness hints.
+    final candidates = <CrawlCandidate>[];
+    for (final d in discovered) {
+      final pub = d.dateHint;
+      final freshness = pub != null && pub.utc != null
+          ? _freshnessEngine.classify(
+              NewsModel.empty(d.url).copyWith(publishedAt: pub.isoUtc))
+          : FreshnessClass.unknownDate;
+      candidates.add(CrawlCandidate(
+        url: d.url,
+        sourceId: source.url,
+        sourceUrl: source.url,
+        titleHint: d.titleHint,
+        publishedAt: pub?.utc,
+        updatedAt: pub?.utc,
+        discoveryMethod: d.discoveryMethod,
+        language: d.language ?? crawlLanguage,
+        freshness: freshness,
+        sourcePriority: 0,
+      ));
+    }
+
+    // Deduplicate and enqueue.
+    int queued = 0;
+    final seen = <String>{};
+    for (final c in candidates) {
+      if (seen.contains(c.url)) continue;
+      seen.add(c.url);
+      final db = NewsDatabase.instance;
+      final already = await db.articleUrlExists(c.url);
+      if (already) continue;
+      if (_candidateQueue.add(c)) queued++;
+    }
+
+    engineService.addLog(
+      '[DISCOVERY] ${source.name}: ${discovered.length} found, $queued new candidates queued.',
+    );
+
+    if (queued == 0) {
+      engineService.addLog(
+        '[CRAWL PASS 1] No new candidates from ${source.url}',
+      );
+      return 0.0;
+    }
+
+    // Process queue.
+    int successCount = 0;
+    int failureCount = 0;
+    final processed = <String>{};
+
+    while (true) {
+      if (!_isRunning) break;
+      if (deadline != null && DateTime.now().isAfter(deadline)) {
+        engineService.addLog(
+          '[SILENT CRAWLER] deadline reached for ${source.url}, stopping.',
+        );
+        break;
+      }
+      final candidate = _candidateQueue.pop();
+      if (candidate == null) break;
+      if (processed.contains(candidate.url)) continue;
+      processed.add(candidate.url);
+
+      final urlHash = NewsModel.hashUrl(candidate.url);
+      final alreadyInDb = await db.articleUrlExists(candidate.url);
+      if (alreadyInDb) {
+        _candidateQueue.done(candidate, status: CrawlStatus.skipped);
+        failureCount++;
+        continue;
+      }
+
+      NewsModel? article;
+      bool usedNewsBrain = false;
+      if (!kIsWeb && NewsBrainService.instance.isAvailable) {
+        try {
+          final brainArticle = await NewsBrainService.instance
+              .extractArticleUrl(candidate.url);
+          if (brainArticle != null) {
+            article = brainArticle.toNewsModel();
+            usedNewsBrain = true;
+            engineService.addLog(
+              '[NEWSBRAIN] Extracted article via C++ engine: ${article.title}',
+            );
+          }
+        } catch (_) {}
+      }
+
+      if (article == null ||
+          !YallaEngineService.hasValidTitle(article.title) ||
+          !_isValidCrawledNews(article)) {
+        if (usedNewsBrain) {
+          engineService.addLog(
+            '[NEWSBRAIN] Article failed validation, falling back to isolate parser for: ${candidate.url}',
+          );
+        }
+        final result = await _processArticleUrl(
+          candidate.url,
+          sourceLanguage: crawlLanguage,
+          sourceName: source.name,
+        );
+        if (result == null ||
+            result['success'] != true ||
+            result['is_source'] == true) {
+          failureCount++;
+          _candidateQueue.retry(candidate, error: result?['reason'] ?? 'unknown');
+          engineService.addLog(
+            '[CRAWL PASS 2] Failed to extract ${candidate.url}: ${result?['reason'] ?? 'unknown error'}',
+          );
+          continue;
+        }
+        article = NewsModel.fromJson(result, candidate.url);
+      }
+
+      var currentArticle = article.copyWith(
+        sourceName: article.sourceName.isEmpty ? source.name : article.sourceName,
+        sourceUrl: article.sourceUrl.isEmpty ? source.url : article.sourceUrl,
+        language: article.language.isEmpty
+            ? crawlLanguage
+            : _resolveCrawlerLanguage(article.language, crawlLanguage),
+      );
+
+      // Override published_at from discovery hint if the parser didn't find one.
+      if ((currentArticle.publishedAt.isEmpty ||
+              currentArticle.publishDate.isEmpty) &&
+          candidate.publishedAt != null) {
+        final iso = candidate.publishedAt!.toUtc().toIso8601String();
+        currentArticle = currentArticle.copyWith(
+          publishedAt: iso,
+          publishDate: iso,
+          updatedAt: candidate.updatedAt?.toUtc().toIso8601String() ?? '',
+        );
+      }
+
+      final validCategoryIds = CategoryService.instance.categoryIds;
+      final classifiedCategory = await NewsIntelligence.classifyCategory(
+        '${currentArticle.title} ${currentArticle.summary}',
+        url: currentArticle.url,
+        title: currentArticle.title,
+        validCategoryIds: validCategoryIds.isEmpty ? null : validCategoryIds,
+      );
+      currentArticle = currentArticle.copyWith(
+        category: classifiedCategory,
+      );
+
+      if (currentArticle.imageUrl.isEmpty) {
+        final categorySlug = currentArticle.category.toLowerCase();
+        final seed = Uri.parse(candidate.url).path.hashCode.abs() % 1000;
+        currentArticle = currentArticle.copyWith(
+          imageUrl:
+              'https://placehold.co/600x400/EEE/31343C?text=$categorySlug+$seed',
+        );
+      }
+
+      if (!_isValidCrawledNews(currentArticle)) {
+        engineService.addLog('[VALIDATION] Skipped invalid article: ${candidate.url}');
+        failureCount++;
+        _candidateQueue.done(candidate, status: CrawlStatus.skipped);
+        continue;
+      }
+
+      // RealNewsValidator: strict title/URL/content/quality validation.
+      final realNewsResult = _realNewsValidator.validate(currentArticle);
+      if (!realNewsResult.valid) {
+        engineService.addLog(
+          '[REAL NEWS] Rejected ${candidate.url}: ${realNewsResult.reason}',
+        );
+        failureCount++;
+        _candidateQueue.done(candidate, status: CrawlStatus.skipped);
+        continue;
+      }
+
+      if (hasNativeEngine) {
+        final qualityScore = scoreArticleQuality(
+          currentArticle.title,
+          currentArticle.content,
+          currentArticle.summary,
+        );
+        if (qualityScore < 0.45) {
+          engineService.addLog(
+            '[QUALITY GATE] Rejected low-score page (${qualityScore.toStringAsFixed(2)}): ${candidate.url}',
+          );
+          failureCount++;
+          _candidateQueue.done(candidate, status: CrawlStatus.skipped);
+          continue;
+        }
+      }
+
+      // Annotate with freshness class.
+      final annotated = _freshnessEngine.annotate(currentArticle);
+      // Emit + publish.
+      final absImage = NewsModel.resolveImageUrl(
+        annotated.imageUrl,
+        annotated.url,
+      );
+      final toPublish = annotated.copyWith(
+        imageUrl: absImage.isEmpty
+            ? NewsModel.getFallbackImage(annotated.category)
+            : absImage,
+      );
+        _emitArticle(toPublish);
+        if (!kIsWeb) {
+          try {
+            await NewsDatabase.instance.saveCrawledArticles([toPublish], source.url);
+          } catch (e) {
+            engineService.addLog(
+              '[LOCAL] Save failed for ${toPublish.url}: $e',
+            );
+          }
+          try {
+            await ServerApiService.saveArticle(toPublish).timeout(const Duration(seconds: 10));
+            engineService.addLog(
+              '[SERVER] Pushed article: title="${toPublish.title}" class="${toPublish.category}" desc="${toPublish.summary}" url="${toPublish.url}" freshness=${_freshnessEngine.classify(toPublish).label}',
+            );
+          } catch (e) {
+            engineService.addLog(
+              '[SERVER] Push failed for ${toPublish.url}: $e',
+            );
+          }
+        }
+
+      successCount++;
+      engineService.addLog(
+        '[ARTICLE EXTRACTED] title="${currentArticle.title}" class="${currentArticle.category}" desc="${currentArticle.summary}" url="${candidate.url}" freshness=${_freshnessEngine.classify(currentArticle).label}',
+      );
+      _candidateQueue.done(candidate, status: CrawlStatus.extracted);
+
+      if (successCount >= perSourceLimit) break;
+      await Future.delayed(pauseBetweenArticles);
+    }
+
+    final quality = successCount / max(discovered.length, 1);
+    engineService.addLog(
+      '[CRAWL PASS 3] Complete. Success: $successCount, Failures: $failureCount, Quality: ${quality.toStringAsFixed(2)}, Queue remaining: ${_candidateQueue.length}.',
+    );
+    return quality;
   }
 
   Future<void> _publishValidatedArticle(
@@ -1624,7 +1650,9 @@ class BackgroundCrawlerService {
       await ServerApiService.saveArticle(
         articleToPublish,
       ).timeout(const Duration(seconds: 10));
-      engineService.addLog('[SERVER] Pushed article: ${articleToPublish.url}');
+      engineService.addLog(
+        '[SERVER] Pushed article: title="${articleToPublish.title}" class="${articleToPublish.category}" desc="${articleToPublish.summary}" url="${articleToPublish.url}"',
+      );
     } catch (e) {
       engineService.addLog(
         '[SERVER] Push failed for ${articleToPublish.url}: $e',
@@ -1633,6 +1661,8 @@ class BackgroundCrawlerService {
   }
 
   void _emitArticle(NewsModel article) {
+    _totalArticlesEmitted++;
+    debugPrint('[CRAWL DEBUG] Article #$_totalArticlesEmitted emitted: ${article.title} (${article.url})');
     if (!_articleStreamController.isClosed) {
       _articleStreamController.add(article);
     }
@@ -1648,9 +1678,13 @@ class BackgroundCrawlerService {
 
   Future<void> forceRefresh({
     required YallaEngineService engineService,
+    BuildContext? context,
     VoidCallback? onProgress,
     VoidCallback? onComplete,
   }) async {
+    if (context != null) {
+      _webViewContext = context;
+    }
     if (_isRunning) return;
 
     if (_isSmallMemoryPlatform()) {
@@ -1661,19 +1695,14 @@ class BackgroundCrawlerService {
       return;
     }
 
-    final onWifi = await ConnectivityService.isWifi();
-    if (!onWifi) {
-      engineService.addLog(
-        '[SILENT CRAWLER] Not on Wi-Fi — skipping force refresh, use API refresh instead.',
-      );
-      onComplete?.call();
-      return;
-    }
+    // Clear duplicate tracking for this crawl run.
+    _realNewsValidator.clearDuplicates();
 
     _isRunning = true;
+    _totalArticlesEmitted = 0;
     _startMemoryWatchdog(engineService);
     engineService.addLog(
-      '[SILENT CRAWLER] Wi-Fi detected — force refresh started...',
+      '[SILENT CRAWLER] Force refresh started...',
     );
 
     try {
@@ -1693,9 +1722,7 @@ class BackgroundCrawlerService {
             s.countryCode == appCountry;
         return languageMatch && countryMatch;
       }).toList();
-      final sourcesToUse = matchedSources.isNotEmpty
-          ? matchedSources
-          : allSources;
+      final sourcesToUse = matchedSources;
       final List<NewsSource> topSources = List.from(sourcesToUse)
         ..sort((a, b) => b.rank.compareTo(a.rank));
       final sourcesToCrawl = topSources.take(await _topSourcesCount).toList();
@@ -1752,12 +1779,14 @@ class BackgroundCrawlerService {
           try {
             await ServerApiService.updateSourceCrawlTime(source.url);
           } catch (_) {}
+          _sourceScheduler.markSuccess(source.url);
         } catch (e) {
+          _sourceScheduler.markError(source.url);
           engineService.addLog('[SILENT CRAWLER] X ${source.name} failed: $e');
         }
       }
 
-      engineService.addLog('[SILENT CRAWLER] Force refresh complete!');
+      engineService.addLog('[SILENT CRAWLER] Force refresh complete! Total articles emitted: $_totalArticlesEmitted');
     } catch (e) {
       engineService.addLog('[SILENT CRAWLER] Fatal error: $e');
     } finally {
@@ -1771,9 +1800,36 @@ class BackgroundCrawlerService {
     final title = article.title.trim();
     final url = article.url.trim();
     final content = article.content.trim();
+    final summary = article.summary.trim();
 
     if (title.isEmpty || url.isEmpty || url.length < 10) return false;
-    if (content.isEmpty && article.summary.trim().isEmpty) return false;
+    if (content.isEmpty && summary.isEmpty) return false;
+
+    // Reject placeholder / noise titles
+    if (title.length < 5 || title.length > 200) return false;
+    if (RegExp(r'^\s*[\.\-_,:;!?…]{2,}\s*$').hasMatch(title)) return false;
+    final tl = title.toLowerCase();
+    if (tl == 'test' || tl == 'news') return false;
+
+    // Reject mixed-script titles (Arabic + Chinese etc.) — scraping artifacts
+    bool hasArabic = title.contains(RegExp(r'[\u0600-\u06FF]'));
+    bool hasCjk = title.contains(RegExp(r'[\u4E00-\u9FFF\u3400-\u4DBF]'));
+    bool hasCyrillic = title.contains(RegExp(r'[\u0400-\u04FF]'));
+    int scriptCount = (hasArabic ? 1 : 0) + (hasCjk ? 1 : 0) + (hasCyrillic ? 1 : 0);
+    if (scriptCount > 1) return false;
+
+    // Reject site-name-only titles
+    const siteOnly = {
+      'al jazeera','الجزيرة','bbc','cnn','reuters','le monde','hespress',
+      'mosaique fm','almasryalyoum','google','facebook','twitter','instagram',
+      'youtube','whatsapp','telegram'
+    };
+    if (siteOnly.contains(tl)) return false;
+
+    // Content must have some real words, not just punctuation
+    final textToCheck = (content.isNotEmpty ? content : summary);
+    final wordCount = textToCheck.split(RegExp(r'\s+')).where((w) => w.length > 2).length;
+    if (wordCount < 3) return false;
 
     return true;
   }
@@ -1907,7 +1963,7 @@ class BackgroundCrawlerService {
   }
 }
 
-// ─── Adaptive Crawler Scheduler ──────────────────────────────────────────────
+// ─── Per-Source Scheduler ───────────────────────────────────────────────────
 
 class CrawlerScheduler {
   CrawlerScheduler._();
@@ -1924,7 +1980,6 @@ class CrawlerScheduler {
       DeviceTier.medium => const Duration(minutes: 30),
       DeviceTier.low => const Duration(minutes: 60),
     };
-    // Add random jitter (±25%) so crawls don't run at fixed times across devices.
     final jitter = base.inMilliseconds * 0.25;
     final randomDelay = (Random().nextDouble() * jitter * 2 - jitter).toInt();
     return Duration(milliseconds: base.inMilliseconds + randomDelay);
@@ -1935,14 +1990,12 @@ class CrawlerScheduler {
     if (benchmark.hasValidBenchmark) {
       return benchmark.lastResult!.tier;
     }
-
     final memoryMb = await benchmark.measureMemoryMb();
     final cpuScore = await benchmark.measureCpuScore();
     final networkProfile = await benchmark.measureNetworkProfile(
       engineService,
       null,
     );
-
     final tier = benchmark.classifyTier(memoryMb, cpuScore, networkProfile);
     engineService.addLog(
       '[SCHEDULER] Detected device tier=$tier mem=${memoryMb}MB cpu=$cpuScore',
@@ -1952,20 +2005,20 @@ class CrawlerScheduler {
 
   Future<void> start({
     required YallaEngineService engineService,
+    BuildContext? context,
     VoidCallback? onProgress,
     VoidCallback? onComplete,
     bool requireWifi = false,
   }) async {
+    if (context != null) {
+      BackgroundCrawlerService.instance._webViewContext = context;
+    }
     stop();
     final generation = _generation;
 
     final tier = await _detectTier(engineService);
     if (generation != _generation) return;
     final interval = intervalForTier(tier);
-    final limits = DeviceBenchmark.instance.recommendLimits(
-      tier,
-      const NetworkProfile(connectionType: ConnectionType.none, isWifi: false),
-    );
 
     engineService.addLog(
       '[SCHEDULER] Starting adaptive crawl interval=${interval.inMinutes}min tier=$tier',
@@ -1974,14 +2027,6 @@ class CrawlerScheduler {
     _timer = Timer.periodic(interval, (_) async {
       if (generation != _generation) return;
       if (BackgroundCrawlerService.instance.isRunning) {
-        return;
-      }
-
-      // Only crawl when WiFi is available, on all devices.
-      final isWifi = await ConnectivityService.isWifi();
-      if (generation != _generation) return;
-      if (!isWifi) {
-        engineService.addLog('[SCHEDULER] No WiFi — skipping scheduled crawl.');
         return;
       }
 
@@ -1995,6 +2040,7 @@ class CrawlerScheduler {
 
       BackgroundCrawlerService.instance.startSilentCrawl(
         engineService: engineService,
+        context: context,
         onProgress: onProgress,
         onComplete: onComplete,
         requireWifi: true,
@@ -2002,32 +2048,25 @@ class CrawlerScheduler {
       _lastRun = DateTime.now();
     });
 
-    // Run an initial crawl after a random delay if WiFi is connected,
-    // on all devices. Never start without WiFi.
+    // Run an initial crawl after a random delay on all devices.
     if (!BackgroundCrawlerService.instance.isRunning) {
-      final isWifi = await ConnectivityService.isWifi();
-      if (isWifi) {
-        final randomSeconds = 5 + Random().nextInt(20); // 5-25 seconds
-        engineService.addLog(
-          '[SCHEDULER] WiFi detected — scheduling first crawl in ${randomSeconds}s',
-        );
-        _initialCrawlTimer = Timer(Duration(seconds: randomSeconds), () async {
-          if (generation == _generation &&
-              !BackgroundCrawlerService.instance.isRunning) {
-            await BackgroundCrawlerService.instance.startSilentCrawl(
-              engineService: engineService,
-              onProgress: onProgress,
-              onComplete: onComplete,
-              requireWifi: true,
-            );
-            _lastRun = DateTime.now();
-          }
-        });
-      } else {
-        engineService.addLog(
-          '[SCHEDULER] No WiFi — skipping initial crawl, will retry on next interval.',
-        );
-      }
+      final randomSeconds = 5 + Random().nextInt(20); // 5-25 seconds
+      engineService.addLog(
+        '[SCHEDULER] Scheduling first crawl in ${randomSeconds}s',
+      );
+      _initialCrawlTimer = Timer(Duration(seconds: randomSeconds), () async {
+        if (generation == _generation &&
+            !BackgroundCrawlerService.instance.isRunning) {
+          await BackgroundCrawlerService.instance.startSilentCrawl(
+            engineService: engineService,
+            context: context,
+            onProgress: onProgress,
+            onComplete: onComplete,
+            requireWifi: true,
+          );
+          _lastRun = DateTime.now();
+        }
+      });
     }
   }
 

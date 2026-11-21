@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/news_schema.php';
@@ -13,9 +15,24 @@ $summary = sanitize_string($data['summary'] ?? '', 1000);
 $content = $data['content'] ?? null;
 $language = sanitize_string($data['language'] ?? 'ar', 8);
 $category = sanitize_string($data['category'] ?? '', 64);
-$sourceName = sanitize_string($data['source']['name'] ?? $data['sourceName'] ?? $data['sourceId'] ?? $data['source']['id'] ?? '', 255);
-$sourceUrl = filter_var(
-    sanitize_string($data['source']['url'] ?? $data['source_url'] ?? '', 512),
+
+// Defensive source parsing - source can be array or string
+$sourceRaw = $data['source'] ?? null;
+$sourceName = '';
+$sourceUrl = '';
+if (is_array($sourceRaw)) {
+    $sourceName = sanitize_string($sourceRaw['name'] ?? $sourceRaw['id'] ?? '', 255);
+    $sourceUrl = filter_var(
+        sanitize_string($sourceRaw['url'] ?? '', 512),
+        FILTER_SANITIZE_URL
+    );
+} elseif (is_string($sourceRaw)) {
+    $sourceName = sanitize_string($sourceRaw, 255);
+}
+
+$sourceName = $sourceName ?: sanitize_string($data['sourceName'] ?? $data['sourceId'] ?? '', 255);
+$sourceUrl = $sourceUrl ?: filter_var(
+    sanitize_string($data['source_url'] ?? '', 512),
     FILTER_SANITIZE_URL
 );
 $sourceUrlArticle = filter_var(
@@ -39,7 +56,12 @@ if (empty($imageUrl) || str_contains($imageUrl, 'bing.com/images/search')) {
 $publishedAt = intval($data['publishedAt'] ?? time() * 1000);
 $status = in_array($data['status'] ?? 'published', ['published', 'draft', 'archived']) ? $data['status'] : 'published';
 
-validate_required(['title' => $title, 'category' => $category, 'source_id' => $sourceName, 'source_url_article' => $sourceUrlArticle]);
+validate_required([
+    'title' => $title,
+    'category' => $category,
+    'source_name' => $sourceName,
+    'source_url_article' => $sourceUrlArticle,
+]);
 
 try {
     $db = Database::getInstance();
@@ -60,7 +82,12 @@ try {
         throw new RuntimeException('yn_news must contain source_name or source_id');
     }
 
-    $categoryColumns = $db->query('SHOW COLUMNS FROM yn_categories')->fetchAll(PDO::FETCH_COLUMN, 0);
+    $categoryColumns = [];
+    try {
+        $categoryColumns = $db->query('SHOW COLUMNS FROM yn_categories')->fetchAll(PDO::FETCH_COLUMN, 0);
+    } catch (Exception $e) {
+        error_log('SHOW COLUMNS yn_categories failed: ' . $e->getMessage());
+    }
     $categoryQuery = in_array('active', $categoryColumns, true)
         ? 'SELECT id FROM yn_categories WHERE id = ? AND active = 1 LIMIT 1'
         : 'SELECT id FROM yn_categories WHERE id = ? LIMIT 1';
@@ -153,10 +180,9 @@ try {
     ], 201);
 
 } catch (Exception $e) {
-    $serverMessage = 'Server error: ' . $e->getMessage();
     error_log('Create article error: ' . $e->getMessage());
     json_response([
         'error' => 'Failed to create article',
-        'details' => $serverMessage,
+        'details' => $e->getMessage(),
     ], 500);
 }

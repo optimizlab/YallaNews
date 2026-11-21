@@ -247,3 +247,26 @@ CREATE TABLE `yn_analytics_events` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- ============================================================
+-- 13. News Reports (user-reported articles)
+--    Fed by the Flutter app via api/reports/create.php
+--    Reviewed by admins via the admin dashboard
+-- ============================================================
+DROP TABLE IF EXISTS `yn_news_reports`;
+CREATE TABLE `yn_news_reports` (
+  `id` VARCHAR(64) NOT NULL,
+  `article_id` VARCHAR(64) NOT NULL,
+  `reported_by` VARCHAR(64) NOT NULL,
+  `reported_by_name` VARCHAR(255) NOT NULL DEFAULT '',
+  `reason` TEXT NOT NULL,
+  `status` VARCHAR(32) NOT NULL DEFAULT 'pending',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_reports_article` (`article_id`),
+  KEY `idx_reports_user` (`reported_by`),
+  KEY `idx_reports_status` (`status`),
+  KEY `idx_reports_created` (`created_at`),
+  CONSTRAINT `fk_reports_article` FOREIGN KEY (`article_id`) REFERENCES `yn_news`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_reports_user` FOREIGN KEY (`reported_by`) REFERENCES `yn_users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

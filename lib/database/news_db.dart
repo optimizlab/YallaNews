@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -45,21 +44,19 @@ class NewsDatabase {
     try {
     final db = await openDatabase(
       dbPath,
-      version: 23, // v23: read/comment/like counts for trending & carousel ranking
-      onCreate: (Database db, int version) async {
-          await _createSchema(db);
-          try {
-            await _createFtsIndex(db);
-          } catch (_) {
-            _hasFts5 = false;
-          }
-          await _seedFromJson(db);
-        },
+      version: 24, // v24: publication-date ordering, freshness columns, indexes
+        onCreate: (Database db, int version) async {
+            await _createSchema(db);
+            try {
+              await _createFtsIndex(db);
+            } catch (_) {
+              _hasFts5 = false;
+            }
+          },
         onUpgrade: (Database db, int oldVersion, int newVersion) async {
           if (oldVersion < 2) {
             await db.execute('DROP TABLE IF EXISTS sources');
             await _createSchema(db);
-            await _seedFromJson(db);
           }
           if (oldVersion < 3) {
             await db.execute('''
@@ -118,7 +115,6 @@ class NewsDatabase {
           }
           if (oldVersion < 10) {
             await db.execute('DELETE FROM sources');
-            await _seedFromJson(db);
           }
           if (oldVersion < 11) {
             await db.execute("DELETE FROM sources WHERE country_code != 'MA'");
@@ -327,6 +323,44 @@ class NewsDatabase {
               );
             } catch (_) {}
           }
+          // v24: publication-date ordering, freshness columns, indexes
+          if (oldVersion < 24) {
+            try {
+              await db.execute(
+                "ALTER TABLE crawled_articles ADD COLUMN discovered_at INTEGER NOT NULL DEFAULT 0",
+              );
+            } catch (_) {}
+            try {
+              await db.execute(
+                "ALTER TABLE crawled_articles ADD COLUMN fetched_at INTEGER NOT NULL DEFAULT 0",
+              );
+            } catch (_) {}
+            try {
+              await db.execute(
+                "ALTER TABLE crawled_articles ADD COLUMN first_seen_at INTEGER NOT NULL DEFAULT 0",
+              );
+            } catch (_) {}
+            try {
+              await db.execute(
+                "ALTER TABLE crawled_articles ADD COLUMN freshness_class TEXT NOT NULL DEFAULT 'UNKNOWN_DATE'",
+              );
+            } catch (_) {}
+            try {
+              await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_crawled_articles_publish_date ON crawled_articles(publish_date DESC)',
+              );
+            } catch (_) {}
+            try {
+              await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_crawled_articles_crawled_at ON crawled_articles(crawled_at DESC)',
+              );
+            } catch (_) {}
+            try {
+              await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_crawled_articles_source_url ON crawled_articles(source_url)',
+              );
+            } catch (_) {}
+          }
         },
         onOpen: (Database db) async {
           // Older installations may already be at the current schema version
@@ -340,13 +374,6 @@ class NewsDatabase {
               added_at INTEGER NOT NULL
             )
           ''');
-          // Verify the table has data; if not, seed it
-          final count = Sqflite.firstIntValue(
-            await db.rawQuery('SELECT COUNT(*) FROM sources'),
-          );
-          if (count == null || count == 0) {
-            await _seedFromJson(db);
-          }
 
           // No demo article seeding — only real content from API/crawler.
         },
@@ -363,7 +390,6 @@ class NewsDatabase {
         onCreate: (Database db, int version) async {
           await _createSchema(db);
           await _createFtsIndex(db);
-          await _seedFromJson(db);
         },
       );
       return db;
@@ -409,7 +435,11 @@ class NewsDatabase {
         sources TEXT NOT NULL DEFAULT '',
         read_count INTEGER NOT NULL DEFAULT 0,
         comment_count INTEGER NOT NULL DEFAULT 0,
-        like_count INTEGER NOT NULL DEFAULT 0
+        like_count INTEGER NOT NULL DEFAULT 0,
+        discovered_at INTEGER NOT NULL DEFAULT 0,
+        fetched_at INTEGER NOT NULL DEFAULT 0,
+        first_seen_at INTEGER NOT NULL DEFAULT 0,
+        freshness_class TEXT NOT NULL DEFAULT 'UNKNOWN_DATE'
       )
     ''');
 
@@ -591,51 +621,6 @@ class NewsDatabase {
     ''');
   }
 
-  /// Seed the database from the bundled news_sources_ar.json asset.
-  static Future<void> _seedFromJson(Database db) async {
-    try {
-      final String jsonStr = await rootBundle.loadString(
-        'assets/news_sources_ar.json',
-      );
-      final Map<String, dynamic> data = jsonDecode(jsonStr);
-      final List<dynamic> countries = data['countries'] ?? [];
-
-      final batch = db.batch();
-      int insertedCount = 0;
-      for (final country in countries) {
-        final String countryName = country['country'] ?? '';
-        final String countryCode = country['country_code'] ?? '';
-        final List<dynamic> sources = country['sources'] ?? [];
-
-        for (final source in sources) {
-          // language field in JSON is a list; join to comma-separated string
-          final langs = source['language'];
-          final String language = (langs is List)
-              ? langs.join(',')
-              : (langs ?? 'ar').toString();
-
-          batch.insert('sources', {
-            'country': countryName,
-            'country_code': countryCode,
-            'name': source['name'] ?? '',
-            'url': source['url'] ?? '',
-            'category': source['category'] ?? 'general_news',
-            'type': source['type'] ?? 'digital_news',
-            'language': language,
-            'rank': source['rank'] ?? 0,
-          });
-          insertedCount++;
-        }
-      }
-      await batch.commit(noResult: true);
-      print('[NewsDatabase] Seeded database with $insertedCount sources.');
-    } catch (e) {
-      // If JSON loading fails, we still have an empty but valid DB
-      // This prevents a crash loop — the user just sees 0 sources
-      print('[NewsDatabase] Failed to seed from JSON: $e');
-    }
-  }
-
   /// Seed demo articles so features always have content to display.
   static Future<void> seedDemoArticles(Database db) async {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -806,7 +791,86 @@ class NewsDatabase {
     }
 
     final List<Map<String, dynamic>> maps = await db.query('sources');
+    if (maps.isEmpty) {
+      // No sources from API or local DB — seed default fallback sources so the
+      // crawler always has something to crawl.
+      await _insertDefaultSources(db);
+      final fallbackMaps = await db.query('sources');
+      return fallbackMaps.map((map) => NewsSource.fromMap(map)).toList();
+    }
     return maps.map((map) => NewsSource.fromMap(map)).toList();
+  }
+
+  static const List<Map<String, String>> _defaultSources = [
+    {
+      'country': 'Morocco',
+      'country_code': 'MA',
+      'name': 'Hespress',
+      'url': 'https://www.hespress.com',
+      'category': 'general_news',
+      'type': 'digital_news',
+      'language': 'ar',
+      'rank': '100',
+    },
+    {
+      'country': 'Egypt',
+      'country_code': 'EG',
+      'name': 'Al Masry Al Youm',
+      'url': 'https://www.almasryalyoum.com',
+      'category': 'general_news',
+      'type': 'digital_news',
+      'language': 'ar',
+      'rank': '90',
+    },
+    {
+      'country': 'Tunisia',
+      'country_code': 'TN',
+      'name': 'Mosaique FM',
+      'url': 'https://www.mosaiquefm.net',
+      'category': 'general_news',
+      'type': 'digital_news',
+      'language': 'ar',
+      'rank': '80',
+    },
+    {
+      'country': 'France',
+      'country_code': 'FR',
+      'name': 'Le Monde',
+      'url': 'https://www.lemonde.fr',
+      'category': 'general_news',
+      'type': 'digital_news',
+      'language': 'fr',
+      'rank': '95',
+    },
+    {
+      'country': 'United States',
+      'country_code': 'US',
+      'name': 'Reuters',
+      'url': 'https://www.reuters.com',
+      'category': 'general_news',
+      'type': 'digital_news',
+      'language': 'en',
+      'rank': '90',
+    },
+  ];
+
+  Future<void> _insertDefaultSources(dynamic db) async {
+    final batch = db.batch();
+    int id = 1;
+    for (final s in _defaultSources) {
+      batch.insert('sources', {
+        'id': id++,
+        'country': s['country'] ?? '',
+        'country_code': s['country_code'] ?? '',
+        'name': s['name'] ?? '',
+        'url': s['url'] ?? '',
+        'category': s['category'] ?? 'general_news',
+        'type': s['type'] ?? 'digital_news',
+        'language': s['language'] ?? 'ar',
+        'rank': int.tryParse(s['rank'] ?? '0') ?? 0,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<List<NewsSource>> getAllSourcesPaginated({
@@ -849,6 +913,16 @@ class NewsDatabase {
       offset: offset,
       orderBy: 'id DESC',
     );
+    if (maps.isEmpty && page == 1) {
+      await _insertDefaultSources(db);
+      final fallbackMaps = await db.query(
+        'sources',
+        limit: limit,
+        offset: offset,
+        orderBy: 'id DESC',
+      );
+      return fallbackMaps.map((map) => NewsSource.fromMap(map)).toList();
+    }
     return maps.map((map) => NewsSource.fromMap(map)).toList();
   }
 
@@ -926,6 +1000,10 @@ class NewsDatabase {
         'read_count': art.readCount,
         'comment_count': art.commentCount,
         'like_count': art.likeCount,
+        'discovered_at': art.metaTags['discovered_at'] ?? now,
+        'fetched_at': art.metaTags['fetched_at'] ?? now,
+        'first_seen_at': art.metaTags['first_seen_at'] ?? now,
+        'freshness_class': art.metaTags['freshness_class'] ?? 'UNKNOWN_DATE',
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
@@ -939,7 +1017,8 @@ class NewsDatabase {
       'crawled_articles',
       where: language != null && language.isNotEmpty ? 'language = ?' : null,
       whereArgs: language != null && language.isNotEmpty ? [language] : null,
-      orderBy: 'crawled_at DESC, id DESC',
+      orderBy:
+          'CASE WHEN publish_date = \'\' THEN 1 ELSE 0 END, publish_date DESC, crawled_at DESC, id DESC',
       limit: limit,
     );
     return maps.map((map) {

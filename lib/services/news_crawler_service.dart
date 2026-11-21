@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/news_model.dart';
 import '../models/news_source.dart';
+import '../database/news_db.dart';
 import 'server_api_service.dart';
 import 'news_api_service.dart';
 import 'news_uri_parser.dart';
@@ -42,6 +42,7 @@ class NewsCrawlerService {
       _validateSourceUrl,
       _validateImageUrl,
       _validateNonNewsEntry,
+      _validatePressQuality,
     ]);
 
     _transformers.addAll(<ArticleTransformer>[
@@ -82,16 +83,8 @@ class NewsCrawlerService {
         }
       } catch (_) {
         if (kDebugMode)
-          _log('[CRAWLER] Server sources unavailable, using local fallback');
+          _log('[CRAWLER] Server sources unavailable');
       }
-    }
-
-    if (sources.isEmpty) {
-      final localSources = await _loadLocalSources(
-        countryCode: countryCode,
-        language: language,
-      );
-      sources.addAll(localSources);
     }
 
     _deduplicateSources(sources);
@@ -518,6 +511,67 @@ class NewsCrawlerService {
     );
   }
 
+  /// Press-quality validation: reject items that pass length checks but still
+  /// look like section/category pages, nav links, or publisher boilerplate
+  /// rather than a real news article written by a press editor.
+  bool _validatePressQuality(NewsModel article) {
+    final title = article.title.trim();
+    final content = article.content.trim();
+    final summary = article.summary.trim();
+
+    // Title that is just a section label + publisher (e.g. "أهم البطولات | جريدة المنتخب").
+    final lower = title.toLowerCase();
+    final publisherSuffixes = <String>[
+      'اليوم 24', 'اليوم24', 'اليوم', 'جريدة المنتخب', 'المنتخب', 'جريدة',
+      'صحيفة', 'هسبريس', 'هبة بريس', 'لي360', 'le360', 'كووورة', 'kora',
+      'الجزيرة', 'alarabiya', 'العربية', 'سكاي نيوز',
+      'reuters', 'bbc', 'cnn', 'al jazeera', 'ap news', 'associated press',
+    ];
+    String bare = lower;
+    for (final suffix in publisherSuffixes) {
+      final regex = RegExp(
+        r'\s*[-|:—–]?\s*' + RegExp.escape(suffix.toLowerCase()) + r'\s*\$',
+        caseSensitive: false,
+      );
+      final stripped = bare.replaceAll(regex, '').trim();
+      if (stripped.isNotEmpty && stripped != bare) {
+        bare = stripped;
+        break;
+      }
+    }
+
+    // If the bare title is very short (1-4 words) and all words are section vocabulary.
+    final bareWords = bare.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (bareWords.length >= 1 && bareWords.length <= 4) {
+      final sectionVocab = <String>{
+        'الأخبار', 'أخبار', 'تقنية', 'تكنولوجيا', 'اقتصاد', 'اقتصادية',
+        'أعمال', 'سياسة', 'رياضة', 'فن', 'ثقافة', 'منوعات', 'عالم', 'دولي',
+        'محليات', 'محلي', 'صحة', 'علوم', 'سفر', 'سياحة', 'ألعاب', 'تعليم',
+        'حوادث', 'ميديا', 'فيديو', 'صور', 'عاجل', 'حصري', 'رأي', 'مقالات',
+        'تحقيقات', 'البطولات', 'بطولات', 'الدوري', 'كأس', 'أسود',
+        'news', 'sports', 'business', 'tech', 'technology', 'world', 'health',
+        'science', 'culture', 'entertainment', 'opinion', 'analysis', 'review',
+        'lifestyle', 'travel', 'fashion', 'food', 'finance', 'economy',
+        'league', 'tournament', 'cup', 'match', 'standings',
+      };
+      final allSection = bareWords.every((w) {
+        final wl = w.toLowerCase().replaceAll(RegExp(r'[^\w\u0600-\u06FF]'), '');
+        return wl.isNotEmpty && sectionVocab.contains(wl);
+      });
+      if (allSection) return false;
+    }
+
+    // Content must have narrative sentence structure, not just labels.
+    if (content.length < 80 && summary.length < 60) return false;
+    final hasSentenceEnding = content.contains('.') ||
+        content.contains('؟') ||
+        content.contains('!') ||
+        content.contains('।');
+    if (content.length < 300 && !hasSentenceEnding) return false;
+
+    return true;
+  }
+
   NewsModel _normalizeTextFields(NewsModel article) {
     return article.copyWith(
       title: article.title.trim().replaceAll(RegExp(r'\s+'), ' '),
@@ -597,7 +651,8 @@ class NewsCrawlerService {
 
   Future<String> _buildLocalDatabaseJson() async {
     try {
-      final List<NewsSource> sources = await _loadLocalSources();
+      final List<NewsSource> sources = await NewsDatabase.instance
+          .getAllSources(syncApi: false);
       return jsonEncode(
         sources
             .map(
@@ -611,65 +666,6 @@ class NewsCrawlerService {
       );
     } catch (_) {
       return '[]';
-    }
-  }
-
-  Future<List<NewsSource>> _loadLocalSources({
-    String? countryCode,
-    String? language,
-  }) async {
-    try {
-      final String jsonStr = await rootBundle.loadString(
-        'assets/news_sources_ar.json',
-      );
-
-      final Map<String, dynamic> data = jsonDecode(jsonStr);
-      final List<dynamic> countries = data['countries'] ?? <dynamic>[];
-      final List<NewsSource> sources = <NewsSource>[];
-
-      for (final country in countries) {
-        final String countryName = '${country['country'] ?? ''}';
-        final String countryCodeValue = '${country['country_code'] ?? ''}';
-        final List<dynamic> countrySources = country['sources'] ?? <dynamic>[];
-
-        if (countryCode != null && countryCodeValue != countryCode) continue;
-
-        for (final src in countrySources) {
-          final srcLang = src['language'];
-          final String sourceLanguage = srcLang is List
-              ? srcLang.join(',')
-              : '${srcLang ?? 'ar'}';
-
-          if (language != null &&
-              language.isNotEmpty &&
-              !sourceLanguage.contains(language)) {
-            continue;
-          }
-
-          sources.add(
-            NewsSource.fromMap(<String, dynamic>{
-              'id': '${src['name'] ?? src['url']}',
-              'country': countryName,
-              'country_code': countryCodeValue,
-              'name': '${src['name'] ?? ''}',
-              'url': '${src['url'] ?? ''}',
-              'category': '${src['category'] ?? 'general_news'}',
-              'type': '${src['type'] ?? 'digital_news'}',
-              'language': sourceLanguage,
-              'rank': src['rank'] is int
-                  ? (src['rank'] as int)
-                  : int.tryParse('${src['rank'] ?? 0}') ?? 0,
-            }),
-          );
-        }
-      }
-
-      return sources;
-    } catch (e) {
-      if (kDebugMode) {
-        _log('[CRAWLER] Failed to load local sources: $e');
-      }
-      return <NewsSource>[];
     }
   }
 

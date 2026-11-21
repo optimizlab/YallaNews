@@ -8,7 +8,6 @@ import '../../models/prayer_times.dart';
 import '../../services/prayer/countdown_engine.dart';
 import '../../services/prayer/notification_scheduler.dart';
 import '../../services/prayer/repository.dart';
-import '../../services/prayer/adhan_audio_service.dart';
 
 class PrayerTimesPage extends StatefulWidget {
   const PrayerTimesPage({super.key});
@@ -34,12 +33,12 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     _notificationScheduler = PrayerNotificationScheduler();
     _countdownEngine = CountdownEngine();
     _loadPrayerTimes();
+    _initializeFirstInstallCache();
     _initializeNotifications();
   }
 
   Future<void> _initializeNotifications() async {
     await _notificationScheduler.initialize();
-    await AdhanAudioService.instance.init();
   }
 
   Future<void> _loadPrayerTimes() async {
@@ -50,7 +49,6 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     });
 
     try {
-      // Apply saved provider/method so settings actually affect the fetch.
       final prefs = await SharedPreferences.getInstance();
       final provider = prefs.getString('prayer_provider') ?? 'waqtazan';
       final method = prefs.getString('prayer_method');
@@ -79,6 +77,11 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     }
   }
 
+  Future<void> _onRefresh() async {
+    if (_times == null) return;
+    await _loadPrayerTimes();
+  }
+
   Future<void> _scheduleNotifications(PrayerTimes times) async {
     final prefs = await SharedPreferences.getInstance();
     final enabled = prefs.getBool('prayer_notifications_enabled') ?? false;
@@ -90,6 +93,7 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     final systemEnabled = await _notificationScheduler.areNotificationsEnabled();
     if (!systemEnabled) return;
 
+    final muezzin = prefs.getString('adhan_muezzin') ?? 'makkah';
     final adhanMaster = prefs.getBool('prayer_adhan_sound') ?? false;
     final configs = <Prayer, PrayerReminderConfig>{};
     for (final p in kObligatoryPrayers) {
@@ -105,12 +109,75 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
       );
     }
     _notificationScheduler.setTimeZone(times.timeZone);
-    await _notificationScheduler.schedulePrayers(times, configs: configs);
+    await _notificationScheduler.schedulePrayers(times, configs: configs, muezzin: muezzin);
   }
 
-  Future<void> _onRefresh() async {
-    if (_times == null) return;
-    await _loadPrayerTimes();
+  Future<void> _initializeFirstInstallCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isFirstInstall = prefs.getBool('prayer_first_install') ?? true;
+    final cachedYear = prefs.getInt('prayer_cached_year');
+    final currentYear = DateTime.now().year;
+
+    final city = _repository.selectedCity;
+    if (city == null) return;
+
+    final provider = prefs.getString('prayer_provider') ?? 'waqtazan';
+    final method = prefs.getString('prayer_method');
+    _repository.selectProvider(provider);
+    _repository.selectMethod(method);
+
+    final needsCache = isFirstInstall || cachedYear != currentYear;
+    if (!needsCache) return;
+
+    try {
+      final result = await _repository.getYear(
+        city: city,
+        year: currentYear,
+      );
+
+      if (!mounted) return;
+
+      if (result.succeeded) {
+        final yearTimes = await _repository.getAllYearTimes(
+          countrySlug: city.countrySlug,
+          citySlug: city.slug,
+          year: currentYear,
+          provider: provider,
+          method: method ?? '',
+        );
+
+        if (yearTimes.isNotEmpty) {
+          await prefs.setBool('prayer_first_install', false);
+          await prefs.setInt('prayer_cached_year', currentYear);
+          if (!mounted) return;
+          setState(() {});
+
+          // Schedule native alarms and notifications for the cached year.
+          final prefs2 = await SharedPreferences.getInstance();
+          final muezzin = prefs2.getString('adhan_muezzin') ?? 'makkah';
+          final adhanMaster = prefs2.getBool('prayer_adhan_sound') ?? false;
+          final yearConfigs = <Prayer, PrayerReminderConfig>{};
+          for (final p in kObligatoryPrayers) {
+            final prayerEnabled = prefs2.getBool('prayer_${p.index}_enabled') ?? true;
+            final offset = prefs2.getInt('prayer_${p.index}_offset') ?? 0;
+            final prayerAdhan =
+                adhanMaster && (prefs2.getBool('prayer_${p.index}_adhan_sound') ?? false);
+            yearConfigs[p] = PrayerReminderConfig(
+              enabled: prayerEnabled,
+              offsetMinutes: offset,
+              sound: true,
+              adhanSound: prayerAdhan,
+            );
+          }
+          _notificationScheduler.setTimeZone(yearTimes.first.timeZone);
+          await _notificationScheduler.scheduleYear(
+            yearTimes,
+            configs: yearConfigs,
+            muezzin: muezzin,
+          );
+        }
+      }
+    } catch (_) {}
   }
 
   bool _isArabicOrPersian(AppLocalizations l10n) {
@@ -166,10 +233,15 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     return Scaffold(
       body: _buildTodayTab(l10n),
       floatingActionButton: _times != null
-          ? FloatingActionButton.extended(
-              onPressed: _onRefresh,
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text(l10n.translate('refresh')),
+          ? Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.extended(
+                  onPressed: _onRefresh,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(l10n.translate('refresh')),
+                ),
+              ],
             )
           : null,
     );
@@ -185,7 +257,6 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     }
 
     final next = _countdownEngine.nextPrayer;
-    final isRtl = _isArabicOrPersian(l10n);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),

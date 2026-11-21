@@ -27,7 +27,8 @@ class AppSettings extends ChangeNotifier {
   static const int defaultFreshnessCurrentEventsDays = 30;
   static const int defaultFreshnessGeneralMonths = 3;
 
-  static const ThemeMode defaultThemeMode = ThemeMode.system;  static const Locale defaultLocale = Locale('en');
+  static const ThemeMode defaultThemeMode = ThemeMode.system;
+  static const Locale defaultLocale = Locale('ar');
 
   static const int defaultTopSourcesCount = 5;
   static const int defaultMaxUrlsPerSource = 30;

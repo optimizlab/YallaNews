@@ -1,20 +1,36 @@
 <?php
-session_set_cookie_params([
-    'lifetime' => 86400,
-    'path' => '/',
-    'domain' => '',
-    'secure' => isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on',
-    'httponly' => true,
-    'samesite' => 'Lax'
-]);
-session_start();
+declare(strict_types=1);
 
-header('Content-Type: application/json');
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+error_reporting(E_ALL);
+
+// Robust session handling: never crash if session already started or cookies sent
+if (session_status() === PHP_SESSION_NONE) {
+    $secure = !empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) === 'on';
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    $cookieDomain = '';
+    // Only set domain for non-localhost to avoid "session.cookie_domain invalid" on local dev
+    if ($host !== 'localhost' && $host !== '127.0.0.1' && strpos($host, '192.168.') !== 0) {
+        $cookieDomain = $host;
+    }
+    session_set_cookie_params([
+        'lifetime' => 86400,
+        'path' => '/',
+        'domain' => $cookieDomain,
+        'secure' => $secure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    @session_start();
+}
+
+header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('X-XSS-Protection: 1; mode=block');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: ' . ($_SERVER['REQUEST_METHOD'] === 'OPTIONS' ? 'OPTIONS' : 'GET, POST, PUT, DELETE, OPTIONS'));
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Access-Control-Max-Age: 86400');
 
@@ -25,20 +41,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 function json_response($data, $status = 200) {
     http_response_code($status);
-    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_NUMERIC_CHECK);
     exit;
 }
 
 function get_json_input() {
     $raw = file_get_contents('php://input');
-    if (empty($raw)) {
-        json_response(['error' => 'Empty request body'], 400);
+    if ($raw === false || empty(trim($raw))) {
+        // Fallback to $_POST for servers that don't expose php://input with JSON content-type
+        if (!empty($_POST)) {
+            return $_POST;
+        }
+        json_response(['success' => false, 'error' => 'Empty request body'], 400);
     }
     $data = json_decode($raw, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
-        json_response(['error' => 'Invalid JSON'], 400);
+        json_response(['success' => false, 'error' => 'Invalid JSON: ' . json_last_error_msg()], 400);
     }
-    return $data;
+    return is_array($data) ? $data : [];
 }
 
 function require_post() {
@@ -65,16 +85,19 @@ function require_delete() {
     }
 }
 
-function validate_required($data) {
+function validate_required(array $data) {
     foreach ($data as $field => $value) {
-        if (empty($value)) {
+        if ($value === null || $value === '') {
             json_response(['error' => "Missing required field: $field"], 400);
         }
     }
 }
 
 function sanitize_string($value, $maxLength = 255) {
-    return is_string($value) ? substr(trim($value), 0, $maxLength) : null;
+    if (!is_string($value)) {
+        $value = (string) $value;
+    }
+    return substr(trim($value), 0, $maxLength);
 }
 
 function get_client_ip() {
@@ -84,19 +107,20 @@ function get_client_ip() {
 function check_rate_limit($key, $maxRequests = 60, $windowSeconds = 60) {
     $cacheFile = sys_get_temp_dir() . '/rate_limit_' . md5($key) . '.json';
     $now = time();
-    
+
     $hits = [];
     if (file_exists($cacheFile)) {
-        $hits = json_decode(file_get_contents($cacheFile), true) ?: [];
-        $hits = array_filter($hits, fn($t) => $t > $now - $windowSeconds);
+        $content = @file_get_contents($cacheFile);
+        $hits = json_decode($content, true) ?: [];
+        $hits = array_filter($hits, fn($t) => is_numeric($t) && $t > $now - $windowSeconds);
     }
-    
+
     if (count($hits) >= $maxRequests) {
         json_response(['error' => 'Rate limit exceeded'], 429);
     }
-    
+
     $hits[] = $now;
-    file_put_contents($cacheFile, json_encode($hits));
+    @file_put_contents($cacheFile, json_encode($hits));
 }
 
 function generate_secure_id($prefix = '') {
@@ -104,7 +128,6 @@ function generate_secure_id($prefix = '') {
 }
 
 function get_extracted_auth_token() {
-    // 1. Check HTTP headers
     $candidates = [
         $_SERVER['HTTP_AUTHORIZATION'] ?? null,
         $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null,
@@ -114,11 +137,15 @@ function get_extracted_auth_token() {
     ];
 
     if (function_exists('apache_request_headers')) {
-        $headers = apache_request_headers();
-        foreach (['Authorization', 'authorization', 'X-Auth-Token', 'x-auth-token', 'X-User-Token', 'x-user-token'] as $h) {
-            if (!empty($headers[$h])) {
-                $candidates[] = $headers[$h];
+        try {
+            $headers = apache_request_headers();
+            foreach (['Authorization', 'authorization', 'X-Auth-Token', 'x-auth-token', 'X-User-Token', 'x-user-token'] as $h) {
+                if (!empty($headers[$h] ?? null)) {
+                    $candidates[] = $headers[$h];
+                }
             }
+        } catch (Exception $e) {
+            // ignore
         }
     }
 
@@ -134,14 +161,19 @@ function get_extracted_auth_token() {
         }
     }
 
-    // 2. Check JSON input or POST body
-    $data = get_json_input();
-    if (!empty($data['auth_token'])) return trim($data['auth_token']);
-    if (!empty($data['token'])) return trim($data['token']);
+    // Check JSON input or POST body
+    $raw = @file_get_contents('php://input');
+    if ($raw !== false && !empty(trim($raw))) {
+        $data = json_decode($raw, true);
+        if (is_array($data)) {
+            if (!empty($data['auth_token'])) return trim($data['auth_token']);
+            if (!empty($data['token'])) return trim($data['token']);
+        }
+    }
     if (!empty($_POST['auth_token'])) return trim($_POST['auth_token']);
     if (!empty($_POST['token'])) return trim($_POST['token']);
 
-    // 3. Check query parameters
+    // Check query parameters
     if (!empty($_GET['auth_token'])) return trim($_GET['auth_token']);
     if (!empty($_GET['token'])) return trim($_GET['token']);
 
@@ -149,7 +181,9 @@ function get_extracted_auth_token() {
 }
 
 function get_authenticated_user_id() {
-    if (!empty($_SESSION['user_id'])) return $_SESSION['user_id'];
+    if (!empty($_SESSION['user_id'])) {
+        return $_SESSION['user_id'];
+    }
 
     $token = get_extracted_auth_token();
     if (!empty($token)) {
@@ -163,7 +197,7 @@ function get_authenticated_user_id() {
             $u = $stmt->fetch();
             if ($u) {
                 $_SESSION['user_id'] = $u['id'];
-                $_SESSION['role']    = $u['role'];
+                $_SESSION['role'] = $u['role'];
                 return $u['id'];
             }
         } catch (Exception $e) {
@@ -183,7 +217,7 @@ function require_auth() {
 
 function require_admin() {
     $userId = require_auth();
-    if (($_SESSION['role'] ?? 'user') !== 'admin') {
+    if ((($_SESSION['role'] ?? 'user') !== 'admin')) {
         json_response(['error' => 'Forbidden'], 403);
     }
     return $userId;

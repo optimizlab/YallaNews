@@ -1,4 +1,6 @@
 <?php
+declare(strict_types=1);
+
 require_once __DIR__ . '/../helpers.php';
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/category_helpers.php';
@@ -56,7 +58,17 @@ foreach ($providedColumns as $column => $value) {
 
 try {
     $db = Database::getInstance();
-    $categoryColumns = category_table_columns($db);
+    $categoryColumns = [];
+    try {
+        $categoryColumns = category_table_columns($db);
+    } catch (Exception $e) {
+        error_log('category_table_columns failed: ' . $e->getMessage());
+    }
+
+    if (empty($categoryColumns)) {
+        throw new RuntimeException('Category table is not accessible');
+    }
+
     if (!isset($categoryColumns['name_translation'])
         && (!isset($categoryColumns['name_en']) || !isset($categoryColumns['name_fr']) || !isset($categoryColumns['name_tr']))) {
         throw new RuntimeException('Category table has no complete translation columns');
@@ -144,5 +156,5 @@ try {
     ]);
 } catch (Exception $e) {
     error_log('Update category error: ' . $e->getMessage());
-    json_response(['error' => 'Failed to update category'], 500);
+    json_response(['error' => 'Failed to update category', 'details' => $e->getMessage()], 500);
 }

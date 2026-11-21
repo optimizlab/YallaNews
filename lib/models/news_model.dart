@@ -220,9 +220,6 @@ class NewsModel {
   static DateTime? _parsePublishDate(String raw) {
     if (raw.isEmpty) return null;
     var value = raw.trim();
-    if (value.contains('T') && !RegExp(r'^\d+$').hasMatch(value)) {
-      value = value.split('T')[0];
-    }
     DateTime? dateTime;
     if (RegExp(r'^\d{10,}$').hasMatch(value)) {
       final epoch = int.tryParse(value);
@@ -231,7 +228,7 @@ class NewsModel {
           ? DateTime.fromMillisecondsSinceEpoch(epoch)
           : DateTime.fromMillisecondsSinceEpoch(epoch * 1000);
     } else {
-      dateTime = DateTime.tryParse(value);
+      dateTime = DateTime.tryParse(value)?.toUtc();
     }
     return dateTime;
   }

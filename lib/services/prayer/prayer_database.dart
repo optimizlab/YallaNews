@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -115,6 +116,221 @@ class PrayerDatabase {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  /// Batch-cache an entire year of prayer times.
+  ///
+  /// Throws if the database batch commit fails.
+  Future<void> cacheYear(List<PrayerTimes> timesList) async {
+    if (timesList.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final times in timesList) {
+      final key = times.cacheKey();
+      batch.insert(
+        'prayer_times_cache',
+        {
+          'cache_key': key,
+          'country_iso': times.countryIso,
+          'country_slug': times.countrySlug,
+          'country_name': times.countryName,
+          'city_name': times.cityName,
+          'city_slug': times.citySlug,
+          'latitude': times.latitude,
+          'longitude': times.longitude,
+          'time_zone': times.timeZone,
+          'local_date': times.localDate.toIso8601String(),
+          'hijri_date': times.hijriDate,
+          'is_ramadan': times.isRamadan ? 1 : 0,
+          'times_json': jsonEncode(
+            times.times.map(
+              (key, value) => MapEntry(
+                key.index.toString(),
+                {
+                  'utcTime': value.utcTime.toIso8601String(),
+                  'localTime': value.localTime.toIso8601String(),
+                  'formatted': value.formatted,
+                },
+              ),
+            ),
+          ),
+          'provider': times.provider,
+          'method': times.method,
+          'last_synced': times.lastSynced.millisecondsSinceEpoch,
+          'from_cache': times.fromCache ? 1 : 0,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    try {
+      await batch.commit(noResult: true);
+    } catch (e) {
+      debugPrint('[PrayerDatabase] cacheYear commit error: $e');
+      rethrow;
+    }
+  }
+
+  /// Batch-cache an entire month of prayer times.
+  ///
+  /// Throws if the database batch commit fails.
+  Future<void> cacheMonth(List<PrayerTimes> timesList) async {
+    if (timesList.isEmpty) return;
+    final db = await database;
+    final batch = db.batch();
+    for (final times in timesList) {
+      final key = times.cacheKey();
+      batch.insert(
+        'prayer_times_cache',
+        {
+          'cache_key': key,
+          'country_iso': times.countryIso,
+          'country_slug': times.countrySlug,
+          'country_name': times.countryName,
+          'city_name': times.cityName,
+          'city_slug': times.citySlug,
+          'latitude': times.latitude,
+          'longitude': times.longitude,
+          'time_zone': times.timeZone,
+          'local_date': times.localDate.toIso8601String(),
+          'hijri_date': times.hijriDate,
+          'is_ramadan': times.isRamadan ? 1 : 0,
+          'times_json': jsonEncode(
+            times.times.map(
+              (key, value) => MapEntry(
+                key.index.toString(),
+                {
+                  'utcTime': value.utcTime.toIso8601String(),
+                  'localTime': value.localTime.toIso8601String(),
+                  'formatted': value.formatted,
+                },
+              ),
+            ),
+          ),
+          'provider': times.provider,
+          'method': times.method,
+          'last_synced': times.lastSynced.millisecondsSinceEpoch,
+          'from_cache': times.fromCache ? 1 : 0,
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    try {
+      await batch.commit(noResult: true);
+    } catch (e) {
+      debugPrint('[PrayerDatabase] cacheMonth commit error: $e');
+      rethrow;
+    }
+  }
+
+  /// Returns all cached prayer times for a given year (all days).
+  Future<List<PrayerTimes>> getCachedYear({
+    required String countrySlug,
+    required String citySlug,
+    required int year,
+    required String provider,
+    required String method,
+  }) async {
+    final db = await database;
+    final startDate = DateTime(year, 1, 1);
+    final endDate = DateTime(year, 12, 31);
+    final maps = await db.query(
+      'prayer_times_cache',
+      where:
+          'country_slug = ? AND city_slug = ? AND provider = ? AND method = ? AND local_date >= ? AND local_date <= ?',
+      whereArgs: [
+        countrySlug,
+        citySlug,
+        provider,
+        method,
+        startDate.toIso8601String().split('T').first,
+        endDate.toIso8601String().split('T').first,
+      ],
+      orderBy: 'local_date ASC',
+    );
+    return maps.map((m) => _mapToPrayerTimes(m, fromCache: true)).toList();
+  }
+
+  /// Returns all cached prayer times for a given month (year-month).
+  Future<List<PrayerTimes>> getCachedMonth({
+    required String countrySlug,
+    required String citySlug,
+    required int year,
+    required int month,
+    required String provider,
+    required String method,
+  }) async {
+    final db = await database;
+    final startDate = DateTime(year, month, 1);
+    final daysInMonth = DateTime(year, month + 1, 0).day;
+    final endDate = DateTime(year, month, daysInMonth);
+    final maps = await db.query(
+      'prayer_times_cache',
+      where:
+          'country_slug = ? AND city_slug = ? AND provider = ? AND method = ? AND local_date >= ? AND local_date <= ?',
+      whereArgs: [
+        countrySlug,
+        citySlug,
+        provider,
+        method,
+        startDate.toIso8601String().split('T').first,
+        endDate.toIso8601String().split('T').first,
+      ],
+      orderBy: 'local_date ASC',
+    );
+    return maps.map((m) => _mapToPrayerTimes(m, fromCache: true)).toList();
+  }
+
+  /// Checks whether any cached data exists for the given year.
+  Future<bool> hasYearData({
+    required String countrySlug,
+    required String citySlug,
+    required int year,
+    required String provider,
+    required String method,
+  }) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      '''SELECT COUNT(*) as cnt FROM prayer_times_cache
+         WHERE country_slug = ? AND city_slug = ? AND provider = ? AND method = ?
+         AND local_date >= ? AND local_date <= ?''',
+      [
+        countrySlug,
+        citySlug,
+        provider,
+        method,
+        '$year-01-01',
+        '$year-12-31',
+      ],
+    );
+    final count = Sqflite.firstIntValue(result) ?? 0;
+    return count > 0;
+  }
+
+  /// Checks whether any cached data exists for the given month.
+  Future<bool> hasMonthData({
+    required String countrySlug,
+    required String citySlug,
+    required int year,
+    required int month,
+    required String provider,
+    required String method,
+  }) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      '''SELECT COUNT(*) as cnt FROM prayer_times_cache
+         WHERE country_slug = ? AND city_slug = ? AND provider = ? AND method = ?
+         AND local_date >= ? AND local_date <= ?''',
+      [
+        countrySlug,
+        citySlug,
+        provider,
+        method,
+        '$year-${month.toString().padLeft(2, '0')}-01',
+        '$year-${month.toString().padLeft(2, '0')}-${DateTime(year, month + 1, 0).day.toString().padLeft(2, '0')}',
+      ],
+    );
+    final count = Sqflite.firstIntValue(result) ?? 0;
+    return count > 0;
   }
 
   Future<PrayerTimes?> getCachedTimes(String cacheKey) async {
