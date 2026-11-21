@@ -10,7 +10,7 @@ import android.widget.RatingBar
 import android.widget.TextView
 import com.google.android.gms.ads.nativead.NativeAd
 import com.google.android.gms.ads.nativead.NativeAdView
-import io.flutter.plugins.googlemobileads.NativeAdFactory
+import io.flutter.plugins.googlemobileads.GoogleMobileAdsPlugin
 
 /**
  * Factory that renders [NativeAd]s inside Flutter PlatformViews.
@@ -18,7 +18,7 @@ import io.flutter.plugins.googlemobileads.NativeAdFactory
  * The layout used is `res/layout/native_ad_layout.xml`. Flutter requests ads
  * with the factory id "yallanewsNativeAd", which is registered in MainActivity.
  */
-class YallaNewsNativeAdFactory(private val context: Context) : NativeAdFactory {
+class YallaNewsNativeAdFactory(private val context: Context) : GoogleMobileAdsPlugin.NativeAdFactory {
 
     override fun createNativeAd(
         nativeAd: NativeAd,

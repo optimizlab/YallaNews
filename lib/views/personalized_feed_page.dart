@@ -11,6 +11,7 @@ import '../services/category_service.dart';
 import '../services/server_api_service.dart';
 import '../services/background_crawler_service.dart';
 import '../services/app_settings.dart';
+import '../services/auth_service.dart';
 import '../widgets/cached_news_image.dart';
 import '../views/news_detail_page.dart';
 import '../widgets/ask_this_news_widget.dart';
@@ -47,6 +48,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
   @override
   void initState() {
     super.initState();
+    AuthService.instance.addListener(_onAuthChanged);
     _tabController = TabController(length: 2, vsync: this);
     _loadUserInterests();
     _loadFeed();
@@ -58,12 +60,20 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
 
   @override
   void dispose() {
+    AuthService.instance.removeListener(_onAuthChanged);
     _crawlerSubscription?.cancel();
     _tabController.dispose();
     _refreshTimer?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) {
+      setState(() {});
+      _loadFeed();
+    }
   }
 
   void _listenToCrawler() {

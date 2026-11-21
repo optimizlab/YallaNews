@@ -6,6 +6,7 @@ import '../models/news_model.dart';
 import '../database/news_db.dart';
 import '../services/category_service.dart';
 import '../services/app_settings.dart';
+import '../services/auth_service.dart';
 import 'news_detail_page.dart';
 import '../widgets/cached_news_image.dart';
 
@@ -23,7 +24,21 @@ class _BookmarksPageState extends State<BookmarksPage> {
   @override
   void initState() {
     super.initState();
+    AuthService.instance.addListener(_onAuthChanged);
     _loadBookmarks();
+  }
+
+  @override
+  void dispose() {
+    AuthService.instance.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) {
+      setState(() {});
+      _loadBookmarks();
+    }
   }
 
   Future<void> _loadBookmarks() async {

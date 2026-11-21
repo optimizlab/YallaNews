@@ -322,9 +322,9 @@ NEWSBRAIN_EXPORT int newsbrain_is_real_news(const char* title, const char* conte
 
     // Must contain narrative punctuation (sentence endings) — real articles do.
     bool hasSentenceEnding = (c.find('.') != std::string::npos) ||
-                             (c.find('؟') != std::string::npos) ||
+                             (c.find("؟") != std::string::npos) ||
                              (c.find('!') != std::string::npos) ||
-                             (c.find('।') != std::string::npos);
+                             (c.find("।") != std::string::npos);
     if (!hasSentenceEnding && contentLen < 300) return 0;
 
     // ── 6. URL-level hints: reject homepage / category / tag URLs ──

@@ -9,6 +9,7 @@ import '../l10n/app_localizations.dart';
 import '../models/news_model.dart';
 import '../services/ai_service.dart';
 import '../services/app_settings.dart';
+import '../services/tiny_llm_service.dart';
 import '../widgets/cached_news_image.dart';
 
 class AskThisNewsWidget extends StatefulWidget {
@@ -152,13 +153,42 @@ class _AskThisNewsWidgetState extends State<AskThisNewsWidget>
   }
 
   /// Grounded generation using the embedded AI (yalla_core inference engine).
-  /// Answers strictly from the article, in the user's language, with conversation
-  /// history so it behaves as a real multi-turn chatbot.
+  /// Grounded generation using the embedded TinyLLM (yalla_core inference
+  /// engine). The article is first analysed by TinyLLM (category, sentiment,
+  /// entities, main events) so answers are real, news-relative responses and
+  /// not generic fallback text.
   Future<String> _generateAiAnswer(String question) async {
     final content = widget.article.content.trim();
     final trimmedContent = content.length > 2500
         ? '${content.substring(0, 2500)}...'
         : content;
+
+    // ── Real TinyLLM analysis of the news article ──────────────────────────
+    NewsLLMResult? analysis;
+    try {
+      analysis = await TinyLLMService.instance.analyzeArticle(
+        title: widget.article.title,
+        content: content,
+        summary: widget.article.summary,
+      );
+    } catch (_) {
+      analysis = null;
+    }
+
+    String analysisContext = '';
+    if (analysis != null && !analysis.hasError) {
+      final mainEvents = analysis.mainEvents.isNotEmpty
+          ? analysis.mainEvents.take(4).join(', ')
+          : (analysis.summary.isNotEmpty ? analysis.summary : 'Aucun événement détecté.');
+      analysisContext = '''
+ANALYSE TINYLLM DE L'ACTUALITÉ:
+- Catégorie: ${analysis.category}
+- Sentiment: ${analysis.sentiment.toStringAsFixed(2)} (−1 nuageux à +1 positif)
+- Événements principaux: $mainEvents
+- Résumé extrait: ${analysis.summary.isNotEmpty ? analysis.summary : 'Non disponible'}
+
+''';
+    }
 
     final recent = _messages.length <= 8
         ? _messages
@@ -173,14 +203,18 @@ class _AskThisNewsWidgetState extends State<AskThisNewsWidget>
     }
     final historyBlock = history.isNotEmpty ? history.join('\n') + '\n' : '';
 
-    final prompt = '''You are a helpful news assistant answering questions strictly about the article below.
+    final appLang = AppSettings.instance.locale?.languageCode ?? 'en';
+    final langLabel = {'ar': 'arabe', 'fr': 'français', 'en': 'anglais'}[appLang] ?? appLang;
+
+    final prompt = '''You are a helpful news assistant. You answer questions strictly about the article below, using the TinyLLM article analysis as context.
 Rules:
-- Base every answer ONLY on the article title, summary, and content provided.
+- Base every answer ONLY on the article title, summary, content and the TinyLLM analysis provided.
 - If the answer is not in the article, say so clearly instead of inventing facts.
 - Be concise, accurate, and helpful.
-- Reply in the app language: ${AppSettings.instance.locale?.languageCode ?? 'en'}.
+- Reply in the app language ($langLabel).
 - Do not include meta-commentary, just the answer.
 
+$analysisContext
 ARTICLE
 Title: ${widget.article.title}
 Source: ${widget.article.displaySourceName}
@@ -194,7 +228,7 @@ Assistant:''';
 
     final result = await AIService.instance.generate(
       prompt: prompt,
-      maxTokens: 400,
+      maxTokens: 500,
       temperature: 0.3,
       topP: 0.9,
     );
@@ -769,7 +803,7 @@ Assistant:''';
     }
 
     return Row(
-      mainAxisSize: MainAxisSize.max,
+      mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -777,7 +811,7 @@ Assistant:''';
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisSize: MainAxisSize.max,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 CircleAvatar(
                   radius: 16,
@@ -789,30 +823,30 @@ Assistant:''';
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(
+                Flexible(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       maxWidth: MediaQuery.of(context).size.width * 0.72,
                     ),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          msg.text,
-                          softWrap: true,
-                          style: GoogleFonts.outfit(
-                            fontSize: 13,
-                            height: 1.5,
-                            color: theme.colorScheme.onPrimaryContainer,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            msg.text,
+                            softWrap: true,
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              height: 1.5,
+                              color: theme.colorScheme.onSurface,
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),
