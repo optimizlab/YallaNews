@@ -75,19 +75,48 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
       final times = await _repository.todayFromDb(city);
       if (!mounted) return;
 
+      if (times == null || times.times.isEmpty) {
+        // DB empty (first install, sync failed, city just changed): fall back
+        // to a live fetch so the user still sees prayer times instead of an
+        // empty screen. This is a one-off request for today only.
+        final result = await _repository.forCity(city, forceRefresh: true);
+        if (!mounted) return;
+        if (result.succeeded && result.times.times.isNotEmpty) {
+          setState(() {
+            _times = result.times;
+            _isLoading = false;
+            _synced = dbInitialized;
+          });
+          _countdownEngine.updateTimes(result.times);
+          _countdownEngine.start(onTick: () {
+            if (mounted) setState(() {});
+          });
+          await _scheduleAlarms(result.times);
+        } else {
+          if (!mounted) return;
+          final l10n = AppLocalizations.of(context);
+          setState(() {
+            _times = null;
+            _error = result.error?.toString() ??
+                l10n.translate('prayerTimesLoadFailedRetry');
+            _isLoading = false;
+            _synced = dbInitialized;
+          });
+        }
+        return;
+      }
+
       setState(() {
         _times = times;
         _isLoading = false;
         _synced = dbInitialized;
       });
 
-      if (times != null) {
-        _countdownEngine.updateTimes(times);
-        _countdownEngine.start(onTick: () {
-          if (mounted) setState(() {});
-        });
-        await _scheduleAlarms(times);
-      }
+      _countdownEngine.updateTimes(times);
+      _countdownEngine.start(onTick: () {
+        if (mounted) setState(() {});
+      });
+      await _scheduleAlarms(times);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -130,6 +159,17 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
   String _formatTime(DateTime? time) {
     if (time == null) return '--:--';
     return DateFormat.Hm().format(time);
+  }
+
+  /// Returns the translated Hijri month name when the provider reported a
+  /// month number, otherwise falls back to the raw provider hijri string.
+  String _hijriLabel(PrayerTimes times, AppLocalizations l10n) {
+    final month = times.hijriDateMonth;
+    if (month != null && month >= 1 && month <= 12) {
+      final translated = l10n.translate('hijriMonth$month');
+      if (translated != 'hijriMonth$month') return translated;
+    }
+    return times.hijriDate;
   }
 
   String _prayerName(AppLocalizations l10n, Prayer prayer) {
@@ -232,7 +272,7 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _times!.hijriDate,
+                      _hijriLabel(_times!, l10n),
                       style: GoogleFonts.outfit(
                         fontSize: 14,
                         color: Theme.of(context).colorScheme.onSurfaceVariant,

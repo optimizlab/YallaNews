@@ -70,7 +70,7 @@ class _ManageSourcesPageState extends State<ManageSourcesPage> {
   }
 
   Future<void> _loadMoreSources() async {
-    if (_isLoadingMore || !_hasMore) return;
+    if (!mounted || _isLoadingMore || !_hasMore) return;
     setState(() => _isLoadingMore = true);
     try {
       final nextPage = _currentPage + 1;

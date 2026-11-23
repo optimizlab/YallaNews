@@ -85,9 +85,7 @@ class _LoginPageState extends State<LoginPage> {
               left: 16,
               child: IconButton(
                 icon: Icon(
-                  Directionality.of(context) == TextDirection.rtl
-                      ? Icons.arrow_forward_rounded
-                      : Icons.arrow_back_rounded,
+                  Icons.arrow_back_rounded,
                   color: colors.onSurface,
                 ),
                 tooltip: l10n.translate('back') ?? 'Back',

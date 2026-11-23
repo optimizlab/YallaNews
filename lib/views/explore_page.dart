@@ -78,23 +78,39 @@ class _ExplorePageState extends State<ExplorePage> {
             child: TextField(
               decoration: InputDecoration(
                 hintText: l10n.translate('searchHintExplore'),
-                hintStyle: GoogleFonts.outfit(fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                prefixIcon: Icon(Icons.search_rounded, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                hintStyle: GoogleFonts.outfit(
+                  fontSize: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surface,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
+                  borderSide: BorderSide(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
               ),
             ),
           ),
@@ -102,39 +118,66 @@ class _ExplorePageState extends State<ExplorePage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               l10n.translate('mainCategories'),
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
           ),
           if (_isLoading)
-            const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(),
+              ),
+            )
           else if (categories.isEmpty)
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text(l10n.translate('noCategoriesAvailable') ?? 'No categories available'),
+                child: Text(
+                  l10n.translate('noCategoriesAvailable') ??
+                      'No categories available',
+                ),
               ),
             )
           else
             LayoutBuilder(
               builder: (context, constraints) {
                 final isDesktop = constraints.maxWidth >= 900;
-                final isTablet = constraints.maxWidth >= 600 && constraints.maxWidth < 900;
+                final isTablet =
+                    constraints.maxWidth >= 600 && constraints.maxWidth < 900;
                 final crossAxisCount = isDesktop ? 4 : (isTablet ? 3 : 2);
                 return GridView.count(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   physics: const NeverScrollableScrollPhysics(),
                   shrinkWrap: true,
                   crossAxisCount: crossAxisCount,
                   mainAxisSpacing: 16,
                   crossAxisSpacing: 16,
                   children: categories.map((category) {
-                final id = category['id']?.toString() ?? 'general';
-                final count = category['newsCount']?.toString() ?? '0';
-                final icon = _categoryIcon(id);
-                final color = _categoryColor(id);
-                final displayKey = CategoryService.getCategoryDisplayName(category, context);
-                return _buildCategoryCard(context, category, id, displayKey, count, icon, color);
-              }).toList(),
+                    final id = category['id']?.toString() ?? 'general';
+                    final count = category['newsCount']?.toString() ?? '0';
+                    final icon = _categoryIcon(id);
+                    final color = _categoryColor(id);
+                    final displayKey = CategoryService.getCategoryDisplayName(
+                      category,
+                      context,
+                    );
+                    return _buildCategoryCard(
+                      context,
+                      category,
+                      id,
+                      displayKey,
+                      count,
+                      icon,
+                      color,
+                    );
+                  }).toList(),
                 );
               },
             ),
@@ -181,14 +224,24 @@ class _ExplorePageState extends State<ExplorePage> {
     }
   }
 
-  Widget _buildCategoryCard(BuildContext context, Map<String, dynamic> category, String key, String title, String count, IconData icon, Color color) {
+  Widget _buildCategoryCard___(
+    BuildContext context,
+    Map<String, dynamic> category,
+    String key,
+    String title,
+    String count,
+    IconData icon,
+    Color color,
+  ) {
     final l10n = AppLocalizations.of(context);
     return InkWell(
       borderRadius: BorderRadius.circular(20),
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => CategoryNewsPage(category: category)),
+          MaterialPageRoute(
+            builder: (_) => CategoryNewsPage(category: category),
+          ),
         );
       },
       child: Container(
@@ -196,7 +249,11 @@ class _ExplorePageState extends State<ExplorePage> {
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         child: Padding(
@@ -218,19 +275,120 @@ class _ExplorePageState extends State<ExplorePage> {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface),
+                style: GoogleFonts.outfit(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
               ),
               const SizedBox(height: 2),
               Text(
                 l10n.translate('newsCount').replaceAll('{count}', count),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.outfit(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCategoryCard(
+    BuildContext context,
+    Map<String, dynamic> category,
+    String key,
+    String title,
+    String count,
+    IconData icon,
+    Color color,
+  ) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxWidth < 150 || constraints.maxHeight < 125;
+
+        final iconSize = compact ? 42.0 : 52.0;
+        final iconRadius = compact ? 14.0 : 17.0;
+        final horizontalPadding = compact ? 10.0 : 16.0;
+        final verticalPadding = compact ? 9.0 : 12.0;
+        final spacing = compact ? 7.0 : 10.0;
+        final titleFontSize = compact ? 14.0 : 16.0;
+        final countFontSize = compact ? 11.0 : 12.0;
+
+        return Material(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(20),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CategoryNewsPage(category: category),
+                ),
+              );
+            },
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: verticalPadding,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: iconSize,
+                    height: iconSize,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(iconRadius),
+                    ),
+                    child: Icon(icon, size: compact ? 23 : 27, color: color),
+                  ),
+
+                  SizedBox(height: spacing),
+
+                  Text(
+                    title,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.outfit(
+                      fontSize: titleFontSize,
+                      fontWeight: FontWeight.w800,
+                      color: theme.colorScheme.onSurface,
+                      height: 1.15,
+                    ),
+                  ),
+
+                  const SizedBox(height: 3),
+
+                  Text(
+                    l10n.translate('newsCount').replaceAll('{count}', count),
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.outfit(
+                      fontSize: countFontSize,
+                      height: 1.15,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

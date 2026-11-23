@@ -437,6 +437,18 @@ class ServerApiService {
     return result;
   }
 
+  /// Log in as an anonymous/guest user without email/password.
+  static Future<Map<String, dynamic>> loginAnonymously() async {
+    final result = await postJson('auth/anonymous.php', {});
+    if (result['success'] == true) {
+      final token = result['token'] as String?;
+      if (token != null && token.isNotEmpty) await saveToken(token);
+      final user = result['user'];
+      if (user is Map<String, dynamic>) await saveUser(user);
+    }
+    return result;
+  }
+
   static Future<void> logout() async {
     try {
       await postJson('auth/logout.php', {});

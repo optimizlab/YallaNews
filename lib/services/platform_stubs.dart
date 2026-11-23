@@ -187,6 +187,7 @@ class NetworkType {
 
 // ── Geolocator stubs ──
 class Geolocator {
+  static Future<bool> isLocationServiceEnabled() async => false;
   static Future<LocationPermission> checkPermission() async => LocationPermission.always;
   static Future<LocationPermission> requestPermission() async => LocationPermission.always;
   static Future<Position> getCurrentPosition({LocationAccuracy? accuracy}) async => Position(latitude: 0, longitude: 0);

@@ -124,7 +124,7 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
   }
 
   Future<void> _loadMoreArticles() async {
-    if (_isLoadingMore || !_hasMore) return;
+    if (!mounted || _isLoadingMore || !_hasMore) return;
     setState(() => _isLoadingMore = true);
     try {
       final nextPage = _currentPage + 1;
@@ -366,7 +366,7 @@ class _SourceArticlesPageState extends State<SourceArticlesPage> {
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
-        leading: IconButton(
+          leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new, size: 22),
           onPressed: () => Navigator.pop(context),
         ),

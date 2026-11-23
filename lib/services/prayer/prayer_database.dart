@@ -1,12 +1,10 @@
 
 import 'dart:convert';
-import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../models/prayer_times.dart';
 
@@ -15,7 +13,7 @@ class PrayerDatabase {
   static final PrayerDatabase instance = PrayerDatabase._privateConstructor();
 
   static Database? _db;
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
 
   /// Meta keys persisted in [athan_meta] for sync state and initialization.
   static const String _keyDbInitialized = 'athan_db_initialized';
@@ -29,10 +27,9 @@ class PrayerDatabase {
   }
 
   Future<Database> _initDatabase() async {
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      databaseFactory = databaseFactoryFfi;
-    }
-
+    // databaseFactory is set once in main.dart via sqfliteFfiInit()
+    // (desktop only). Do not reassign here to avoid the sqflite
+    // "changing default factory" warning on every database open.
     final docsDir = await getApplicationDocumentsDirectory();
     final dbPath = p.join(docsDir.path, 'prayer_times.db');
 
@@ -52,6 +49,11 @@ class PrayerDatabase {
           await _createMetaTable(db);
           await _insertMetaDefaults(db);
         }
+        if (oldVersion < 4) {
+          await db.execute(
+            'ALTER TABLE prayer_times_cache ADD COLUMN hijri_month INTEGER',
+          );
+        }
       },
       onCreate: (Database db, int version) async {
         await db.execute('''
@@ -67,6 +69,7 @@ class PrayerDatabase {
             time_zone TEXT NOT NULL,
             local_date TEXT NOT NULL,
             hijri_date TEXT NOT NULL,
+            hijri_month INTEGER,
             is_ramadan INTEGER NOT NULL DEFAULT 0,
             times_json TEXT NOT NULL,
             provider TEXT NOT NULL,
@@ -218,6 +221,7 @@ class PrayerDatabase {
         'time_zone': times.timeZone,
         'local_date': times.localDate.toIso8601String(),
         'hijri_date': times.hijriDate,
+        'hijri_month': times.hijriDateMonth,
         'is_ramadan': times.isRamadan ? 1 : 0,
         'times_json': jsonEncode(
           times.times.map(
@@ -261,9 +265,9 @@ class PrayerDatabase {
           'latitude': times.latitude,
           'longitude': times.longitude,
           'time_zone': times.timeZone,
-          'local_date': times.localDate.toIso8601String(),
-          'hijri_date': times.hijriDate,
-          'is_ramadan': times.isRamadan ? 1 : 0,
+        'local_date': times.localDate.toIso8601String().split('T').first,
+        'hijri_date': times.hijriDate,
+        'is_ramadan': times.isRamadan ? 1 : 0,
           'times_json': jsonEncode(
             times.times.map(
               (key, value) => MapEntry(
@@ -313,9 +317,9 @@ class PrayerDatabase {
           'latitude': times.latitude,
           'longitude': times.longitude,
           'time_zone': times.timeZone,
-          'local_date': times.localDate.toIso8601String(),
-          'hijri_date': times.hijriDate,
-          'is_ramadan': times.isRamadan ? 1 : 0,
+        'local_date': times.localDate.toIso8601String().split('T').first,
+        'hijri_date': times.hijriDate,
+        'is_ramadan': times.isRamadan ? 1 : 0,
           'times_json': jsonEncode(
             times.times.map(
               (key, value) => MapEntry(
@@ -683,6 +687,7 @@ class PrayerDatabase {
       timeZone: map['time_zone'] as String? ?? 'UTC',
       localDate: DateTime.parse(map['local_date'] as String),
       hijriDate: map['hijri_date'] as String? ?? '',
+      hijriDateMonth: map['hijri_month'] as int?,
       isRamadan: (map['is_ramadan'] as int?) == 1,
       times: typedTimes,
       provider: map['provider'] as String? ?? '',

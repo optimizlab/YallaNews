@@ -87,7 +87,7 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
   }
 
   Future<void> _loadMore() async {
-    if (_isLoadingMore || !_hasMore) return;
+    if (!mounted || _isLoadingMore || !_hasMore) return;
     setState(() => _isLoadingMore = true);
 
     try {
@@ -147,7 +147,7 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
           elevation: 0,
           leading: IconButton(
             icon: Icon(
-              isRtl ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
+              Icons.arrow_back_rounded,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             tooltip: l10n.translate('back') ?? 'Back',

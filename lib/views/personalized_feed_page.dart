@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:sqflite/sqflite.dart';
 import '../l10n/app_localizations.dart';
@@ -12,9 +13,13 @@ import '../services/server_api_service.dart';
 import '../services/background_crawler_service.dart';
 import '../services/app_settings.dart';
 import '../services/auth_service.dart';
+import '../services/connectivity_service.dart';
+import '../services/ai_service.dart';
+import '../services/ai_ffi.dart';
 import '../widgets/cached_news_image.dart';
 import '../views/news_detail_page.dart';
 import '../widgets/ask_this_news_widget.dart';
+import '../views/manage_sources_page.dart';
 
 class PersonalizedFeedPage extends StatefulWidget {
   /// When shown from the root navigation tabs, the parent [Scaffold] already
@@ -108,6 +113,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     debugPrint('[PERSONALIZED FEED] _loadFeed started');
     _offset = 0;
     _hasMore = true;
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
@@ -162,7 +168,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
   }
 
   Future<void> _loadMoreFeed() async {
-    if (_isLoadingMore || !_hasMore) return;
+    if (!mounted || _isLoadingMore || !_hasMore) return;
     setState(() => _isLoadingMore = true);
 
     try {
@@ -686,6 +692,7 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                   ),
                   const SizedBox(height: 8),
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -706,21 +713,34 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                         ),
                       ),
                       const SizedBox(width: 8),
-                      if (article.sourceName.isNotEmpty)
-                        Text(
-                          article.sourceName,
-                          style: GoogleFonts.outfit(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      const Spacer(),
-                      Text(
-                        _getTimeAgo(article.publishDate),
-                        style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (article.sourceName.isNotEmpty)
+                              Flexible(
+                                child: Text(
+                                  article.sourceName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.outfit(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            const Spacer(),
+                            Text(
+                              _getTimeAgo(article.publishDate),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -786,36 +806,47 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                     ),
                     const SizedBox(height: 16),
                   ],
-                  Row(
-                    children: [
-                      _buildActionButton(
-                        context,
-                        Icons.thumb_up_alt_outlined,
-                        l10n.translate('like'),
-                        () => _recordInteraction(article.url, 'like'),
-                      ),
-                      const SizedBox(width: 12),
-                      _buildActionButton(
-                        context,
-                        Icons.share_outlined,
-                        l10n.translate('share'),
-                        () => _shareArticle(article),
-                      ),
-                      const SizedBox(width: 12),
-                      _buildActionButton(
-                        context,
-                        Icons.bookmark_outline,
-                        l10n.translate('save'),
-                        () => _recordInteraction(article.url, 'save'),
-                      ),
-                      const Spacer(),
-                      _buildActionButton(
-                        context,
-                        Icons.more_vert,
-                        '',
-                        () => _showArticleActions(article),
-                      ),
-                    ],
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isSmall = constraints.maxWidth < 360;
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: _buildActionButton(
+                              context,
+                              Icons.thumb_up_alt_outlined,
+                              isSmall ? '' : l10n.translate('like'),
+                              () => _recordInteraction(article.url, 'like'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildActionButton(
+                              context,
+                              Icons.share_outlined,
+                              isSmall ? '' : l10n.translate('share'),
+                              () => _shareArticle(article),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildActionButton(
+                              context,
+                              Icons.bookmark_outline,
+                              isSmall ? '' : l10n.translate('save'),
+                              () => _recordInteraction(article.url, 'save'),
+                            ),
+                          ),
+                          const Spacer(),
+                          _buildActionButton(
+                            context,
+                            Icons.more_vert,
+                            '',
+                            () => _showArticleActions(article),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ),
@@ -835,19 +866,25 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
 
   Widget _buildActionButton(BuildContext context, IconData icon, String label, VoidCallback onTap) {
     final theme = Theme.of(context);
+    final showLabel = label.isNotEmpty;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: EdgeInsets.symmetric(
+          horizontal: showLabel ? 12 : 8,
+          vertical: 8,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
-            if (label.isNotEmpty) ...[
+            if (showLabel) ...[
               const SizedBox(width: 6),
               Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.outfit(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
@@ -881,30 +918,6 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 20),
-              ListTile(
-                leading: const Icon(Icons.thumb_up_alt_outlined),
-                title: Text(AppLocalizations.of(context).translate('like')),
-                onTap: () {
-                  Navigator.pop(context);
-                  _recordInteraction(article.url, 'like');
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.share_outlined),
-                title: Text(AppLocalizations.of(context).translate('share')),
-                onTap: () {
-                  Navigator.pop(context);
-                  _shareArticle(article);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.bookmark_outlined),
-                title: Text(AppLocalizations.of(context).translate('save')),
-                onTap: () {
-                  Navigator.pop(context);
-                  _recordInteraction(article.url, 'save');
-                },
-              ),
               ListTile(
                 leading: const Icon(Icons.translate_outlined),
                 title: Text(AppLocalizations.of(context).translate('translate')),
@@ -960,15 +973,68 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
   }
 
   Future<void> _translateArticle(NewsModel article, String targetLang) async {
-    // Implementation would use AI service
+    final connected = await ConnectivityService.hasInternet();
+    if (!connected) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).translate('noInternetConnection'))),
+        );
+      }
+      return;
+    }
+    final isArabic = article.language.isEmpty || article.language.startsWith('ar');
+    final source = isArabic ? YallaLanguage.arabic : YallaLanguage.english;
+    final target = targetLang == 'ar' ? YallaLanguage.arabic : YallaLanguage.english;
+    try {
+      final translation = await AIService.instance.translate(
+        text: article.summary.isNotEmpty ? article.summary : article.title,
+        sourceLang: source,
+        targetLang: target,
+      );
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(AppLocalizations.of(context).translate('translation')),
+          content: SingleChildScrollView(
+            child: SelectableText(
+              translation,
+              style: GoogleFonts.outfit(
+                fontSize: 14,
+                height: 1.6,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(AppLocalizations.of(context).translate('close')),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).translate('translationFailed'))),
+        );
+      }
+    }
   }
 
   void _showAskNewsDialog(NewsModel article) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: Text(AppLocalizations.of(context).translate('askThisNews'))),
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: Text(AppLocalizations.of(context).translate('askThisNews')),
+          ),
           body: AskThisNewsWidget(article: article, startOpen: true),
         ),
       ),
@@ -976,15 +1042,75 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
   }
 
   void _shareArticle(NewsModel article) {
-    // Share implementation
+    final shareText = '${article.title}\n\n${article.url}';
+    Clipboard.setData(ClipboardData(text: shareText));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Link copied to clipboard'), duration: Duration(seconds: 2)),
+    );
   }
 
   void _reportArticle(NewsModel article) {
-    // Report implementation
+    showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: Text(AppLocalizations.of(context).translate('reportReason')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(AppLocalizations.of(context).translate('reportReasonHint')),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: controller,
+                decoration: InputDecoration(
+                  hintText: AppLocalizations.of(context).translate('reportReasonPlaceholder'),
+                  border: const OutlineInputBorder(),
+                ),
+                maxLines: 3,
+                maxLength: 500,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(AppLocalizations.of(context).translate('cancel')),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final trimmed = controller.text.trim();
+                Navigator.of(dialogContext).pop(trimmed.isEmpty ? null : trimmed);
+              },
+              child: Text(AppLocalizations.of(context).translate('send')),
+            ),
+          ],
+        );
+      },
+    ).then((reason) async {
+      if (reason == null || reason.isEmpty) return;
+      try {
+        await ServerApiService.reportArticle(article.url, reason);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context).translate('reportSent'))),
+          );
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context).translate('reportFailed'))),
+          );
+        }
+      }
+    });
   }
 
   void _showManageSources() {
-    // Navigate to sources management
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ManageSourcesPage()),
+    );
   }
 
   String _getTimeAgo(String publishDate) {

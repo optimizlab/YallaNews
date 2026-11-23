@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../l10n/app_localizations.dart';
 import '../models/city_registry.dart';
 import '../services/app_settings.dart';
+import '../services/auth_service.dart';
 import 'splash_page.dart';
 import 'auth/login_page.dart';
 
@@ -43,6 +44,11 @@ class _WelcomePageState extends State<WelcomePage> {
   String _countryName(String slug, AppLocalizations l10n) {
     final translated = l10n.translate('country_$slug');
     return translated == 'country_$slug' ? slug : translated;
+  }
+
+  String _cityName(CityEntry city, AppLocalizations l10n) {
+    final translated = l10n.translate('city_${city.slug}');
+    return translated == 'city_${city.slug}' ? city.cityName : translated;
   }
 
   List<CityEntry> _citiesForCountry(String slug) {
@@ -157,11 +163,56 @@ class _WelcomePageState extends State<WelcomePage> {
                   ).copyWith(elevation: WidgetStateProperty.all(0)),
                 ),
               ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    Navigator.of(context).pop();
+                    await _authenticateAnonymously();
+                  },
+                  icon: const Icon(Icons.person_outline_rounded, color: Colors.white70),
+                  label: Text(AppLocalizations.of(context).translate('guestUser'),
+                      style: const TextStyle(color: Colors.white70)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white70,
+                    side: const BorderSide(color: Colors.white30),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _authenticateAnonymously() async {
+    setState(() => _isLoading = true);
+    try {
+      final result = await AuthService.instance.loginAnonymously();
+      if (result['success'] == true && mounted) {
+        await AppSettings.instance.completeFirstRun();
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const SplashPage()),
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['error'] ?? AppLocalizations.of(context).translate('loginFailed')),
+              backgroundColor: Colors.red,
+            ),
+          );
+          setState(() => _isLoading = false);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _authenticate() async {
@@ -205,29 +256,32 @@ class _WelcomePageState extends State<WelcomePage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildStepContent(l10n),
-            _buildBottomBar(l10n),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              _buildStepContent(l10n, theme),
+              _buildBottomBar(l10n, theme),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildStepContent(AppLocalizations l10n) {
+  Widget _buildStepContent(AppLocalizations l10n, ThemeData theme) {
     switch (_step) {
       case _WelcomeStep.language:
-        return _buildLanguagePage(l10n);
+        return _buildLanguagePage(l10n, theme);
       case _WelcomeStep.location:
-        return _buildLocationPage(l10n);
+        return _buildLocationPage(l10n, theme);
     }
   }
 
-  Widget _buildBottomBar(AppLocalizations l10n) {
+  Widget _buildBottomBar(AppLocalizations l10n, ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       child: Column(
@@ -240,7 +294,7 @@ class _WelcomePageState extends State<WelcomePage> {
                 OutlinedButton(
                   onPressed: _isLoading ? null : _goBack,
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1565C0),
+                    foregroundColor: theme.colorScheme.primary,
                     padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
@@ -273,7 +327,7 @@ class _WelcomePageState extends State<WelcomePage> {
     );
   }
 
-  Widget _buildLanguagePage(AppLocalizations l10n) {
+  Widget _buildLanguagePage(AppLocalizations l10n, ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.all(32.0),
       child: Column(
@@ -283,7 +337,7 @@ class _WelcomePageState extends State<WelcomePage> {
             width: 100,
             height: 100,
             decoration: BoxDecoration(
-              color: const Color(0xFF1565C0).withOpacity(0.15),
+              color: theme.colorScheme.primary.withOpacity(0.15),
               borderRadius: BorderRadius.circular(24),
             ),
             child: const Icon(Icons.language_rounded,
@@ -296,7 +350,7 @@ class _WelcomePageState extends State<WelcomePage> {
             style: GoogleFonts.outfit(
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
-                color: Colors.white),
+                color: theme.colorScheme.onSurface),
           ),
           const SizedBox(height: 16),
           Text(
@@ -304,7 +358,7 @@ class _WelcomePageState extends State<WelcomePage> {
             textAlign: TextAlign.center,
             style: GoogleFonts.outfit(
                 fontSize: 15,
-                color: const Color(0xFFB0BEC5),
+                color: theme.colorScheme.onSurfaceVariant,
                 height: 1.6),
           ),
           const SizedBox(height: 32),
@@ -319,7 +373,7 @@ class _WelcomePageState extends State<WelcomePage> {
                 {'code': 'fr', 'key': 'languageFrench'},
                 {'code': 'tr', 'key': 'languageTurkish'},
               ])
-                _buildLanguageChip(l10n, entry['code']!, entry['key']!),
+                _buildLanguageChip(l10n, entry['code']!, entry['key']!, theme),
             ],
           ),
         ],
@@ -327,12 +381,15 @@ class _WelcomePageState extends State<WelcomePage> {
     );
   }
 
-  Widget _buildLanguageChip(AppLocalizations l10n, String code, String key) {
+  Widget _buildLanguageChip(AppLocalizations l10n, String code, String key,
+      ThemeData theme) {
     final selected = _selectedLanguage == code;
     return ChoiceChip(
       label: Text(l10n.translate(key),
           style: GoogleFonts.outfit(
-              color: selected ? Colors.white : const Color(0xFFB0BEC5),
+              color: selected
+                  ? theme.colorScheme.onPrimary
+                  : theme.colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w600)),
       selected: selected,
       onSelected: (_) async {
@@ -341,13 +398,13 @@ class _WelcomePageState extends State<WelcomePage> {
         if (mounted) setState(() {});
         await _next();
       },
-      selectedColor: const Color(0xFF1565C0),
-      backgroundColor: const Color(0xFF242840),
+      selectedColor: theme.colorScheme.primary,
+      backgroundColor: theme.colorScheme.surfaceContainer,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     );
   }
 
-  Widget _buildLocationPage(AppLocalizations l10n) {
+  Widget _buildLocationPage(AppLocalizations l10n, ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.all(24.0),
       child: Column(
@@ -360,7 +417,7 @@ class _WelcomePageState extends State<WelcomePage> {
                   width: 100,
                   height: 100,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFC62828).withOpacity(0.15),
+                    color: theme.colorScheme.error.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(24),
                   ),
                   child: const Icon(Icons.location_city_rounded,
@@ -373,7 +430,7 @@ class _WelcomePageState extends State<WelcomePage> {
                   style: GoogleFonts.outfit(
                       fontSize: 24,
                       fontWeight: FontWeight.w800,
-                      color: Colors.white),
+                      color: theme.colorScheme.onSurface),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -381,7 +438,7 @@ class _WelcomePageState extends State<WelcomePage> {
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(
                       fontSize: 15,
-                      color: const Color(0xFFB0BEC5),
+                      color: theme.colorScheme.onSurfaceVariant,
                       height: 1.6),
                 ),
               ],
@@ -393,41 +450,47 @@ class _WelcomePageState extends State<WelcomePage> {
             style: GoogleFonts.outfit(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.white70),
+                color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
-          _buildCountryDropdown(l10n),
+          _buildCountryDropdown(l10n, theme),
           const SizedBox(height: 24),
           Text(
             l10n.translate('onboardCity'),
             style: GoogleFonts.outfit(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: Colors.white70),
+                color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
           TextField(
+            style: GoogleFonts.outfit(
+                fontSize: 15, color: theme.colorScheme.onSurface),
             decoration: InputDecoration(
               labelText: l10n.translate('searchCity'),
               hintText: l10n.translate('searchCity'),
+              labelStyle: GoogleFonts.outfit(
+                  fontSize: 15, color: theme.colorScheme.onSurfaceVariant),
+              hintStyle: GoogleFonts.outfit(
+                  fontSize: 15, color: theme.colorScheme.onSurfaceVariant),
               prefixIcon: const Icon(Icons.search_rounded),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
-              fillColor: const Color(0xFF242840),
+              fillColor: theme.colorScheme.surfaceContainer,
             ),
             onChanged: (val) => setState(() => _citySearch = val),
           ),
           const SizedBox(height: 12),
-          _buildCityList(l10n),
+          _buildCityList(l10n, theme),
         ],
       ),
     );
   }
 
-  Widget _buildCountryDropdown(AppLocalizations l10n) {
+  Widget _buildCountryDropdown(AppLocalizations l10n, ThemeData theme) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF242840),
+        color: theme.colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(12),
       ),
       child: DropdownButtonHideUnderline(
@@ -435,12 +498,14 @@ class _WelcomePageState extends State<WelcomePage> {
           value: _selectedCountrySlug,
           isExpanded: true,
           hint: Text(l10n.translate('onboardCountry'),
-              style: GoogleFonts.outfit(fontSize: 15, color: Colors.white70)),
+              style: GoogleFonts.outfit(
+                  fontSize: 15, color: theme.colorScheme.onSurfaceVariant)),
           items: _countrySlugs.map((slug) {
             return DropdownMenuItem(
               value: slug,
               child: Text(_countryName(slug, l10n),
-                  style: GoogleFonts.outfit(fontSize: 15)),
+                  style: GoogleFonts.outfit(
+                      fontSize: 15, color: theme.colorScheme.onSurface)),
             );
           }).toList(),
           onChanged: (val) {
@@ -456,13 +521,13 @@ class _WelcomePageState extends State<WelcomePage> {
     );
   }
 
-  Widget _buildCityList(AppLocalizations l10n) {
+  Widget _buildCityList(AppLocalizations l10n, ThemeData theme) {
     final cities = _filteredCities();
     if (cities.isEmpty) {
       return Center(
         child: Text(
           l10n.translate('noArticles'),
-          style: GoogleFonts.outfit(color: const Color(0xFFB0BEC5)),
+          style: GoogleFonts.outfit(color: theme.colorScheme.onSurfaceVariant),
         ),
       );
     }
@@ -473,15 +538,15 @@ class _WelcomePageState extends State<WelcomePage> {
         return ListTile(
           leading: const Icon(Icons.location_city_rounded),
           title: Text(
-            city.cityName,
+            _cityName(city, l10n),
             style: GoogleFonts.outfit(
                 fontWeight: FontWeight.w600,
                 color: isSelected
-                    ? const Color(0xFF1565C0)
-                    : Colors.white),
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.onSurface),
           ),
           subtitle: Text(_countryName(city.countrySlug, l10n),
-              style: const TextStyle(color: Color(0xFFB0BEC5))),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
           selected: isSelected,
           trailing: isSelected
               ? const Icon(Icons.check_rounded)

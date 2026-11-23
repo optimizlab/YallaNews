@@ -20,12 +20,12 @@ const String kCleanupTask = 'com.yallanews.cleanup';
 /// Initialize background services
 Future<void> initializeBackgroundServices() async {
   if (PlatformAds.isAvailable) {
-    await PlatformWorkManager.initialize();
+    await Workmanager.initialize(_callbackDispatcher);
   }
   
   // Schedule daily pipeline run (every 6 hours)
   if (PlatformAds.isAvailable) {
-    await PlatformWorkManager.registerPeriodicTask(
+    await Workmanager.registerPeriodicTask(
     'pipeline_daily',
     kPipelineTask,
     frequency: const Duration(hours: 6),
@@ -35,10 +35,11 @@ Future<void> initializeBackgroundServices() async {
       requiresCharging: false,
     ),
     initialDelay: const Duration(minutes: 5),
-  );
-  
+    );
+  }
+
   // Schedule weekly cleanup
-  await Workmanager().registerPeriodicTask(
+  await Workmanager.registerPeriodicTask(
     'cleanup_weekly',
     kCleanupTask,
     frequency: const Duration(days: 7),
@@ -54,7 +55,7 @@ Future<void> initializeBackgroundServices() async {
 /// WorkManager callback dispatcher - must be top-level function
 @pragma('vm:entry-point')
 void _callbackDispatcher() {
-  Workmanager().executeTask((taskName, inputData) async {
+  Workmanager.executeTask((taskName, inputData) async {
     switch (taskName) {
       case kPipelineTask:
         return await _runPipelineInBackground(inputData);

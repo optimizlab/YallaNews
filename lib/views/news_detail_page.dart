@@ -605,6 +605,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   void _scrollListener() {
+    if (!mounted) return;
     if (_scrollController.position.pixels > 50) {
       if (!_showTitleInAppBar) {
         setState(() => _showTitleInAppBar = true);
@@ -2463,11 +2464,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   void _openAskThisNews() {
-    Navigator.pop(context);
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => Scaffold(
+        builder: (context) => Scaffold(
           appBar: AppBar(
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_rounded),

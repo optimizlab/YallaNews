@@ -4,7 +4,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/news_source.dart';
 import '../models/news_model.dart';
 import '../services/server_api_service.dart';
@@ -23,10 +22,9 @@ class NewsDatabase {
   }
 
   Future<Database> _initDatabase() async {
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      databaseFactory = databaseFactoryFfi;
-    }
-
+    // databaseFactory is set once in main.dart via sqfliteFfiInit()
+    // (desktop only). Do not reassign here to avoid the sqflite
+    // "changing default factory" warning on every database open.
     final Directory docsDir = await getApplicationDocumentsDirectory();
     final String dbPath = p.join(docsDir.path, 'news_base_source.db');
 

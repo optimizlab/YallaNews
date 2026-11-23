@@ -66,6 +66,7 @@ class PrayerTimes {
     required this.timeZone,
     required this.localDate,
     required this.hijriDate,
+    this.hijriDateMonth,
     required this.isRamadan,
     required this.times,
     required this.provider,
@@ -93,6 +94,9 @@ class PrayerTimes {
   final DateTime localDate;
   /// Hijri date string as reported by the provider.
   final String hijriDate;
+  /// Hijri month number (1-12) when reported by the provider, used to
+  /// translate the month name into the current app language.
+  final int? hijriDateMonth;
   final bool isRamadan;
   /// Prayer times keyed by [Prayer]. Sunrise is present but not obligatory.
   final Map<Prayer, PrayerTime> times;
@@ -161,6 +165,7 @@ class PrayerTimes {
     String? timeZone,
     DateTime? localDate,
     String? hijriDate,
+    int? hijriDateMonth,
     bool? isRamadan,
     Map<Prayer, PrayerTime>? times,
     String? provider,
@@ -179,6 +184,7 @@ class PrayerTimes {
       timeZone: timeZone ?? this.timeZone,
       localDate: localDate ?? this.localDate,
       hijriDate: hijriDate ?? this.hijriDate,
+      hijriDateMonth: hijriDateMonth ?? this.hijriDateMonth,
       isRamadan: isRamadan ?? this.isRamadan,
       times: times ?? this.times,
       provider: provider ?? this.provider,
@@ -200,6 +206,7 @@ class PrayerTimes {
       'timeZone': timeZone,
       'localDate': localDate.toIso8601String(),
       'hijriDate': hijriDate,
+      'hijriDateMonth': hijriDateMonth,
       'isRamadan': isRamadan ? 1 : 0,
       'times': times.map((key, value) => MapEntry(
             key.index.toString(),
@@ -242,6 +249,7 @@ class PrayerTimes {
       timeZone: json['timeZone'] as String? ?? 'UTC',
       localDate: DateTime.parse(json['localDate'] as String),
       hijriDate: json['hijriDate'] as String? ?? '',
+      hijriDateMonth: json['hijriDateMonth'] as int?,
       isRamadan: (json['isRamadan'] as int?) == 1,
       times: timesMap,
       provider: json['provider'] as String? ?? '',

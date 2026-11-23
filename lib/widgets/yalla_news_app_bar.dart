@@ -29,7 +29,7 @@ class YallaNewsAppBar extends StatelessWidget implements PreferredSizeWidget {
       centerTitle: true,
       leading: showBack
           ? IconButton(
-              icon: const Icon(Icons.arrow_forward_ios_rounded, size: 18),
+              icon: const Icon(Icons.arrow_back_rounded, size: 18),
               onPressed: onLeadingPressed ?? () => Navigator.pop(context),
             )
           : IconButton(

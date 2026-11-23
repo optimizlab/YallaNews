@@ -11,6 +11,7 @@ import 'package:timezone/data/latest.dart' as tz_data;
 
 import '../../models/prayer_times.dart';
 import '../prayer/prayer_database.dart';
+import 'adhan_audio_service.dart';
 
 /// Configuration for a single prayer's reminder, read from SharedPreferences.
 class PrayerReminderConfig {
@@ -78,34 +79,48 @@ class AthanScheduler {
 
   String _timeZone = 'UTC';
 
+  // Windows-only: timer-based adhan checking (desktop has no native alarms).
+  Timer? _windowsPollTimer;
+  String? _winCountrySlug;
+  String? _winCitySlug;
+  String? _winProvider;
+  String? _winMethod;
+  final Set<int> _triggeredToday = <int>{};
+  DateTime _lastTriggerDate = DateTime.now();
+
   Future<bool> initialize() async {
     if (_initialized) return true;
-    if (!Platform.isAndroid && !Platform.isIOS) return false;
-
     tz_data.initializeTimeZones();
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
+    if (Platform.isAndroid || Platform.isIOS) {
+      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      const iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      const initSettings = InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      );
 
-    final success = await _localNotifications.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: _onNotificationTapped,
-    ) ?? false;
+      final success = await _localNotifications.initialize(
+        initSettings,
+        onDidReceiveNotificationResponse: _onNotificationTapped,
+      ) ?? false;
 
-    if (Platform.isAndroid) {
-      _createAndroidChannel();
+      if (Platform.isAndroid) {
+        _createAndroidChannel();
+      }
+
+      _initialized = success;
+      return success;
     }
 
-    _initialized = success;
-    return success;
+    // Desktop (Windows): no native alarms/notifications. Use timer-based
+    // prayer checking so the adhan still plays when a prayer time arrives.
+    _initialized = true;
+    return true;
   }
 
   void _createAndroidChannel() {
@@ -252,6 +267,21 @@ class AthanScheduler {
   }) async {
     await _loadConfig();
 
+    // Remember city info for the Windows timer-based checker.
+    _winCountrySlug = countrySlug;
+    _winCitySlug = citySlug;
+    _winProvider = provider;
+    _winMethod = method;
+
+    if (Platform.isWindows) {
+      if (!_adhanMaster) {
+        await cancelAll();
+        return;
+      }
+      _startWindowsPrayerChecker();
+      return;
+    }
+
     if (!_notificationsEnabled) {
       await cancelAll();
       return;
@@ -359,9 +389,79 @@ class AthanScheduler {
         '[AthanScheduler] Scheduled prayers for $countrySlug/$citySlug $provider/$method');
   }
 
+  /// Start polling for prayer times on Windows (desktop has no native alarms).
+  void _startWindowsPrayerChecker() {
+    _windowsPollTimer?.cancel();
+    _windowsPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_checkWindowsPrayerTimes());
+    });
+    // Check immediately in case a prayer time is already current.
+    unawaited(_checkWindowsPrayerTimes());
+  }
+
+  /// Check today's prayer times and play the adhan when a scheduled time
+  /// arrives (within the polling window). Runs on Windows only.
+  Future<void> _checkWindowsPrayerTimes() async {
+    if (!_adhanMaster) return;
+
+    final now = DateTime.now().toUtc();
+    final todayLocal = DateTime.now();
+    final today = DateTime(todayLocal.year, todayLocal.month, todayLocal.day);
+
+    // Reset the triggered set at the start of a new local day.
+    if (_lastTriggerDate.day != todayLocal.day ||
+        _lastTriggerDate.month != todayLocal.month ||
+        _lastTriggerDate.year != todayLocal.year) {
+      _triggeredToday.clear();
+      _lastTriggerDate = todayLocal;
+    }
+
+    final slug = _winCountrySlug;
+    final city = _winCitySlug;
+    final prov = _winProvider;
+    final meth = _winMethod;
+    if (slug == null || city == null || prov == null || meth == null) return;
+
+    final times = await _database.getTimesForDate(
+      countrySlug: slug,
+      citySlug: city,
+      localDate: today,
+      provider: prov,
+      method: meth,
+    );
+    if (times == null) return;
+
+    for (final prayer in kObligatoryPrayers) {
+      final config = _configs[prayer];
+      if (config == null || !config.enabled || !config.adhanSound) continue;
+      final prayerTime = times.times[prayer];
+      if (prayerTime == null) continue;
+
+      final targetUtc = prayerTime.utcTime.add(
+        Duration(minutes: config.offsetMinutes),
+      );
+
+      // Trigger when the prayer time is now (within the polling window).
+      final diff = now.difference(targetUtc);
+      if (diff.inSeconds < 0 || diff.inSeconds > 30) continue;
+
+      final id = notificationId(times.localDate, prayer);
+      if (_triggeredToday.contains(id)) continue;
+      _triggeredToday.add(id);
+
+      debugPrint(
+          '[AthanScheduler] Windows adhan trigger: $prayer at ${prayerTime.formatted}');
+      await AdhanAudioService.instance.playAdhan(muezzin: _muezzin);
+    }
+  }
+
   /// Cancel all Athan notifications and native alarms. Used before every
   /// reschedule to prevent duplicates, and when notifications are disabled.
   Future<void> cancelAll() async {
+    _windowsPollTimer?.cancel();
+    _windowsPollTimer = null;
+    _triggeredToday.clear();
+
     // Cancel the full notification id range used by this scheduler.
     for (var id = _notificationBase;
         id < _notificationBase + 366 * 10 + 6;

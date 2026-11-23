@@ -82,6 +82,25 @@ class AuthService extends ChangeNotifier {
     return result;
   }
 
+  /// Log in as an anonymous/guest user. Persists token + creates guest profile.
+  Future<Map<String, dynamic>> loginAnonymously() async {
+    final result = await ServerApiService.loginAnonymously();
+    if (result['success'] == true) {
+      final token = result['token'] as String?;
+      if (token != null && token.isNotEmpty) {
+        _isLoggedIn = true;
+        final user = result['user'];
+        _currentUser = user is Map<String, dynamic>
+            ? UserProfile.fromSnapshot(Map<String, dynamic>.from(user))
+            : UserProfile.anonymous();
+        notifyListeners();
+      } else {
+        return {'success': false, 'error': 'No auth token received from server'};
+      }
+    }
+    return result;
+  }
+
   /// Log out: clear token/user on server + locally and notify listeners.
   Future<void> logout() async {
     try {

@@ -173,8 +173,10 @@ class LocationManager {
   }
 
   String? _extractCountryFromLocale(String localeName) {
-    // Platform.localeName looks like "en_US", "fr_FR", "ar_MA".
-    final parts = localeName.split('_');
+    // Platform.localeName looks like "en_US", "fr_FR", "ar_MA" on most
+    // platforms, but Windows may report "en-US" / "ar-SA" with a hyphen.
+    final normalized = localeName.replaceAll('-', '_');
+    final parts = normalized.split('_');
     if (parts.length >= 2) {
       return parts.last.toLowerCase();
     }

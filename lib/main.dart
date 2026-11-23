@@ -56,6 +56,7 @@ Future<void> main() async {
       }
     }
     sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
   }
   if (PlatformAds.isAvailable) {
     try {

@@ -26,6 +26,19 @@ class UserProfile {
     required this.createdAt,
   });
 
+  /// Creates a guest/anonymous profile.
+  UserProfile.anonymous()
+      : uid = 'anonymous',
+        email = '',
+        displayName = 'Guest User',
+        photoUrl = null,
+        phoneNumber = null,
+        following = const [],
+        followers = const [],
+        likedArticles = const [],
+        savedArticles = const [],
+        createdAt = DateTime(2000);
+
   factory UserProfile.fromSnapshot(Map<String, dynamic> data) {
     return UserProfile(
       uid: data['id'] ?? '',

@@ -47,7 +47,9 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
   @override
   void didUpdateWidget(AdaptiveLayout oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     if (widget.scrollController != oldWidget.scrollController) {
+      oldWidget.scrollController?.removeListener(_onScroll);
       _attachListener(widget.scrollController);
     }
   }
@@ -58,27 +60,34 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
   }
 
   void _onScroll() {
+    if (!mounted) return;
     final controller = widget.scrollController;
-    if (controller == null) return;
+    if (controller == null || !controller.hasClients) return;
+
     final offset = controller.offset;
+
     if (offset > _lastOffset + 2) {
-      if (_showBottomBar) setState(() => _showBottomBar = false);
+      if (_showBottomBar) {
+        setState(() => _showBottomBar = false);
+      }
     } else if (offset < _lastOffset - 2) {
-      if (!_showBottomBar) setState(() => _showBottomBar = true);
+      if (!_showBottomBar) {
+        setState(() => _showBottomBar = true);
+      }
     }
+
     _lastOffset = offset;
   }
 
   bool _onScrollNotification(ScrollNotification notification) {
-    // Pages are allowed to own their scroll view (Home currently uses an
-    // inner SingleChildScrollView). Listening only to the controller passed
-    // to this shell therefore misses the real Android/iOS scroll events.
+    if (!mounted) return false;
     if (notification.depth == 0 || notification is UserScrollNotification) {
-      final metrics = notification.metrics;
-      final offset = metrics.pixels;
+      final offset = notification.metrics.pixels;
+
       if (offset <= 10 && !_showBottomBar) {
         setState(() => _showBottomBar = true);
       }
+
       if (notification is ScrollStartNotification) {
         _lastOffset = offset;
       } else if (notification is UserScrollNotification) {
@@ -89,12 +98,15 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
             !_showBottomBar) {
           setState(() => _showBottomBar = true);
         }
+
         _lastOffset = offset;
       }
+
       if (offset <= 0 && !_showBottomBar) {
         setState(() => _showBottomBar = true);
       }
     }
+
     return false;
   }
 
@@ -104,9 +116,12 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
     super.dispose();
   }
 
+  // ---------------------------------------------------------------------------
+  // MOBILE LAYOUT
+  // ---------------------------------------------------------------------------
+
   Widget _buildMobileShell(BuildContext context, Widget scrollable) {
     final theme = Theme.of(context);
-
     final mobileDestinations = widget.mobileDestinations ?? widget.destinations;
 
     final safeIndex = mobileDestinations.isEmpty
@@ -151,6 +166,115 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // DESKTOP / TABLET NAVIGATION RAIL
+  // ---------------------------------------------------------------------------
+
+  Widget _buildNavigationRail(BuildContext context, double availableHeight) {
+    final theme = Theme.of(context);
+
+    final railHeight = availableHeight.isFinite
+        ? availableHeight
+        : MediaQuery.of(context).size.height;
+
+    final destinations = widget.destinations;
+
+    if (destinations.isEmpty) {
+      return const SizedBox(width: 72);
+    }
+
+    final selectedIndex = widget.currentIndex.clamp(0, destinations.length - 1);
+
+    // We use IntrinsicWidth so the rail grows to fit the longest text.
+    // We wrap it in a Container to apply the background color seamlessly.
+    return Container(
+      height: railHeight,
+      color: theme.colorScheme.surface, // Match background to main app
+      child: IntrinsicWidth(
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: railHeight),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 8), // Top padding
+                ...List.generate(destinations.length, (index) {
+                  final destination = destinations[index];
+                  final selected = index == selectedIndex;
+
+                  // Determine colors based on selection
+                  final activeColor = theme.colorScheme.primary;
+                  final inactiveColor = theme.colorScheme.onSurfaceVariant;
+                  final iconColor = selected ? activeColor : inactiveColor;
+                  final textColor = selected ? activeColor : inactiveColor;
+
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8.0,
+                      vertical: 4.0,
+                    ),
+                    child: Material(
+                      color: selected
+                          ? theme.colorScheme.primary.withOpacity(0.1)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => widget.onNavigationChanged(index),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0,
+                            vertical: 12.0,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Icon(
+                                selected
+                                    ? destination.selectedIcon ??
+                                          destination.icon
+                                    : destination.icon,
+                                size: 24,
+                                color: iconColor,
+                              ),
+                              const SizedBox(width: 16),
+                              // Text is allowed to take required space without wrapping
+                              Text(
+                                destination.label,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.visible,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 14,
+                                  fontWeight: selected
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: textColor,
+                                ),
+                              ),
+                              // Add some right padding so text doesn't touch the edge
+                              const SizedBox(width: 24),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8), // Bottom padding
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // MAIN RESPONSIVE LAYOUT
+  // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -158,44 +282,30 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
         final isDesktop = constraints.maxWidth >= 900;
         final isTablet =
             constraints.maxWidth >= 600 && constraints.maxWidth < 900;
+
         if (isDesktop || isTablet) {
           final theme = Theme.of(context);
+
+          // Use the actual available height instead of the full screen height.
+          final availableHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : MediaQuery.of(context).size.height;
+
           return Scaffold(
             key: widget.scaffoldKey,
             appBar: widget.appBar,
             drawer: widget.drawer,
             body: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                IntrinsicWidth(
-                  child: SizedBox(
-                    height: MediaQuery.of(context).size.height,
-                    child: NavigationRail(
-                      selectedIndex: widget.currentIndex,
-                      onDestinationSelected: widget.onNavigationChanged,
-                      labelType: NavigationRailLabelType.all,
-                      minWidth: 72,
-                      minExtendedWidth: 160,
-                      selectedLabelTextStyle: GoogleFonts.outfit(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary,
-                      ),
-                      unselectedLabelTextStyle: GoogleFonts.outfit(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      destinations: widget.destinations.map((d) {
-                        return NavigationRailDestination(
-                          icon: Icon(d.icon),
-                          selectedIcon: Icon(d.selectedIcon ?? d.icon),
-                          label: Text(d.label),
-                        );
-                      }).toList(),
-                    ),
-                  ),
+                _buildNavigationRail(context, availableHeight),
+
+                VerticalDivider(
+                  thickness: 1,
+                  width: 1,
+                  color: theme.dividerColor,
                 ),
-                const VerticalDivider(thickness: 1, width: 1),
+
                 Expanded(
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
@@ -211,8 +321,14 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
           );
         }
 
+        // ---------------------------------------------------------------------
+        // MOBILE
+        // ---------------------------------------------------------------------
+
         final theme = Theme.of(context);
+
         Widget body = widget.body;
+
         if (widget.onRefresh != null) {
           body = RefreshIndicator(
             onRefresh: widget.onRefresh!,
@@ -228,6 +344,7 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
             final bar = widget.appBar is AppBar
                 ? widget.appBar as AppBar
                 : null;
+
             return <Widget>[
               if (widget.appBar != null)
                 SliverAppBar(
@@ -254,6 +371,10 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
     );
   }
 }
+
+// -----------------------------------------------------------------------------
+// NAVIGATION DESTINATION MODEL
+// -----------------------------------------------------------------------------
 
 class AdaptiveNavigationDestination {
   final IconData icon;
