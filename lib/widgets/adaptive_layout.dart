@@ -82,9 +82,11 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
       if (notification is ScrollStartNotification) {
         _lastOffset = offset;
       } else if (notification is UserScrollNotification) {
-        if (notification.direction == ScrollDirection.reverse && _showBottomBar) {
+        if (notification.direction == ScrollDirection.reverse &&
+            _showBottomBar) {
           setState(() => _showBottomBar = false);
-        } else if (notification.direction == ScrollDirection.forward && !_showBottomBar) {
+        } else if (notification.direction == ScrollDirection.forward &&
+            !_showBottomBar) {
           setState(() => _showBottomBar = true);
         }
         _lastOffset = offset;
@@ -154,7 +156,8 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 900;
-        final isTablet = constraints.maxWidth >= 600 && constraints.maxWidth < 900;
+        final isTablet =
+            constraints.maxWidth >= 600 && constraints.maxWidth < 900;
         if (isDesktop || isTablet) {
           final theme = Theme.of(context);
           return Scaffold(
@@ -163,36 +166,44 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
             drawer: widget.drawer,
             body: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  NavigationRail(
-                    selectedIndex: widget.currentIndex,
-                    onDestinationSelected: widget.onNavigationChanged,
-                    labelType: NavigationRailLabelType.all,
-                    minWidth: 80,
-                    selectedLabelTextStyle: GoogleFonts.outfit(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
+              children: [
+                IntrinsicWidth(
+                  child: SizedBox(
+                    height: MediaQuery.of(context).size.height,
+                    child: NavigationRail(
+                      selectedIndex: widget.currentIndex,
+                      onDestinationSelected: widget.onNavigationChanged,
+                      labelType: NavigationRailLabelType.all,
+                      minWidth: 72,
+                      minExtendedWidth: 160,
+                      selectedLabelTextStyle: GoogleFonts.outfit(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.primary,
+                      ),
+                      unselectedLabelTextStyle: GoogleFonts.outfit(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      destinations: widget.destinations.map((d) {
+                        return NavigationRailDestination(
+                          icon: Icon(d.icon),
+                          selectedIcon: Icon(d.selectedIcon ?? d.icon),
+                          label: Text(d.label),
+                        );
+                      }).toList(),
                     ),
-                    unselectedLabelTextStyle: GoogleFonts.outfit(
-                      fontSize: 12,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    destinations: widget.destinations.map((d) {
-                      return NavigationRailDestination(
-                        icon: Icon(d.icon),
-                        selectedIcon: Icon(d.selectedIcon ?? d.icon),
-                        label: Text(d.label),
-                      );
-                    }).toList(),
                   ),
-                  const VerticalDivider(thickness: 1, width: 1),
+                ),
+                const VerticalDivider(thickness: 1, width: 1),
                 Expanded(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: isDesktop ? 1200 : 800),
-                      child: isDesktop && widget.desktopBody != null ? widget.desktopBody! : widget.body,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: isDesktop ? 1200 : 800,
                     ),
+                    child: isDesktop && widget.desktopBody != null
+                        ? widget.desktopBody!
+                        : widget.body,
                   ),
                 ),
               ],
@@ -214,7 +225,9 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
           controller: widget.scrollController,
           floatHeaderSlivers: true,
           headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
-            final bar = widget.appBar is AppBar ? widget.appBar as AppBar : null;
+            final bar = widget.appBar is AppBar
+                ? widget.appBar as AppBar
+                : null;
             return <Widget>[
               if (widget.appBar != null)
                 SliverAppBar(
@@ -222,7 +235,8 @@ class _AdaptiveLayoutState extends State<AdaptiveLayout> {
                   title: bar?.title,
                   actions: bar?.actions,
                   centerTitle: bar?.centerTitle ?? true,
-                  backgroundColor: bar?.backgroundColor ?? theme.colorScheme.surface,
+                  backgroundColor:
+                      bar?.backgroundColor ?? theme.colorScheme.surface,
                   elevation: 0,
                   scrolledUnderElevation: 0,
                   floating: true,

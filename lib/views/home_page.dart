@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lottie/lottie.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -236,13 +237,13 @@ class _HomePageState extends State<HomePage> {
 
   void _onAuthChanged() {
     if (mounted) {
-      setState(() {});
+      _safeSetState(() {});
     }
   }
 
   void _onCategoriesChanged() {
     if (mounted) {
-      setState(() {
+      _safeSetState(() {
         _categories = CategoryService.instance.categories;
       });
     }
@@ -263,6 +264,16 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Defers [fn] to after the current frame so a post-async [setState] never
+  /// runs while the engine is mid-layout (which throws on wide/desktop
+  /// screens with RenderBox "not laid out" assertions).
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) return;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(fn);
+    });
+  }
+
   Future<void> _reloadForLanguageChange(int reloadGeneration) async {
     await CrawlerScheduler.instance.stop();
     await BackgroundCrawlerService.instance.stop();
@@ -277,7 +288,7 @@ class _HomePageState extends State<HomePage> {
     _crawlerFlushTimer?.cancel();
     _crawlerBlendTimer?.cancel();
     _pendingArticles.clear();
-    setState(() {
+    _safeSetState(() {
       _isLoading = true;
       _rawArticles = [];
       _allArticles = [];
@@ -299,7 +310,7 @@ class _HomePageState extends State<HomePage> {
     }
     final combined = [..._blendedArticles, ...rawOnly];
 
-    setState(() {
+    _safeSetState(() {
       _rawArticles = rawOnly;
       _allArticles = combined;
       if (_selectedCategory == 'all') {
@@ -340,7 +351,7 @@ class _HomePageState extends State<HomePage> {
       }
     }
     if (updates.isNotEmpty && mounted) {
-      setState(() {
+      _safeSetState(() {
         updates.forEach((idx, updated) {
           _articles[idx] = updated;
         });
@@ -389,7 +400,7 @@ class _HomePageState extends State<HomePage> {
       }
     }
     final combined = [..._blendedArticles, ..._rawArticles];
-    setState(() {
+    _safeSetState(() {
       _allArticles = combined;
       if (_selectedCategory == 'all') {
         _articles = List.from(combined);
@@ -408,7 +419,7 @@ class _HomePageState extends State<HomePage> {
     );
     if (_waitingForInitialCrawl) {
       _waitingForInitialCrawl = false;
-      if (mounted) setState(() {});
+      if (mounted) _safeSetState(() {});
     }
     _scheduleBlend();
   }
@@ -438,7 +449,7 @@ class _HomePageState extends State<HomePage> {
       }
       _categoryCounts[id] = count;
     }
-    if (mounted) setState(() {});
+    if (mounted) _safeSetState(() {});
   }
 
   Future<void> _updateCategoryCountsAsync(List<NewsModel> articles) =>
@@ -447,7 +458,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _blendInBackground(List<NewsModel> rawList) async {
     if (_isBlending) return;
     if (rawList.isEmpty) return;
-    if (mounted) setState(() => _isBlending = true);
+    if (mounted) _safeSetState(() => _isBlending = true);
     try {
       final candidates = rawList.take(30).toList();
       final blended = await NewsBlenderService.instance.blendArticlesAsync(
@@ -460,7 +471,7 @@ class _HomePageState extends State<HomePage> {
       final rawOnly = rawList.where((a) => !a.isBlended).toList();
       final combined = [..._blendedArticles, ...rawOnly];
 
-      setState(() {
+      _safeSetState(() {
         _isBlending = false;
         _allArticles = combined;
         _rawArticles = rawOnly;
@@ -476,7 +487,7 @@ class _HomePageState extends State<HomePage> {
       });
       await _updateCategoryCounts(combined);
     } catch (_) {
-      if (mounted) setState(() => _isBlending = false);
+      if (mounted) _safeSetState(() => _isBlending = false);
     }
   }
 
@@ -592,7 +603,7 @@ class _HomePageState extends State<HomePage> {
         _rawArticles = blendedArticles;
         _allArticles = List.from(blendedArticles);
         _articles = List.from(blendedArticles);
-        setState(() {
+        _safeSetState(() {
           _selectedCategory = 'all';
           _categories = CategoryService.instance.categories;
           _trendingSearches = trending
@@ -604,7 +615,7 @@ class _HomePageState extends State<HomePage> {
         _applyBlendedArticles(blendedArticles);
         CategoryService.instance.updateCategoryCounts(blendedArticles);
       } else if (mounted && _rawArticles.isEmpty) {
-        setState(() {
+        _safeSetState(() {
           _isLoading = false;
           _selectedCategory = 'all';
           _categories = CategoryService.instance.categories;
@@ -625,7 +636,7 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       debugPrint('[HOME] _loadData failed: $e');
       if (mounted && _rawArticles.isEmpty) {
-        setState(() => _isLoading = false);
+        _safeSetState(() => _isLoading = false);
       }
     }
   }
@@ -822,7 +833,7 @@ class _HomePageState extends State<HomePage> {
           _rawArticles.addAll(validLocal);
           _allArticles = List.from(_rawArticles);
           _articles = List.from(_rawArticles);
-          setState(() {});
+          _safeSetState(() {});
           _applyBlendedArticles(_rawArticles);
         }
 
@@ -907,7 +918,7 @@ class _HomePageState extends State<HomePage> {
         '[NEWSAPI] Refresh: ${newsApiArticles.length} fetched, ${fresh.length} new',
       );
       if (fresh.isNotEmpty) {
-        setState(() {
+        _safeSetState(() {
           _rawArticles.insertAll(0, fresh);
           _allArticles = List.from(_rawArticles);
           _articles = List.from(_rawArticles);
@@ -982,7 +993,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadMoreArticles() async {
     if (_isLoadingMore || !_hasMore) return;
-    setState(() => _isLoadingMore = true);
+    _safeSetState(() => _isLoadingMore = true);
     try {
       final nextPage = _currentPage + 1;
       final more = await _loadArticles(page: nextPage, limit: 20);
@@ -994,7 +1005,7 @@ class _HomePageState extends State<HomePage> {
         final newArticles = more
             .where((a) => !_articles.any((e) => e.url == a.url))
             .toList();
-        setState(() {
+        _safeSetState(() {
           _articles.addAll(newArticles);
           _allArticles.addAll(newArticles);
           _rawArticles.addAll(newArticles);
@@ -1006,14 +1017,14 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       debugPrint('[HOME] Load more failed: $e');
     } finally {
-      if (mounted) setState(() => _isLoadingMore = false);
+      if (mounted) _safeSetState(() => _isLoadingMore = false);
     }
   }
 
   Future<void> _onRefresh() async {
     _currentPage = 1;
     _hasMore = true;
-    if (mounted) setState(() => _isLoading = true);
+    if (mounted) _safeSetState(() => _isLoading = true);
     try {
       final rawRefreshed = _filterPolicyCompliantArticles(
         await _loadArticles(page: 1, limit: 20),
@@ -1022,7 +1033,7 @@ class _HomePageState extends State<HomePage> {
       _rawArticles = rawRefreshed;
       _allArticles = List.from(rawRefreshed);
       await _applyBlendedArticles(rawRefreshed);
-      setState(() {
+      _safeSetState(() {
         _articles = _allArticles;
         _isLoading = false;
       });
@@ -1033,7 +1044,7 @@ class _HomePageState extends State<HomePage> {
           limit: 10,
           language: AppSettings.instance.locale?.languageCode ?? 'ar',
         ).timeout(const Duration(seconds: 10));
-        setState(() {
+        _safeSetState(() {
           _trendingSearches = trending
               .map((t) => t.title)
               .where((q) => q.isNotEmpty)
@@ -1045,16 +1056,16 @@ class _HomePageState extends State<HomePage> {
       } catch (_) {}
     } catch (e) {
       debugPrint('[HOME] _onRefresh failed: $e');
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) _safeSetState(() => _isLoading = false);
     }
   }
 
   void _activateSearch() {
-    setState(() => _isSearchActive = true);
+    _safeSetState(() => _isSearchActive = true);
   }
 
   void _deactivateSearch() {
-    setState(() {
+    _safeSetState(() {
       _isSearchActive = false;
       _searchQuery = '';
     });
@@ -1079,7 +1090,7 @@ class _HomePageState extends State<HomePage> {
             )
             .toList();
       }
-      setState(() {
+      _safeSetState(() {
         _searchQuery = value;
       });
     });
@@ -1093,7 +1104,7 @@ class _HomePageState extends State<HomePage> {
     return AdaptiveLayout(
       currentIndex: _mobileSelectedIndex(),
       onNavigationChanged: (i) async {
-        setState(() => _currentIndex = _isMobile ? _mobileToFull[i] : i);
+        _safeSetState(() => _currentIndex = _isMobile ? _mobileToFull[i] : i);
         if (i == 0) await _scrollToTop();
       },
       scrollController: _scrollController,
@@ -1210,8 +1221,9 @@ class _HomePageState extends State<HomePage> {
                     context,
                     MaterialPageRoute(builder: (_) => const LoginPage()),
                   ),
-                );
-              }
+        );
+    }
+
               return IconButton(
                 icon: CircleAvatar(
                   radius: 12,
@@ -1256,7 +1268,7 @@ class _HomePageState extends State<HomePage> {
                                 onPressed: () async {
                                   Navigator.pop(context);
                                   await AuthService.instance.logout();
-                                  if (mounted) setState(() {});
+                                  if (mounted) _safeSetState(() {});
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Theme.of(
@@ -1497,9 +1509,7 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 750;
+    final isWide = MediaQuery.of(context).size.width >= 750;
         final topArticles = _sortCarouselArticles(_articles).take(9).toList();
         final remainingArticles = _articles.length > 3
             ? _articles.sublist(3)
@@ -1582,9 +1592,15 @@ class _HomePageState extends State<HomePage> {
                             ? Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(child: row[0]),
+                                  Flexible(
+                                    fit: FlexFit.loose,
+                                    child: row[0],
+                                  ),
                                   const SizedBox(width: 14),
-                                  Expanded(child: row[1]),
+                                  Flexible(
+                                    fit: FlexFit.loose,
+                                    child: row[1],
+                                  ),
                                 ],
                               )
                             : row.first,
@@ -1622,9 +1638,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         );
-      },
-    );
-  }
+      }
 
   bool _matchesCategory(String articleCat, String selectedCat) {
     return CategoryService.matchesCategory(articleCat, selectedCat);
@@ -1757,7 +1771,7 @@ class _HomePageState extends State<HomePage> {
             selected: isSelected,
             onSelected: (bool selected) {
               if (!selected) return;
-              setState(() {
+              _safeSetState(() {
                 _selectedCategory = catKey;
                 if (catKey == 'all') {
                   _articles = List.from(_allArticles);
@@ -1809,7 +1823,7 @@ class _HomePageState extends State<HomePage> {
           children: terms.map((term) {
             return GestureDetector(
               onTap: () {
-                setState(() => _searchQuery = term);
+                _safeSetState(() => _searchQuery = term);
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(
@@ -2016,7 +2030,7 @@ class _HomePageState extends State<HomePage> {
             result is Map<String, dynamic> &&
             result['search'] != null) {
           final searchQuery = result['search'] as String;
-          setState(() {
+          _safeSetState(() {
             _searchQuery = searchQuery;
             _isSearchActive = true;
           });
@@ -2312,7 +2326,7 @@ class _HomePageState extends State<HomePage> {
               isSelected: _currentIndex == 0,
               onTap: () async {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 0);
+                _safeSetState(() => _currentIndex = 0);
                 await _scrollToTop();
               },
             ),
@@ -2322,7 +2336,7 @@ class _HomePageState extends State<HomePage> {
               isSelected: _currentIndex == 1,
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 1);
+                _safeSetState(() => _currentIndex = 1);
               },
             ),
             _DrawerItem(
@@ -2331,7 +2345,7 @@ class _HomePageState extends State<HomePage> {
               isSelected: _currentIndex == 2,
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 2);
+                _safeSetState(() => _currentIndex = 2);
               },
             ),
             _DrawerItem(
@@ -2340,7 +2354,7 @@ class _HomePageState extends State<HomePage> {
               isSelected: _currentIndex == 6,
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 6);
+                _safeSetState(() => _currentIndex = 6);
               },
             ),
             Divider(
@@ -2354,7 +2368,7 @@ class _HomePageState extends State<HomePage> {
               isSelected: _currentIndex == 4,
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 4);
+                _safeSetState(() => _currentIndex = 4);
               },
             ),
             _DrawerItem(
@@ -2363,7 +2377,7 @@ class _HomePageState extends State<HomePage> {
               isSelected: _currentIndex == 5,
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 5);
+                _safeSetState(() => _currentIndex = 5);
               },
             ),
             Divider(
@@ -2415,7 +2429,7 @@ class _HomePageState extends State<HomePage> {
               isSelected: _currentIndex == 7,
               onTap: () {
                 Navigator.pop(context);
-                setState(() => _currentIndex = 7);
+                _safeSetState(() => _currentIndex = 7);
               },
             ),
           ],

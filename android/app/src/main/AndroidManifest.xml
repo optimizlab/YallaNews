@@ -83,7 +83,8 @@
         <!-- Prayer Times: foreground service that plays the adhan audio -->
         <service
             android:name=".AdhanAudioService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
     <!-- OpenGL GPU acceleration for MediaPipe / Gemma inference (optional but recommended) -->

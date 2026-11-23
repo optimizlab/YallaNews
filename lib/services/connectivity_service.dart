@@ -21,6 +21,11 @@ class ConnectivityService {
       return true;
     }
     try {
+      final socket =
+          await Socket.connect('example.com', 80).timeout(
+                const Duration(seconds: 5),
+              );
+      await socket.close();
       return true;
     } catch (_) {
       return false;

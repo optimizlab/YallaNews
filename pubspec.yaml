@@ -44,7 +44,7 @@ dependencies:
   workmanager: ^0.10.0
 
 dependency_overrides:
-  sqlite3: "3.8.0"
+  win32: "5.5.1"
 
 dev_dependencies:
   flutter_test:
@@ -70,9 +70,3 @@ flutter:
     - assets/audio/adhan/adhan_iraq.mp3
     - assets/audio/adhan/adhan_turkish.mp3
     - assets/audio/adhan/adhan_moroccan.mp3
-
-hooks:
-  user_defines:
-    sqlite3:
-      source: source
-      path: third_party/sqlite3/sqlite3.c

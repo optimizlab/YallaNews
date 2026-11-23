@@ -954,6 +954,17 @@ class BackgroundCrawlerService {
       }
     }
 
+    // Never crawl without an active internet connection.
+    final hasInternet = await ConnectivityService.hasInternet();
+    if (generation != _crawlGeneration) return;
+    if (!hasInternet) {
+      engineService.addLog(
+        '[SILENT CRAWLER] No internet connection — skipping crawl.',
+      );
+      onComplete?.call();
+      return;
+    }
+
     final smallMemory = _isSmallMemoryPlatform();
     final throttle = smallMemory
         ? max(1, await _topSourcesCount - 2)

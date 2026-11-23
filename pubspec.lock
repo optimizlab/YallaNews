@@ -923,7 +923,7 @@ packages:
     source: hosted
     version: "2.4.0"
   sqlite3:
-    dependency: "direct overridden"
+    dependency: transitive
     description:
       name: sqlite3
       sha256: "5340531ad17f386ae444873f643f281060b6238cc702edeee6b1e90bc4c6874e"
@@ -1195,13 +1195,13 @@ packages:
     source: hosted
     version: "3.27.2"
   win32:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: win32
-      sha256: d7cb55e04cd34096cd3a79b3330245f54cb96a370a1c27adb3c84b917de8b08e
+      sha256: a79dbe579cb51ecd6d30b17e0cae4e0ea15e2c0e66f69ad4198f22a6789e94f4
       url: "https://pub.dev"
     source: hosted
-    version: "5.15.0"
+    version: "5.5.1"
   workmanager:
     dependency: "direct main"
     description:

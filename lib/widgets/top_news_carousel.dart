@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/news_model.dart';
 import '../l10n/app_localizations.dart';
@@ -42,6 +43,13 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
     _autoPlayTimer?.cancel();
     _pageController.dispose();
     super.dispose();
+  }
+
+  void _safeSetState(VoidCallback fn) {
+    if (!mounted) return;
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(fn);
+    });
   }
 
   void _startAutoPlay() {
@@ -87,12 +95,9 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
         // Clamp currentPage if layout changed
         final activePage = _currentPage.clamp(0, (totalPages - 1).clamp(0, 999));
 
-        return MouseRegion(
-          onEnter: (_) => _autoPlayTimer?.cancel(),
-          onExit: (_) => _startAutoPlay(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
               // Carousel Header (Title + Arrow navigation buttons)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -212,7 +217,7 @@ class _TopNewsCarouselState extends State<TopNewsCarousel> {
                   controller: _pageController,
                   itemCount: totalPages,
                   onPageChanged: (page) {
-                    setState(() => _currentPage = page);
+                    _safeSetState(() => _currentPage = page);
                   },
                   itemBuilder: (context, pageIndex) {
                     final startIndex = pageIndex * cardsPerPage;
@@ -276,8 +281,7 @@ decoration: BoxDecoration(
                 ),
               ],
             ],
-          ),
-        );
+          );
       },
     );
   }
@@ -346,8 +350,8 @@ decoration: BoxDecoration(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Card Image with Badges
-              Expanded(
-                flex: 11,
+              Flexible(
+                fit: FlexFit.loose,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -462,8 +466,8 @@ decoration: BoxDecoration(
               ),
 
               // Card Title & Metadata Details
-              Expanded(
-                flex: 9,
+              Flexible(
+                fit: FlexFit.loose,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                   child: Column(

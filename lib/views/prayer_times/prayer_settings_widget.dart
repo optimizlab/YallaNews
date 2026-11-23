@@ -5,20 +5,21 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
-import '../../services/prayer/notification_scheduler.dart';
+import '../../services/prayer/athan_service.dart';
 import '../../services/prayer/repository.dart';
-import '../../services/prayer/adhan_audio_service.dart';
+import '../../services/prayer/scheduler.dart';
 import '../../models/prayer_times.dart';
+import '../../services/prayer/adhan_audio_service.dart';
 
 class PrayerSettingsWidget extends StatefulWidget {
   final PrayerTimesRepository repository;
-  final PrayerNotificationScheduler notificationScheduler;
+  final AthanScheduler scheduler;
   final PrayerTimes? times;
 
   const PrayerSettingsWidget({
     super.key,
     required this.repository,
-    required this.notificationScheduler,
+    required this.scheduler,
     required this.times,
   });
 
@@ -61,33 +62,46 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
     super.dispose();
   }
 
+  /// Re-schedule native Athan alarms after any settings change so the new
+  /// configuration takes effect immediately.
+  Future<void> _reschedule() async {
+    final city = widget.repository.selectedCity;
+    if (city == null) return;
+    await AthanService.instance.reschedule(city);
+  }
+
   Future<void> _saveProviderMethod() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('prayer_provider', _selectedProvider);
     await prefs.setString('prayer_method', _selectedMethod ?? '');
     widget.repository.selectProvider(_selectedProvider);
     widget.repository.selectMethod(_selectedMethod);
+    await _reschedule();
   }
 
   Future<void> _saveNotificationEnabled(bool val) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('prayer_notifications_enabled', val);
+    await _reschedule();
   }
 
   Future<void> _saveAdhanSound(bool val) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('prayer_adhan_sound', val);
+    await _reschedule();
   }
 
   Future<void> _savePrayerConfig(Prayer prayer, bool enabled, int offset) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('prayer_${prayer.index}_enabled', enabled);
     await prefs.setInt('prayer_${prayer.index}_offset', offset);
+    await _reschedule();
   }
 
   Future<void> _savePrayerAdhanSound(Prayer prayer, bool val) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('prayer_${prayer.index}_adhan_sound', val);
+    await _reschedule();
   }
 
   Future<void> _loadSettings() async {
@@ -194,7 +208,6 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
                     value: _prayerAdhanSound[prayer] ?? false,
                     onChanged: (val) async {
                       if (!_adhanSound) {
-                        // Adhan audio requires the master toggle.
                         setState(() => _prayerAdhanSound[prayer] = false);
                         return;
                       }

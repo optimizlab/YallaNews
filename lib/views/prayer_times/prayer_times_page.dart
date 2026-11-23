@@ -5,9 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/prayer_times.dart';
+import '../../services/prayer/athan_service.dart';
 import '../../services/prayer/countdown_engine.dart';
-import '../../services/prayer/notification_scheduler.dart';
 import '../../services/prayer/repository.dart';
+import '../settings_page.dart';
 
 class PrayerTimesPage extends StatefulWidget {
   const PrayerTimesPage({super.key});
@@ -18,30 +19,34 @@ class PrayerTimesPage extends StatefulWidget {
 
 class _PrayerTimesPageState extends State<PrayerTimesPage> {
   late final PrayerTimesRepository _repository;
-  late final PrayerNotificationScheduler _notificationScheduler;
   late final CountdownEngine _countdownEngine;
 
   PrayerTimes? _times;
   bool _isLoading = true;
   String? _error;
-  bool _offline = false;
+  bool _synced = false;
 
   @override
   void initState() {
     super.initState();
     _repository = PrayerTimesRepository();
-    _notificationScheduler = PrayerNotificationScheduler();
     _countdownEngine = CountdownEngine();
-    _loadPrayerTimes();
-    _initializeFirstInstallCache();
-    _initializeNotifications();
+    _init();
   }
 
-  Future<void> _initializeNotifications() async {
-    await _notificationScheduler.initialize();
+  Future<void> _init() async {
+    // Ensure the background Athan system is initialized (first-install /
+    // monthly sync / alarm scheduling). This runs independently of the UI and
+    // never triggers an API call as a consequence of opening this screen.
+    await AthanService.instance.initialize();
+
+    if (!mounted) return;
+    await _loadTodayFromDb();
   }
 
-  Future<void> _loadPrayerTimes() async {
+  /// Load today's prayer times exclusively from the local database. Zero API
+  /// requests are made here.
+  Future<void> _loadTodayFromDb() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
@@ -49,24 +54,39 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     });
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final provider = prefs.getString('prayer_provider') ?? 'waqtazan';
-      final method = prefs.getString('prayer_method');
-      _repository.selectProvider(provider);
-      _repository.selectMethod(method);
+      final city = _repository.selectedCity;
+      final dbInitialized = await AthanService.instance.isDbInitialized;
+      if (city == null) {
+        if (!mounted) return;
+        setState(() {
+          _times = null;
+          _error = 'No location set. Choose a city in settings to see prayer times.';
+          _isLoading = false;
+          _synced = dbInitialized;
+        });
+        return;
+      }
 
-      final result = await _repository.getToday();
+      // Apply saved provider/method so the DB query matches the stored data.
+      final prefs = await SharedPreferences.getInstance();
+      _repository.selectProvider(prefs.getString('prayer_provider') ?? 'waqtazan');
+      _repository.selectMethod(prefs.getString('prayer_method'));
+
+      final times = await _repository.todayFromDb(city);
       if (!mounted) return;
+
       setState(() {
-        _times = result.times;
-        _error = result.error?.message;
-        _offline = result.times.fromCache || !result.succeeded;
+        _times = times;
         _isLoading = false;
+        _synced = dbInitialized;
       });
-      if (_times != null) {
-        _countdownEngine.updateTimes(_times!);
-        _countdownEngine.start(onTick: () => setState(() {}));
-        await _scheduleNotifications(_times!);
+
+      if (times != null) {
+        _countdownEngine.updateTimes(times);
+        _countdownEngine.start(onTick: () {
+          if (mounted) setState(() {});
+        });
+        await _scheduleAlarms(times);
       }
     } catch (e) {
       if (!mounted) return;
@@ -77,107 +97,29 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     }
   }
 
-  Future<void> _onRefresh() async {
-    if (_times == null) return;
-    await _loadPrayerTimes();
-  }
-
-  Future<void> _scheduleNotifications(PrayerTimes times) async {
-    final prefs = await SharedPreferences.getInstance();
-    final enabled = prefs.getBool('prayer_notifications_enabled') ?? false;
-    if (!enabled) {
-      await _notificationScheduler.cancelAll();
-      return;
-    }
-
-    final systemEnabled = await _notificationScheduler.areNotificationsEnabled();
-    if (!systemEnabled) return;
-
-    final muezzin = prefs.getString('adhan_muezzin') ?? 'makkah';
-    final adhanMaster = prefs.getBool('prayer_adhan_sound') ?? false;
-    final configs = <Prayer, PrayerReminderConfig>{};
-    for (final p in kObligatoryPrayers) {
-      final prayerEnabled = prefs.getBool('prayer_${p.index}_enabled') ?? true;
-      final offset = prefs.getInt('prayer_${p.index}_offset') ?? 0;
-      final prayerAdhan =
-          adhanMaster && (prefs.getBool('prayer_${p.index}_adhan_sound') ?? false);
-      configs[p] = PrayerReminderConfig(
-        enabled: prayerEnabled,
-        offsetMinutes: offset,
-        sound: true,
-        adhanSound: prayerAdhan,
-      );
-    }
-    _notificationScheduler.setTimeZone(times.timeZone);
-    await _notificationScheduler.schedulePrayers(times, configs: configs, muezzin: muezzin);
-  }
-
-  Future<void> _initializeFirstInstallCache() async {
-    final prefs = await SharedPreferences.getInstance();
-    final isFirstInstall = prefs.getBool('prayer_first_install') ?? true;
-    final cachedYear = prefs.getInt('prayer_cached_year');
-    final currentYear = DateTime.now().year;
-
+  /// Schedule all future enabled Athan alarms from the local database. No API
+  /// call is involved.
+  Future<void> _scheduleAlarms(PrayerTimes times) async {
     final city = _repository.selectedCity;
     if (city == null) return;
+    await AthanService.instance.scheduler.scheduleAllPrayers(
+      countrySlug: city.countrySlug,
+      citySlug: city.slug,
+      provider: _repository.selectedProviderId,
+      method: _repository.selectedMethod ?? '',
+    );
+    AthanService.instance.scheduler.setTimeZone(times.timeZone);
+  }
 
-    final provider = prefs.getString('prayer_provider') ?? 'waqtazan';
-    final method = prefs.getString('prayer_method');
-    _repository.selectProvider(provider);
-    _repository.selectMethod(method);
+  /// Re-read today from the database and re-schedule alarms. No API request.
+  Future<void> _onRefresh() async {
+    await _loadTodayFromDb();
+  }
 
-    final needsCache = isFirstInstall || cachedYear != currentYear;
-    if (!needsCache) return;
-
-    try {
-      final result = await _repository.getYear(
-        city: city,
-        year: currentYear,
-      );
-
-      if (!mounted) return;
-
-      if (result.succeeded) {
-        final yearTimes = await _repository.getAllYearTimes(
-          countrySlug: city.countrySlug,
-          citySlug: city.slug,
-          year: currentYear,
-          provider: provider,
-          method: method ?? '',
-        );
-
-        if (yearTimes.isNotEmpty) {
-          await prefs.setBool('prayer_first_install', false);
-          await prefs.setInt('prayer_cached_year', currentYear);
-          if (!mounted) return;
-          setState(() {});
-
-          // Schedule native alarms and notifications for the cached year.
-          final prefs2 = await SharedPreferences.getInstance();
-          final muezzin = prefs2.getString('adhan_muezzin') ?? 'makkah';
-          final adhanMaster = prefs2.getBool('prayer_adhan_sound') ?? false;
-          final yearConfigs = <Prayer, PrayerReminderConfig>{};
-          for (final p in kObligatoryPrayers) {
-            final prayerEnabled = prefs2.getBool('prayer_${p.index}_enabled') ?? true;
-            final offset = prefs2.getInt('prayer_${p.index}_offset') ?? 0;
-            final prayerAdhan =
-                adhanMaster && (prefs2.getBool('prayer_${p.index}_adhan_sound') ?? false);
-            yearConfigs[p] = PrayerReminderConfig(
-              enabled: prayerEnabled,
-              offsetMinutes: offset,
-              sound: true,
-              adhanSound: prayerAdhan,
-            );
-          }
-          _notificationScheduler.setTimeZone(yearTimes.first.timeZone);
-          await _notificationScheduler.scheduleYear(
-            yearTimes,
-            configs: yearConfigs,
-            muezzin: muezzin,
-          );
-        }
-      }
-    } catch (_) {}
+  @override
+  void dispose() {
+    _countdownEngine.dispose();
+    super.dispose();
   }
 
   bool _isArabicOrPersian(AppLocalizations l10n) {
@@ -220,28 +162,16 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
   }
 
   @override
-  void dispose() {
-    _countdownEngine.dispose();
-    _notificationScheduler.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       body: _buildTodayTab(l10n),
       floatingActionButton: _times != null
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FloatingActionButton.extended(
-                  onPressed: _onRefresh,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: Text(l10n.translate('refresh')),
-                ),
-              ],
+          ? FloatingActionButton.extended(
+              onPressed: _onRefresh,
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(l10n.translate('refresh')),
             )
           : null,
     );
@@ -249,11 +179,11 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
 
   Widget _buildTodayTab(AppLocalizations l10n) {
     if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator.adaptive());
     }
 
     if (_times == null || _times!.times.isEmpty) {
-      return _buildErrorState(l10n);
+      return _buildEmptyState(l10n);
     }
 
     final next = _countdownEngine.nextPrayer;
@@ -268,10 +198,6 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
           _buildCountdownBanner(l10n),
           const SizedBox(height: 16),
           _buildPrayerSchedule(l10n),
-          if (_offline) ...[
-            const SizedBox(height: 16),
-            _buildOfflineNotice(l10n),
-          ],
           const SizedBox(height: 24),
         ],
       ),
@@ -421,7 +347,7 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
 
   Widget _buildCountdownBanner(AppLocalizations l10n) {
     return StreamBuilder<int>(
-      stream: _countdownEngineTickStream(),
+      stream: Stream.periodic(const Duration(seconds: 1), (_) => 0),
       builder: (context, snapshot) {
         final current = _countdownEngine.nextPrayer;
         return Container(
@@ -489,10 +415,6 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     );
   }
 
-  Stream<int> _countdownEngineTickStream() {
-    return Stream.periodic(const Duration(seconds: 1), (_) => 0);
-  }
-
   Widget _buildPrayerSchedule(AppLocalizations l10n) {
     final isRtl = _isArabicOrPersian(l10n);
     final next = _countdownEngine.nextPrayer;
@@ -537,62 +459,69 @@ class _PrayerTimesPageState extends State<PrayerTimesPage> {
     );
   }
 
-  Widget _buildOfflineNotice(AppLocalizations l10n) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.cloud_off_rounded,
-              color: Theme.of(context).colorScheme.onErrorContainer),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              l10n.translate('offlineCachedData'),
-              style: GoogleFonts.outfit(
-                fontSize: 13,
-                color: Theme.of(context).colorScheme.onErrorContainer,
-              ),
-            ),
-          ),
-          if (_error != null) ...[
-            const SizedBox(width: 10),
-            TextButton(
-              onPressed: _onRefresh,
-              child: Text(l10n.translate('retry')),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildErrorState(AppLocalizations l10n) {
+  Widget _buildEmptyState(AppLocalizations l10n) {
+    final city = _repository.selectedCity;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline_rounded, size: 64,
-              color: Theme.of(context).colorScheme.error),
+          Icon(Icons.location_off_rounded, size: 72,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(height: 16),
           Text(
-            _error ?? l10n.translate('errorLoadingPrayerTimes'),
+            city == null
+                ? l10n.translate('prayerLocationNotSet')
+                : (_error ?? l10n.translate('prayerTimesNotAvailable')),
             style: GoogleFonts.outfit(
-              fontSize: 16,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
+          const SizedBox(height: 8),
+          Text(
+            city == null
+                ? l10n.translate('setLocationForPrayerTimes')
+                : l10n.translate('prayerTimesLoadFailedRetry'),
+            style: GoogleFonts.outfit(
+              fontSize: 14,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          if (city == null) ...[
+            FilledButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const SettingsPage(),
+                  ),
+                );
+                if (mounted) _loadTodayFromDb();
+              },
+              icon: const Icon(Icons.add_location_rounded),
+              label: Text(l10n.translate('setLocation')),
+            ),
+            const SizedBox(height: 12),
+          ],
+          OutlinedButton.icon(
             onPressed: _onRefresh,
             icon: const Icon(Icons.refresh_rounded),
             label: Text(l10n.translate('retry')),
           ),
+          if (_synced) ...[
+            const SizedBox(height: 16),
+            Text(
+              l10n.translate('prayerTimesLoadedFromDatabase'),
+              style: GoogleFonts.outfit(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
       ),
     );

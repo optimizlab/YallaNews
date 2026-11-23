@@ -1375,15 +1375,11 @@ class NewsDatabase {
 
   Future<void> clearAllSavedNews() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedUrls = prefs.getStringList('offline_saved_urls') ?? const <String>[];
-    if (savedUrls.isNotEmpty) {
-      final db = await database;
-      final batch = db.batch();
-      for (final url in savedUrls) {
-        batch.delete('crawled_articles', where: 'url = ?', whereArgs: [url]);
-      }
-      await batch.commit(noResult: true);
-    }
+    final db = await database;
+    final batch = db.batch();
+    batch.delete('crawled_articles');
+    batch.delete('bookmarks');
+    await batch.commit(noResult: true);
     await prefs.setStringList('offline_saved_urls', const <String>[]);
   }
 

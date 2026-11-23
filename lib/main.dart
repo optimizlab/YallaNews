@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ffi' as ffi;
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -11,6 +10,7 @@ import 'l10n/app_localizations.dart';
 import 'services/analytics_service.dart';
 import 'services/app_settings.dart';
 import 'services/auth_service.dart';
+import 'services/prayer/athan_service.dart';
 import 'services/prayer/adhan_audio_service.dart';
 import 'services/prayer/adhan_service.dart';
 import 'services/prayer/provider.dart';
@@ -70,6 +70,11 @@ Future<void> main() async {
   // Restore saved preferences (theme mode, locale, ...) before the UI is built
   // so the selected theme is applied on all views from the first frame.
   await AppSettings.instance.loadSettings();
+  // Initialize the offline-first Athan system: populate the local database on
+  // first install, run monthly sync/recovery, and schedule native alarms from
+  // the database. This runs independently of the UI and never triggers an API
+  // call as a consequence of opening the Athan screen.
+  await AthanService.instance.initialize();
   // Initialize the embedded AI engine (yalla_core) so Ask This News can use it
   // for grounded answers. Failures are swallowed — the chat falls back offline.
   unawaited(AIService.instance.initialize().catchError((_) => null));
@@ -160,14 +165,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   }
 
   Future<void> _resolveInitialPage() async {
-    final isFirstRun = await AppSettings.instance.isFirstRun();
     final isLoggedIn = AuthService.instance.isLoggedIn;
+    final countryConfigured = AppSettings.instance.countryCode.isNotEmpty;
     if (!mounted) return;
     setState(() {
-      _initialPage = isLoggedIn
-          ? HomePage(engineService: YallaEngineService())
-          : (!kIsWeb && isFirstRun)
-              ? const WelcomePage()
+      _initialPage = !countryConfigured
+          ? const WelcomePage()
+          : isLoggedIn
+              ? HomePage(engineService: YallaEngineService())
               : const SplashPage();
     });
   }

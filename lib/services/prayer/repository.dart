@@ -374,6 +374,36 @@ class PrayerTimesRepository {
     );
   }
 
+  /// Fetch prayer times for the full [year]/[month] for [city] from the
+  /// provider without persisting to the local database.
+  ///
+  /// Used by the synchronization manager so it can validate completeness
+  /// before storing anything locally. Returns the raw provider result (may be
+  /// partial when some days fail); callers must validate before persisting.
+  Future<List<PrayerTimes>> fetchMonthRaw({
+    required CityEntry city,
+    required int year,
+    required int month,
+  }) async {
+    return _manager.fetchMonth(city, year: year, month: month);
+  }
+
+  /// Today's prayer times from the local database only. Never calls the API.
+  ///
+  /// Returns null when today is not cached (e.g. before first-install
+  /// synchronization has completed). The UI must handle this gracefully
+  /// without triggering a network request.
+  Future<PrayerTimes?> todayFromDb(CityEntry city) async {
+    final now = DateTime.now();
+    return _database.getCachedTimesFor(
+      countrySlug: city.countrySlug,
+      citySlug: city.slug,
+      localDate: now,
+      provider: _manager.selectedProviderId,
+      method: _manager.selectedMethod ?? '',
+    );
+  }
+
   /// Fetch prayer times for the full [year] for [city].
   ///
   /// Uses cached data when available (no API call). Falls back to the API

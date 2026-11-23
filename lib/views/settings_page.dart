@@ -6,7 +6,8 @@ import '../services/app_settings.dart';
 import '../services/tts_service.dart';
 import '../l10n/app_localizations.dart';
 import '../services/prayer/repository.dart';
-import '../services/prayer/notification_scheduler.dart';
+import '../services/prayer/athan_service.dart';
+import '../services/prayer/scheduler.dart';
 import './prayer_times/adhan_settings_widget.dart';
 import './prayer_times/prayer_settings_widget.dart';
 import './prayer_times/location_selector_widget.dart';
@@ -34,13 +35,13 @@ class _SettingsPageState extends State<SettingsPage> {
   List<dynamic> _ttsVoices = [];
   String? _selectedVoiceName;
   late final PrayerTimesRepository _repository;
-  late final PrayerNotificationScheduler _notificationScheduler;
+  late final AthanScheduler _scheduler;
 
   @override
   void initState() {
     super.initState();
     _repository = PrayerTimesRepository();
-    _notificationScheduler = PrayerNotificationScheduler();
+    _scheduler = AthanScheduler();
     _loadSettings();
     _loadTtsSettings();
     _initializeNotifications();
@@ -55,7 +56,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _initializeNotifications() async {
-    await _notificationScheduler.initialize();
+    await _scheduler.initialize();
   }
 
   Future<void> _loadSettings() async {
@@ -225,12 +226,13 @@ class _SettingsPageState extends State<SettingsPage> {
                   repository: _repository,
                   onCitySelected: (city) async {
                     await _repository.setManualLocation(city);
+                    await AthanService.instance.syncAndReschedule(city);
                   },
                 ),
                 const SizedBox(height: 24),
                 PrayerSettingsWidget(
                   repository: _repository,
-                  notificationScheduler: _notificationScheduler,
+                  scheduler: _scheduler,
                   times: null,
                 ),
                 const SizedBox(height: 24),

@@ -25,12 +25,14 @@ class MainActivity : FlutterActivity() {
                         val prayerTimeMillis = args["prayerTimeMillis"] as? Long ?: 0L
                         val prayerName = args["prayerName"] as? String ?: "Prayer"
                         val muezzin = args["muezzin"] as? String ?: "makkah"
+                        val requestCode = args["requestCode"] as? Int ?: 1000
                         try {
                             PrayerAlarmManager.schedulePrayerAlarm(
                                 this@MainActivity,
                                 prayerTimeMillis,
                                 prayerName,
-                                muezzin
+                                muezzin,
+                                requestCode
                             )
                             result.success(null)
                         } catch (e: Exception) {
