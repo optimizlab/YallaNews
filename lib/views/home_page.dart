@@ -1350,7 +1350,7 @@ class _HomePageState extends State<HomePage> {
           AnimatedBuilder(
             animation: AuthService.instance,
             builder: (context, _) {
-              final isLoggedIn = AuthService.instance.isLoggedIn;
+              final isLoggedIn = AuthService.instance.isAuthenticated;
 
               if (!isLoggedIn) {
                 return IconButton(

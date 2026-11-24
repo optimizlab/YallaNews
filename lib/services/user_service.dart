@@ -108,8 +108,7 @@ class UserService {
     }
 
     // 3. Fallback to server fetch if authenticated
-    final isLoggedIn = await ServerApiService.isLoggedIn();
-    if (!isLoggedIn) return null;
+    if (!AuthService.instance.isAuthenticated) return null;
     try {
       final data = await ServerApiService.getJson('users/get.php');
       if (data['success'] == true && data['user'] != null) {

@@ -210,6 +210,16 @@ class _WelcomePageState extends State<WelcomePage> {
           setState(() => _isLoading = false);
         }
       }
+    } on Exception catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context).translate('loginFailed') + ': ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

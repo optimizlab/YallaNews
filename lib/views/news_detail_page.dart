@@ -544,13 +544,14 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   Future<bool> _requireAuthentication() async {
-    final loggedIn = await ServerApiService.isLoggedIn();
-    if (loggedIn) return true;
-    if (!mounted) return false;
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage()));
-    if (!mounted) return false;
-    await _loadLikeState();
-    return ServerApiService.isLoggedIn();
+    if (!AuthService.instance.isAuthenticated) {
+      if (!mounted) return false;
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage()));
+      if (!mounted) return false;
+      await _loadLikeState();
+      return AuthService.instance.isAuthenticated;
+    }
+    return true;
   }
 
   void _showActionMessage(String message) {
@@ -828,7 +829,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   /// Load like status and count from API.
   Future<void> _loadLikeState() async {
     try {
-      final loggedIn = AuthService.instance.isLoggedIn;
+      final loggedIn = AuthService.instance.isAuthenticated;
       final count = await ServerApiService.getLikeCount(article.url);
       bool liked = false;
       bool saved = false;
@@ -1988,7 +1989,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   /// before the user scrolls to the form.
   Future<void> _openCommentsForUser(BuildContext context) async {
     if (!(await _requireInternet())) return;
-    if (!AuthService.instance.isLoggedIn) {
+    if (!AuthService.instance.isAuthenticated) {
       if (!mounted) return;
       await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LoginPage()));
       if (mounted) await _loadLikeState();
@@ -2245,7 +2246,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ),
         const SizedBox(height: 16),
         // ── Add comment button — login required ───────────────────────────────
-        if (!AuthService.instance.isLoggedIn)
+        if (!AuthService.instance.isAuthenticated)
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
@@ -2301,7 +2302,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         : ((user != null && user.email.isNotEmpty)
               ? user.email.split('@').first
               : l10n.translate('guestUser'));
-    final hasUser = user != null || AuthService.instance.isLoggedIn;
+    final hasUser = user != null || AuthService.instance.isAuthenticated;
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -2404,8 +2405,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
   }
 
   Future<void> _toggleSave() async {
-    final isLoggedIn = await ServerApiService.isLoggedIn();
-    if (!isLoggedIn) return;
+    if (!AuthService.instance.isAuthenticated) return;
     setState(() => _saveLoading = true);
     try {
       if (_isSaved) {
