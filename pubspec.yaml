@@ -2,7 +2,7 @@ name: yallanews
 description: "Yalla News - Smart real-time Arabic and world news reader with curated summaries, offline reading, text-to-speech, dark mode, and trusted sources."
 publish_to: 'none'
 
-version: 26.11.24+711261138
+version: 26.11.24+711261139
 
 environment:
   sdk: ^3.12.0

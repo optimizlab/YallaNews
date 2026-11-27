@@ -65,13 +65,32 @@ class _DailyBriefingPageState extends State<DailyBriefingPage> {
       // ─── 1. Fetch latest news from the server (so every device gets content) ───
       List<NewsModel> serverArticles = <NewsModel>[];
       try {
+        final cc = AppSettings.instance.countryCode.isNotEmpty
+            ? AppSettings.instance.countryCode
+            : null;
+        final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+            ? AppSettings.instance.prayerCitySlug
+            : null;
+
         serverArticles = await ServerApiService.getNews(
           limit: 20,
           language: activeLanguage.isNotEmpty ? activeLanguage : null,
+          countryCode: cc,
+          city: city,
           sort: 'published_at',
           order: 'DESC',
         );
-        debugPrint('[DAILY BRIEFING] Server articles ($activeLanguage): ${serverArticles.length}');
+        debugPrint('[DAILY BRIEFING] Server articles ($activeLanguage): ${serverArticles.length} (cc=$cc city=$city)');
+
+        if (serverArticles.isEmpty && (cc != null || city != null)) {
+          serverArticles = await ServerApiService.getNews(
+            limit: 20,
+            language: activeLanguage.isNotEmpty ? activeLanguage : null,
+            sort: 'published_at',
+            order: 'DESC',
+          );
+          debugPrint('[DAILY BRIEFING] Fallback (no cc/city): ${serverArticles.length}');
+        }
       } catch (e) {
         debugPrint('[DAILY BRIEFING] Server fetch ($activeLanguage) failed: $e');
         // Fallback: any language so the briefing is never empty

@@ -1,3 +1,0 @@
-D:\cmake3\cmake-3.30.5-windows-x86_64\bin\cmake.exe -E rm -f CMakeFiles\newsbrain.dir/objects.a
-C:\mingw64\bin\ar.exe qc CMakeFiles\newsbrain.dir/objects.a @CMakeFiles\newsbrain.dir\objects1.rsp
-C:\mingw64\bin\c++.exe  -Wall -Wextra -O2 -fno-exceptions -fno-rtti -O3 -DNDEBUG -shared -o newsbrain.dll -Wl,--out-implib,libnewsbrain.dll.a -Wl,--major-image-version,1,--minor-image-version,0 -Wl,--whole-archive CMakeFiles\newsbrain.dir/objects.a -Wl,--no-whole-archive @CMakeFiles\newsbrain.dir\linkLibs.rsp

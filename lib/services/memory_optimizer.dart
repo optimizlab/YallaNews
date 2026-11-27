@@ -13,10 +13,8 @@ class MemoryOptimizer {
     try {
       final info = ProcessInfo.currentRss;
       _memoryMb = info ~/ 1024 ~/ 1024;
-      // RSS at app startup is typically 80-150 MB even on high-end devices.
-      // Only flag small-memory if usage is genuinely tiny (< 80 MB),
-      // which would indicate a severely constrained environment.
-      _isSmallMemory = _memoryMb > 0 && _memoryMb < 80;
+      // Mobile devices (phones/tablets) have tighter memory budgets than desktop.
+      _isSmallMemory = Platform.isAndroid || Platform.isIOS || (_memoryMb > 0 && _memoryMb < 80);
     } catch (_) {
       _isSmallMemory = false;
     }

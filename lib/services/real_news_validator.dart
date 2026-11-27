@@ -361,7 +361,15 @@ class RealNewsValidator {
 
     int matches = 0;
     for (final word in titleWords) {
-      if (contentNormalized.contains(word)) matches++;
+      if (contentNormalized.contains(word)) {
+        matches++;
+        continue;
+      }
+      // For Arabic/inflected words, also check without leading prefixes (ال, و, ب, ل, ف, ك).
+      final stem = word.replaceFirst(RegExp(r'^[وفبلك]?ال'), '');
+      if (stem.length >= 3 && contentNormalized.contains(stem)) {
+        matches++;
+      }
     }
 
     // Require at least one title word to appear in the content.

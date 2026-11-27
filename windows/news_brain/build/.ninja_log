@@ -1,0 +1,21 @@
+# ninja log v7
+96	2922	8174134526428311	CMakeFiles/news_brain_cli.dir/src/cli_main.cpp.obj	f4fe25915adda512
+50	4333	8174134525965513	CMakeFiles/newsBrain.dir/src/html_parser.cpp.obj	fc98266691eac893
+110	4386	8174134526568253	CMakeFiles/news_brain_cli.dir/src/html_parser.cpp.obj	5e5d8a476519d57d
+78	6585	8174134526238247	CMakeFiles/newsBrain.dir/src/article_rebuilder.cpp.obj	d4c62bb9e73e181c
+134	6693	8174134526808289	CMakeFiles/news_brain_cli.dir/src/article_brain.cpp.obj	eee5f1da75d1b0df
+73	6694	8174134526188236	CMakeFiles/newsBrain.dir/src/article_brain.cpp.obj	8dd1692ef0c1ad6f
+141	6772	8174134526878269	CMakeFiles/news_brain_cli.dir/src/article_rebuilder.cpp.obj	c844926bc9c3d5a5
+103	7191	8174134526498251	CMakeFiles/news_brain_cli.dir/src/page_skeleton.cpp.obj	f5dd39f255294c0a
+43	7373	8174134525895501	CMakeFiles/newsBrain.dir/src/page_skeleton.cpp.obj	e0ce864fea46fd5
+84	7793	8174134526308228	CMakeFiles/newsBrain.dir/src/news_brain.cpp.obj	3f4d4682d3824a7c
+148	7830	8174134526948237	CMakeFiles/news_brain_cli.dir/src/news_brain.cpp.obj	f6475ff6208d1e5a
+64	8313	8174134526108238	CMakeFiles/newsBrain.dir/src/page_scanner.cpp.obj	9659814260760583
+57	8383	8174134526025518	CMakeFiles/newsBrain.dir/src/http_fetcher.cpp.obj	f1d81b8407ec5e3
+127	8423	8174134526738248	CMakeFiles/news_brain_cli.dir/src/page_scanner.cpp.obj	83764853937a871e
+119	8428	8174134526658262	CMakeFiles/news_brain_cli.dir/src/http_fetcher.cpp.obj	625bafb8253b9340
+55	1453	8174134712535834	CMakeFiles/newsBrain.dir/D_/FLUTTER_PROJECTS/YallaNews/windows/yalla_engine/arabic_nlp.cpp.obj	936da92e2549c234
+64	1470	8174134712625862	CMakeFiles/news_brain_cli.dir/D_/FLUTTER_PROJECTS/YallaNews/windows/yalla_engine/arabic_nlp.cpp.obj	39394b83ea356fb1
+1454	1803	8174134729847162	newsBrain.dll	200c34c519e1d33e
+1454	1803	8174134729847162	libnewsBrain.dll.a	200c34c519e1d33e
+43	220	8174134831223817	news_brain_cli.exe	d45ac400a91ab56e

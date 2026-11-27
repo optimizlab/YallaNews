@@ -46,13 +46,15 @@ class TTSService {
   ValueListenable<double> get progressNotifier => _progressNotifier;
 
   void setActiveDetailPage(String? url) {
-    _activeDetailPageNotifier.value = url;
     _lastDetailUrl = url;
+    if (_activeDetailPageNotifier.value == url) return;
+    _activeDetailPageNotifier.value = url;
   }
 
   /// Clears the active detail page notifier without clearing [_lastDetailUrl],
   /// so the observer can restore it when the covering route is popped.
   void hideDetailPageTemporarily() {
+    if (_activeDetailPageNotifier.value == null) return;
     _activeDetailPageNotifier.value = null;
   }
 

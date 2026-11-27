@@ -185,6 +185,8 @@ class ServerApiService {
     int page = 1,
     String? category,
     String? language,
+    String? countryCode,
+    String? city,
     String? search,
     bool relatedOnly = false,
     String? excludeUrl,
@@ -211,6 +213,9 @@ class ServerApiService {
       if (category != null && category.isNotEmpty && category != 'all')
         'category': category,
       if (language != null && language.isNotEmpty) 'language': language,
+      if (countryCode != null && countryCode.isNotEmpty)
+        'country_code': countryCode,
+      if (city != null && city.isNotEmpty) 'city': city,
       if (search != null && search.isNotEmpty) 'search': search,
     };
 

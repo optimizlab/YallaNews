@@ -37,8 +37,9 @@ endif()
 # CLI executable
 add_executable(news_brain_cli
     src/cli_main.cpp
-    ${NEWS_BRAIN_SOURCES}
 )
+
+target_link_libraries(news_brain_cli PRIVATE newsBrain)
 
 target_include_directories(news_brain_cli PUBLIC
     include

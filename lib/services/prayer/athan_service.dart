@@ -38,8 +38,8 @@ class AthanService {
   Future<void> initialize() async {
     if (_initialized) return;
     _repository = PrayerTimesRepository();
-    _sync = AthanSyncManager(repository: _repository);
     _scheduler = AthanScheduler();
+    _sync = AthanSyncManager(repository: _repository, scheduler: _scheduler);
 
     final prefs = await SharedPreferences.getInstance();
     _repository.selectProvider(prefs.getString('prayer_provider') ?? 'waqtazan');
@@ -83,13 +83,13 @@ class AthanService {
   Future<void> _schedule(CityEntry city) async {
     final provider = _repository.selectedProviderId;
     final method = _repository.selectedMethod ?? '';
+    _scheduler.setTimeZone(city.timeZone);
     await _scheduler.scheduleAllPrayers(
       countrySlug: city.countrySlug,
       citySlug: city.slug,
       provider: provider,
       method: method,
     );
-    _scheduler.setTimeZone(city.timeZone);
   }
 
   /// Whether initialization has completed.

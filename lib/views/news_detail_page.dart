@@ -28,6 +28,8 @@ import '../services/server_api_service.dart';
 import '../services/knowledge_extraction_service.dart';
 import '../services/category_service.dart';
 import '../services/app_settings.dart';
+import '../services/image_validator_service.dart';
+import '../services/msn_image_fetcher.dart';
 import '../database/news_db.dart';
 import 'auth/login_page.dart';
 
@@ -352,7 +354,16 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     _scrollController = ScrollController();
     _scrollController.addListener(_scrollListener);
     _articleReadStartTime = DateTime.now().millisecondsSinceEpoch;
-    _enrichArticleIfNeeded();
+    if (MsnImageFetcher.isPlaceholderOrEmpty(article.imageUrl)) {
+      MsnImageFetcher.fetchRandomImage(article.title).then((found) {
+        if (mounted && found != null && found.isNotEmpty && !MsnImageFetcher.isPlaceholderOrEmpty(found)) {
+          setState(() {
+            _enrichedImageUrl = found;
+          });
+        }
+      });
+    }
+    _enrichArticleIfNeeded().then((_) => _injectContextualParagraphImages());
     _loadKnowledge();
     _loadLikeState();
     _loadOfflineSavedState();
@@ -427,17 +438,36 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         return;
       }
 
+      final cc = AppSettings.instance.countryCode.isNotEmpty
+          ? AppSettings.instance.countryCode
+          : null;
+      final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+          ? AppSettings.instance.prayerCitySlug
+          : null;
+
       final candidates = await ServerApiService.getNews(
         limit: 100,
         category: article.category,
         language: language,
+        countryCode: cc,
+        city: city,
         relatedOnly: true,
         excludeUrl: article.url,
       );
+
+      final relatedCandidates = candidates.isEmpty && (cc != null || city != null)
+          ? await ServerApiService.getNews(
+              limit: 100,
+              category: article.category,
+              language: language,
+              relatedOnly: true,
+              excludeUrl: article.url,
+            )
+          : candidates;
       debugPrint(
-        '[RELATED] article category="${article.category}" language=$language candidates=${candidates.length}',
+        '[RELATED] article category="${article.category}" language=$language candidates=${relatedCandidates.length} (cc=$cc city=$city)',
       );
-      final related = _pickRelatedArticles(article, candidates, limit: 6);
+      final related = _pickRelatedArticles(article, relatedCandidates, limit: 6);
       debugPrint(
         '[RELATED] picked=${related.length} relatedArticles=${article.relatedArticles.length}',
       );
@@ -589,7 +619,9 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     _scrollController.dispose();
     TTSService.instance.playingNotifier.removeListener(_onTtsStateChanged);
     TTSService.instance.articleNotifier.removeListener(_onTtsStateChanged);
-    TTSService.instance.setActiveDetailPage(null);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      TTSService.instance.setActiveDetailPage(null);
+    });
 
     // Record article read and show reward ad when thresholds are met.
     // RewardedInterstitialAd.show() does not require a BuildContext, so it is
@@ -900,6 +932,72 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
     } finally {
       if (mounted) setState(() => _isEnriching = false);
     }
+  }
+
+  /// Searches for contextual web images for key paragraphs and injects them
+  /// into the article content so they render inline and persist for future views.
+  Future<void> _injectContextualParagraphImages() async {
+    if (!mounted) return;
+    final baseContent = effectiveContent.trim();
+    if (baseContent.length < 200) return;
+    // Skip if content already has inline images.
+    if (RegExp(r'<img\s+src=', caseSensitive: false).hasMatch(baseContent)) {
+      return;
+    }
+
+    final cleanText = _stripHtmlTags(baseContent);
+    final paragraphs = _splitIntoParagraphs(cleanText);
+    if (paragraphs.length < 2) return;
+
+    // Pick up to 2 spaced paragraph indices to illustrate.
+    final targetIndices = <int>[0];
+    if (paragraphs.length >= 4) {
+      targetIndices.add(2);
+    }
+
+    final Map<int, String> injectedImages = {};
+    for (final idx in targetIndices) {
+      if (!mounted) return;
+      final p = paragraphs[idx].trim();
+      if (p.length < 30) continue;
+      final snippet = p.length > 45 ? p.substring(0, 45) : p;
+      final query = '${article.title} $snippet'.trim();
+      try {
+        final imgUrl = await MsnImageFetcher.fetchRandomImage(query)
+            .timeout(const Duration(seconds: 6));
+        if (imgUrl != null &&
+            imgUrl.isNotEmpty &&
+            imgUrl != article.imageUrl &&
+            !injectedImages.containsValue(imgUrl)) {
+          injectedImages[idx] = imgUrl;
+        }
+      } catch (_) {}
+    }
+
+    if (injectedImages.isEmpty || !mounted) return;
+
+    final buffer = StringBuffer();
+    for (int i = 0; i < paragraphs.length; i++) {
+      buffer.writeln(paragraphs[i]);
+      buffer.writeln();
+      if (injectedImages.containsKey(i)) {
+        buffer.writeln('<img src="${injectedImages[i]}">');
+        buffer.writeln();
+      }
+    }
+
+    final enriched = buffer.toString().trim();
+    if (mounted) {
+      setState(() {
+        _enrichedContent = enriched;
+      });
+    }
+    try {
+      await NewsDatabase.instance.saveCrawledArticles(
+        [article.copyWith(content: enriched)],
+        article.sourceUrl.isNotEmpty ? article.sourceUrl : article.url,
+      );
+    } catch (_) {}
   }
 
   String _extractArticleContent(String html) {
@@ -2330,7 +2428,6 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         actions: [
           TextButton(
             onPressed: () {
-              TTSService.instance.setActiveDetailPage(null);
               Navigator.pop(context);
             },
             child: Text(l10n.translate('cancel')),
@@ -3532,18 +3629,37 @@ class _RelatedArticlesPageState extends State<_RelatedArticlesPage> {
   Future<void> _loadRelated() async {
     try {
       final language = _NewsDetailPageState._relatedLanguage(widget.article);
+      final cc = AppSettings.instance.countryCode.isNotEmpty
+          ? AppSettings.instance.countryCode
+          : null;
+      final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+          ? AppSettings.instance.prayerCitySlug
+          : null;
+
       final candidates = widget.article.category.trim().isEmpty || language.isEmpty
           ? <NewsModel>[]
           : await ServerApiService.getNews(
               limit: 100,
               category: widget.article.category,
               language: language,
+              countryCode: cc,
+              city: city,
               relatedOnly: true,
               excludeUrl: widget.article.url,
             );
+
+      final relatedCandidates = candidates.isEmpty && (cc != null || city != null)
+          ? await ServerApiService.getNews(
+              limit: 100,
+              category: widget.article.category,
+              language: language,
+              relatedOnly: true,
+              excludeUrl: widget.article.url,
+            )
+          : candidates;
       final related = _NewsDetailPageState._pickRelatedArticles(widget.article, [
         ...widget.related,
-        ...candidates,
+        ...relatedCandidates,
       ], limit: 20);
       if (mounted) {
         setState(() {

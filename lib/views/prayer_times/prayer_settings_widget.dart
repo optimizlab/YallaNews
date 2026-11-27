@@ -108,8 +108,8 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _notificationsEnabled = prefs.getBool('prayer_notifications_enabled') ?? false;
-      _adhanSound = prefs.getBool('prayer_adhan_sound') ?? false;
+      _notificationsEnabled = prefs.getBool('prayer_notifications_enabled') ?? true;
+      _adhanSound = prefs.getBool('prayer_adhan_sound') ?? true;
       _use24Hour = prefs.getBool('prayer_time_24h') ?? true;
       _autoLocationRefresh = prefs.getBool('prayer_auto_location_refresh') ?? true;
       _selectedProvider = prefs.getString('prayer_provider') ?? 'waqtazan';
@@ -118,7 +118,7 @@ class _PrayerSettingsWidgetState extends State<PrayerSettingsWidget> {
         _prayerEnabled[p] = prefs.getBool('prayer_${p.index}_enabled') ?? true;
         _offsetMinutes[p] = prefs.getInt('prayer_${p.index}_offset') ?? 0;
         _prayerAdhanSound[p] =
-            prefs.getBool('prayer_${p.index}_adhan_sound') ?? false;
+            prefs.getBool('prayer_${p.index}_adhan_sound') ?? true;
       }
     });
   }

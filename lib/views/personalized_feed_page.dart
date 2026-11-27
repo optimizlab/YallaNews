@@ -119,13 +119,30 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
     try {
       final locale = AppSettings.instance.locale;
       final language = locale?.languageCode;
+      final cc = AppSettings.instance.countryCode.isNotEmpty
+          ? AppSettings.instance.countryCode
+          : null;
+      final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+          ? AppSettings.instance.prayerCitySlug
+          : null;
+
       final fetched = await ServerApiService.getNews(
         limit: _limit,
         page: 1,
         language: language,
+        countryCode: cc,
+        city: city,
       ).timeout(const Duration(seconds: 20));
 
-      final ranked = _rankArticles(fetched);
+      final articles = fetched.isEmpty && (cc != null || city != null)
+          ? await ServerApiService.getNews(
+              limit: _limit,
+              page: 1,
+              language: language,
+            ).timeout(const Duration(seconds: 20))
+          : fetched;
+
+      final ranked = _rankArticles(articles);
 
       switch (_sortBy) {
         case 'recent':
@@ -175,25 +192,42 @@ class _PersonalizedFeedPageState extends State<PersonalizedFeedPage>
       final locale = AppSettings.instance.locale;
       final language = locale?.languageCode;
       final nextPage = (_offset ~/ _limit) + 1;
+      final cc = AppSettings.instance.countryCode.isNotEmpty
+          ? AppSettings.instance.countryCode
+          : null;
+      final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+          ? AppSettings.instance.prayerCitySlug
+          : null;
+
       final fetched = await ServerApiService.getNews(
         limit: _limit,
         page: nextPage,
         language: language,
+        countryCode: cc,
+        city: city,
       ).timeout(const Duration(seconds: 20));
+
+      final articles = fetched.isEmpty && (cc != null || city != null)
+          ? await ServerApiService.getNews(
+              limit: _limit,
+              page: nextPage,
+              language: language,
+            ).timeout(const Duration(seconds: 20))
+          : fetched;
 
       if (mounted) {
         setState(() {
           _offset += _limit;
           final existingUrls = _feed.map((a) => a.url).toSet();
           final newArticles = <NewsModel>[];
-          for (final a in fetched) {
+          for (final a in articles) {
             if (!existingUrls.contains(a.url)) {
               newArticles.add(a);
               existingUrls.add(a.url);
             }
           }
           _feed.addAll(_rankArticles(newArticles));
-          _hasMore = fetched.length >= _limit;
+          _hasMore = articles.length >= _limit;
           _isLoadingMore = false;
         });
       }

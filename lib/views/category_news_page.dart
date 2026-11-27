@@ -64,18 +64,36 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
     });
 
     try {
+      final cc = AppSettings.instance.countryCode.isNotEmpty
+          ? AppSettings.instance.countryCode
+          : null;
+      final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+          ? AppSettings.instance.prayerCitySlug
+          : null;
+
       final fetched = await ServerApiService.getNews(
         limit: 20,
         page: 1,
         category: categoryId,
         language: AppSettings.instance.locale?.languageCode,
+        countryCode: cc,
+        city: city,
       );
+
+      final articles = fetched.isEmpty && (cc != null || city != null)
+          ? await ServerApiService.getNews(
+              limit: 20,
+              page: 1,
+              category: categoryId,
+              language: AppSettings.instance.locale?.languageCode,
+            )
+          : fetched;
 
       if (mounted) {
         setState(() {
           _articles.clear();
-          _articles.addAll(fetched.where((a) => a.language.trim().toLowerCase() == AppSettings.instance.locale?.languageCode.toLowerCase()));
-          _hasMore = fetched.length >= 20;
+          _articles.addAll(articles.where((a) => a.language.trim().toLowerCase() == AppSettings.instance.locale?.languageCode.toLowerCase()));
+          _hasMore = articles.length >= 20;
           _isLoading = false;
         });
       }
@@ -92,24 +110,42 @@ class _CategoryNewsPageState extends State<CategoryNewsPage> {
 
     try {
       final nextPage = _currentPage + 1;
+      final cc = AppSettings.instance.countryCode.isNotEmpty
+          ? AppSettings.instance.countryCode
+          : null;
+      final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+          ? AppSettings.instance.prayerCitySlug
+          : null;
+
       final fetched = await ServerApiService.getNews(
         limit: 20,
         page: nextPage,
         category: categoryId,
         language: AppSettings.instance.locale?.languageCode,
+        countryCode: cc,
+        city: city,
       );
+
+      final articles = fetched.isEmpty && (cc != null || city != null)
+          ? await ServerApiService.getNews(
+              limit: 20,
+              page: nextPage,
+              category: categoryId,
+              language: AppSettings.instance.locale?.languageCode,
+            )
+          : fetched;
 
       if (mounted) {
         setState(() {
           _currentPage = nextPage;
           final existingUrls = _articles.map((a) => a.url).toSet();
           final targetLang = AppSettings.instance.locale?.languageCode.toLowerCase() ?? '';
-          for (final a in fetched) {
+          for (final a in articles) {
             if (!existingUrls.contains(a.url) && a.language.trim().toLowerCase() == targetLang) {
               _articles.add(a);
             }
           }
-          _hasMore = fetched.length >= 20;
+          _hasMore = articles.length >= 20;
           _isLoadingMore = false;
         });
       }

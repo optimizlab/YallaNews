@@ -43,6 +43,8 @@ class SourceSchedule {
   bool get isDue {
     if (!enabled) return false;
     if (nextRetry != null && DateTime.now().isBefore(nextRetry!)) return false;
+    // First run: no successful check ever and no retry pending → always due.
+    if (lastSuccessfulCheck == null && nextRetry == null) return true;
     return DateTime.now().isAfter(effectiveNextCheck);
   }
 

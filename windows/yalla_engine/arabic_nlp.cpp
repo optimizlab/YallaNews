@@ -7,6 +7,7 @@
 #include <ctime>
 #include <iostream>
 #include <unordered_map>
+#include <cstring>
 
 // 1. Normalizer
 std::string normalize_arabic(const std::string& text) {

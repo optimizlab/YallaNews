@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'l10n/app_localizations.dart';
 import 'services/analytics_service.dart';
@@ -58,9 +59,13 @@ Future<void> main() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
-  if (PlatformAds.isAvailable) {
+  // Initialize Google Mobile Ads SDK on Android/iOS so banner, native, and
+  // rewarded ads can load. PlatformAds.initialize() is a stub on non-mobile
+  // platforms; the real SDK init must run here.
+  if (Platform.isAndroid || Platform.isIOS) {
     try {
-      PlatformAds.initialize();
+      await MobileAds.instance.initialize();
+      debugPrint('[ADMOB] Google Mobile Ads SDK initialized');
     } catch (_) {}
   }
   // Restore the user's login session before the UI is built so a connected

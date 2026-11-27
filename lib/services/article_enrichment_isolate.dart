@@ -1,7 +1,10 @@
 import 'package:http/http.dart' as http;
+import 'image_validator_service.dart';
+import 'msn_image_fetcher.dart';
 
 Future<EnrichResult> enrichArticleIsolate(Map<String, dynamic> params) async {
   final String url = params['url'] as String;
+  final String title = params['title'] as String? ?? '';
   final int timeoutSeconds = params['timeoutSeconds'] as int? ?? 10;
 
   try {
@@ -22,10 +25,18 @@ Future<EnrichResult> enrichArticleIsolate(Map<String, dynamic> params) async {
     }
 
     final html = response.body;
-    String? fetchedImage;
-    final ogImageMatch = RegExp(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"[^>]*>', caseSensitive: false).firstMatch(html);
-    if (ogImageMatch != null) {
-      fetchedImage = _resolveImageUrl(ogImageMatch.group(1) ?? '', url);
+
+    // newsBrain image extraction:
+    // 1. Social schema image of post if exists -> correct image
+    // 2. In-page image with alt/title matching news title in context -> valid
+    // 3. Fallback: randomized famous search engines
+    String fetchedImage = await ImageValidatorService.catchNewsImage(
+      html: html,
+      title: title,
+      pageUrl: url,
+    );
+    if (MsnImageFetcher.isPlaceholderOrEmpty(fetchedImage)) {
+      fetchedImage = '';
     }
 
     String cleaned = _extractArticleContent(html);

@@ -136,11 +136,16 @@ bool _isValidArticle(NewsModel article) {
 
   if (uri != null) {
     final pathSegments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    if (pathSegments.length <= 1) {
+    final lastSegment = pathSegments.last.toLowerCase();
+    if (pathSegments.isEmpty ||
+        (pathSegments.length == 1 &&
+            !lastSegment.endsWith('.html') &&
+            !lastSegment.endsWith('.htm') &&
+            !RegExp(r'\d').hasMatch(lastSegment) &&
+            lastSegment.length < 25)) {
       debugPrint('[HOME VALIDATION] Rejected: short path');
       return false;
     }
-    final lastSegment = pathSegments.last.toLowerCase();
     if (lastSegment.length < 6 && !RegExp(r'^\d+$').hasMatch(lastSegment)) {
       debugPrint('[HOME VALIDATION] Rejected: short last segment');
       return false;
@@ -206,6 +211,7 @@ class _HomePageState extends State<HomePage> {
   String _selectedCategory = 'all';
   bool _waitingForInitialCrawl = false;
   Locale? _lastLocale;
+  String _lastCountryCode = '';
   int _dataLoadGeneration = 0;
   int _languageReloadGeneration = 0;
   int _currentPage = 1;
@@ -233,6 +239,7 @@ class _HomePageState extends State<HomePage> {
     AppSettings.instance.addListener(_onSettingsChanged);
     AuthService.instance.addListener(_onAuthChanged);
     _lastLocale = AppSettings.instance.locale;
+    _lastCountryCode = AppSettings.instance.countryCode;
     _loadData();
   }
 
@@ -267,13 +274,17 @@ class _HomePageState extends State<HomePage> {
   void _onSettingsChanged() {
     if (!mounted) return;
     final currentLocale = AppSettings.instance.locale;
-    if (_lastLocale == null ||
-        currentLocale?.languageCode != _lastLocale?.languageCode) {
+    final currentCountry = AppSettings.instance.countryCode;
+    final langChanged = _lastLocale == null ||
+        currentLocale?.languageCode != _lastLocale?.languageCode;
+    final countryChanged = currentCountry != _lastCountryCode;
+    if (langChanged || countryChanged) {
       _lastLocale = currentLocale;
+      _lastCountryCode = currentCountry;
       _dataLoadGeneration++;
       final reloadGeneration = ++_languageReloadGeneration;
       debugPrint(
-        '[HOME] Language changed to ${currentLocale?.languageCode}, reloading news',
+        '[HOME] Settings changed (lang=${currentLocale?.languageCode}, country=$currentCountry), reloading news',
       );
       unawaited(_reloadForLanguageChange(reloadGeneration));
     }
@@ -584,12 +595,32 @@ class _HomePageState extends State<HomePage> {
       // ─── 1. Load from our server API first ───
       List<NewsModel> serverArticles = <NewsModel>[];
       try {
+        final countryCode = AppSettings.instance.countryCode.isNotEmpty
+            ? AppSettings.instance.countryCode
+            : null;
+        final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+            ? AppSettings.instance.prayerCitySlug
+            : null;
+
         serverArticles = await ServerApiService.getNews(
-          limit: 20,
+          limit: 50,
           page: 1,
           language: language,
+          countryCode: countryCode,
+          city: city,
         ).timeout(const Duration(seconds: 20));
-        debugPrint('[HOME] Server returned ${serverArticles.length} articles');
+        debugPrint('[HOME] Server returned ${serverArticles.length} articles (cc=$countryCode city=$city)');
+
+        // Fallback: if filtered request returns nothing, retry without filters
+        // (API may not support country/city params yet).
+        if (serverArticles.isEmpty && (countryCode != null || city != null)) {
+          serverArticles = await ServerApiService.getNews(
+            limit: 50,
+            page: 1,
+            language: language,
+          ).timeout(const Duration(seconds: 20));
+          debugPrint('[HOME] Fallback server returned ${serverArticles.length} articles (no filters)');
+        }
       } catch (e) {
         debugPrint('[HOME] Server API load failed: $e');
       }
@@ -694,17 +725,15 @@ class _HomePageState extends State<HomePage> {
         });
       }
 
-      // ─── 8. Crawler: WiFi-based smart trigger ───
-      if (!kIsWeb) {
-        unawaited(
-          _setupLocalDbAndCrawler(
-            blendedArticles,
-            trending,
-            loadGeneration: loadGeneration,
-            allowCachedFallback: !skipCachedArticles,
-          ),
-        );
-      }
+      // ─── 8. Crawler: smart trigger on all platforms ───
+      unawaited(
+        _setupLocalDbAndCrawler(
+          blendedArticles,
+          trending,
+          loadGeneration: loadGeneration,
+          allowCachedFallback: !skipCachedArticles,
+        ),
+      );
     } catch (e) {
       debugPrint('[HOME] _loadData failed: $e');
       if (mounted && _rawArticles.isEmpty) {
@@ -914,22 +943,65 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {}
   }
 
-  Future<List<NewsModel>> _loadArticles({int page = 1, int limit = 20}) async {
+  Future<List<NewsModel>> _loadArticles({int page = 1, int limit = 50}) async {
     try {
       debugPrint('[HOME] Loading articles from server API (page $page)...');
       final locale = AppSettings.instance.locale;
       final language = locale?.languageCode;
       if (language == null || language.isEmpty) return [];
+      final countryCode = AppSettings.instance.countryCode.isNotEmpty
+          ? AppSettings.instance.countryCode
+          : null;
+      final city = AppSettings.instance.prayerCitySlug?.isNotEmpty == true
+          ? AppSettings.instance.prayerCitySlug
+          : null;
+
       final serverArticles = await ServerApiService.getNews(
         limit: limit,
         page: page,
         language: language,
+        countryCode: countryCode,
+        city: city,
       ).timeout(const Duration(seconds: 20));
-      debugPrint('[HOME] Server returned ${serverArticles.length} articles');
+      debugPrint('[HOME] Server returned ${serverArticles.length} articles (cc=$countryCode city=$city)');
+
+      if (serverArticles.isEmpty && (countryCode != null || city != null)) {
+        final fallback = await ServerApiService.getNews(
+          limit: limit,
+          page: page,
+          language: language,
+        ).timeout(const Duration(seconds: 20));
+        debugPrint('[HOME] Fallback server returned ${fallback.length} articles (no filters)');
+        return fallback;
+      }
+      // Supplement with local DB articles if server returned few
+      if (serverArticles.length < 20 && page == 1) {
+        try {
+          final language = AppSettings.instance.locale?.languageCode ?? 'ar';
+          final cached = await NewsDatabase.instance.getAllArticles(
+            limit: limit,
+            language: language,
+          );
+          final knownUrls = serverArticles.map((a) => a.url).toSet();
+          final extra = cached.where((a) => !knownUrls.contains(a.url)).toList();
+          final combined = [...serverArticles, ...extra];
+          debugPrint('[HOME] Supplemented with ${extra.length} local DB articles → total ${combined.length}');
+          return combined.take(limit).toList();
+        } catch (_) {}
+      }
       return serverArticles;
     } catch (e) {
       debugPrint('[HOME] Failed to load articles: $e');
-      return [];
+      // Fallback to local DB on error
+      try {
+        final language = AppSettings.instance.locale?.languageCode ?? 'ar';
+        return await NewsDatabase.instance.getAllArticles(
+          limit: limit,
+          language: language,
+        );
+      } catch (_) {
+        return [];
+      }
     }
   }
 
@@ -1094,7 +1166,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final nextPage = _currentPage + 1;
 
-      final response = await _loadArticles(page: nextPage, limit: 20);
+      final response = await _loadArticles(page: nextPage, limit: 50);
 
       if (!mounted ||
           requestGeneration != _dataLoadGeneration ||
@@ -1127,7 +1199,7 @@ class _HomePageState extends State<HomePage> {
       } else {
         _currentPage = nextPage;
 
-        if (response.length < 20) {
+        if (response.length < 50) {
           _hasMore = false;
         }
 
@@ -1164,7 +1236,7 @@ class _HomePageState extends State<HomePage> {
     if (mounted) _safeSetState(() => _isLoading = true);
     try {
       final rawRefreshed = _filterPolicyCompliantArticles(
-        await _loadArticles(page: 1, limit: 20),
+        await _loadArticles(page: 1, limit: 50),
       );
       if (!mounted) return;
       _rawArticles = rawRefreshed;
@@ -1670,17 +1742,10 @@ class _HomePageState extends State<HomePage> {
 
     final isWide = MediaQuery.of(context).size.width >= 750;
     final topArticles = _sortCarouselArticles(_articles).take(9).toList();
-    final carouselUrls = topArticles
-        .map((article) => article.url.trim())
-        .where((url) => url.isNotEmpty)
-        .toSet();
-
-    final remainingArticles = _articles.where((article) {
-      return !carouselUrls.contains(article.url.trim());
-    }).toList();
+    final feedArticles = _articles;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification.metrics.pixels >=
@@ -1747,7 +1812,7 @@ class _HomePageState extends State<HomePage> {
                   _buildBlendedStoryLoader(context),
                   const SizedBox(height: 14),
                 ],
-                ..._buildFeedRows(remainingArticles, isWide).map((row) {
+                ..._buildFeedRows(feedArticles, isWide).map((row) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 14),
                     child: isWide && row.length == 2
@@ -2257,6 +2322,24 @@ class _HomePageState extends State<HomePage> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if ((article.aiSummary.trim().isNotEmpty
+                            ? article.aiSummary.trim()
+                            : article.summary.trim())
+                        .isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        article.aiSummary.trim().isNotEmpty
+                            ? article.aiSummary.trim()
+                            : article.summary.trim(),
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          height: 1.3,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -2369,7 +2452,7 @@ class _HomePageState extends State<HomePage> {
                 borderRadius: BorderRadius.circular(10),
                 child: CachedNewsImage(
                   imageUrl: article.imageUrl.isEmpty
-                      ? 'https://placehold.co/72x72/1A1A2E/C62828?text=${_getCategoryName(article.category, context)[0]}'
+                      ? 'https://placehold.co/256x256/1A1A2E/C62828?text=${_getCategoryName(article.category, context)[0]}'
                       : article.imageUrl,
                   searchQuery: '${article.title}',
                   width: 72,

@@ -173,8 +173,8 @@ class AthanScheduler {
   /// every scheduling pass so setting changes take effect immediately.
   Future<void> _loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    _notificationsEnabled = prefs.getBool('prayer_notifications_enabled') ?? false;
-    _adhanMaster = prefs.getBool('prayer_adhan_sound') ?? false;
+    _notificationsEnabled = prefs.getBool('prayer_notifications_enabled') ?? true;
+    _adhanMaster = prefs.getBool('prayer_adhan_sound') ?? true;
     _muezzin = prefs.getString('adhan_muezzin') ?? 'makkah';
     _configs.clear();
     for (final p in kObligatoryPrayers) {
@@ -183,7 +183,7 @@ class AthanScheduler {
         offsetMinutes: prefs.getInt('prayer_${p.index}_offset') ?? 0,
         sound: true,
         adhanSound:
-            _adhanMaster && (prefs.getBool('prayer_${p.index}_adhan_sound') ?? false),
+            _adhanMaster && (prefs.getBool('prayer_${p.index}_adhan_sound') ?? true),
       );
     }
   }

@@ -53,12 +53,30 @@ class DeviceBenchmark {
 
   Future<int> measureMemoryMb() async {
     try {
+      if (Platform.isAndroid || Platform.isLinux) {
+        final meminfo = File('/proc/meminfo');
+        if (await meminfo.exists()) {
+          final lines = await meminfo.readAsLines();
+          for (final line in lines) {
+            if (line.startsWith('MemTotal:')) {
+              final parts = line.split(RegExp(r'\s+'));
+              if (parts.length >= 2) {
+                final kb = int.tryParse(parts[1]);
+                if (kb != null && kb > 0) {
+                  return kb ~/ 1024;
+                }
+              }
+            }
+          }
+        }
+      }
       if (Platform.isAndroid || Platform.isIOS) {
-        final info = ProcessInfo.currentRss;
-        return info ~/ 1024 ~/ 1024;
+        // Fallback: if /proc/meminfo isn't readable, assume at least 2048 MB
+        // rather than using currentRss (which is only app heap, ~100MB).
+        return 2048;
       }
     } catch (_) {}
-    return 0;
+    return 2048;
   }
 
   Future<int> measureCpuScore() async {
@@ -133,21 +151,26 @@ class DeviceBenchmark {
   }
 
   DeviceTier classifyTier(int memoryMb, int cpuScore, NetworkProfile network) {
-    final hasGoodNetwork = network.speedMbps != null && network.speedMbps! > 5;
+    final cores = Platform.numberOfProcessors;
     final hasWifi = network.isWifi;
-    final lowMemory = memoryMb < 200;
-    final highMemory = memoryMb >= 500;
+    final hasGoodNetwork = network.speedMbps == null || network.speedMbps! > 2;
+    final lowMemory = memoryMb > 0 && memoryMb < 2048;
+    final highMemory = memoryMb >= 4096;
 
     if (lowMemory) {
       return DeviceTier.low;
     }
 
-    if (highMemory && hasGoodNetwork && cpuScore >= 800) {
+    if (highMemory && (cpuScore >= 600 || cores >= 6) && hasGoodNetwork) {
       return DeviceTier.high;
     }
 
-    if (cpuScore < 400 || (!hasWifi && network.connectionType == ConnectionType.mobile)) {
+    if (cpuScore < 300 && cores <= 2) {
       return DeviceTier.low;
+    }
+
+    if (!hasWifi && network.connectionType == ConnectionType.mobile) {
+      return DeviceTier.medium;
     }
 
     return DeviceTier.medium;
@@ -167,13 +190,13 @@ class DeviceBenchmark {
         );
       case DeviceTier.medium:
         return CrawlLimits(
-          sourcesToCrawl: 1,
-          urlsPerSource: 1,
-          perSourceLimit: 1,
-          pauseBetweenArticles: const Duration(milliseconds: 2500),
-          pauseBetweenSources: const Duration(milliseconds: 3000),
+          sourcesToCrawl: 3,
+          urlsPerSource: 3,
+          perSourceLimit: 2,
+          pauseBetweenArticles: const Duration(milliseconds: 1200),
+          pauseBetweenSources: const Duration(milliseconds: 1500),
           maxConcurrentRequests: 1,
-          batchSize: 1,
+          batchSize: 3,
         );
       case DeviceTier.low:
         return CrawlLimits(

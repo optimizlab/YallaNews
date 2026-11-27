@@ -55,29 +55,17 @@ class NewsUriParser {
     'terms', 'contact', 'about', 'login', 'register', 'signup', 'signin',
     'logout', 'subscribe', 'donate', 'advertise', 'jobs', 'careers', 'press',
     'sitemap', 'rss', 'widgets', 'ads', 'promo', 'sponsor', 'banner', 'popup',
-    'classified', 'opinions', 'weather-forecast', 'prayer-times', 'live',
+    'classified', 'weather-forecast', 'prayer-times', 'live',
     'program', 'programcategory', 'sportcategory', 'almaraatv', 'aljarida',
-    'video', 'videos', 'multimedia', 'gallery', 'photos', 'opinion', 'opinions',
+    'video', 'videos', 'multimedia', 'gallery', 'photos',
     'livestream', 'live-tv', 'tv', 'radio', 'podcast',
     'writer', 'admin', 'mondial', 'pollsarchive', 'details', 'cdn-cgi',
     'newsletter', 'latest-news', 'most-read', 'trending', 'popular',
     'team', 'teams', 'staff', 'فريق-العمل', 'فريق-التحرير',
     'مواقيت-الصلاة', 'اوقات-الصلاة', 'أوقات-الصلاة',
     'home', 'index', 'archive', 'archives', 'page', 'pages',
-    // Section / category page indicators (not individual articles)
     'section', 'sections', 'topic', 'topics', 'rubric', 'rubriques',
     '포럼', '섹션', '카테고리',
-    // Arabic section/category URLs
-    'الأخبار', 'أخبار', 'تقنية', 'تكنولوجيا', 'اقتصاد', 'اقتصادية',
-    'أعمال', 'سياسة', 'رياضة', 'فن', 'ثقافة', 'منوعات', 'عالم', 'دولي',
-    'محليات', 'محلي', 'صحة', 'علوم', 'سفر', 'سياحة', 'ألعاب', 'تعليم',
-    'حوادث', 'ميديا', 'فيديو', 'صور', 'عاجل', 'حصري', 'رأي', 'مقالات',
-    'تحقيقات', 'البطولات', 'بطولات', 'الدوري', 'كأس',
-    // English section/category URLs
-    'news', 'sports', 'business', 'tech', 'technology', 'world', 'health',
-    'science', 'culture', 'entertainment', 'opinion', 'analysis', 'review',
-    'lifestyle', 'travel', 'fashion', 'food', 'finance', 'economy',
-    'league', 'tournament', 'cup', 'match', 'standings',
   ];
 
   /// Section / category index paths that, when they are the entire URL path
@@ -156,31 +144,29 @@ class NewsUriParser {
     // Also block general PHP scripts
     if (path.contains('.php')) return false;
 
-    // 4. Blacklisted Path Segments Check
-    for (final segment in blacklistedPathSegments) {
-      if (path.contains('/$segment/') ||
-          path.contains('/$segment') ||
-          path.endsWith(segment) ||
-          decodedPath.contains('/$segment/') ||
-          decodedPath.contains('/$segment') ||
-          decodedPath.endsWith(segment)) {
+    // 4. Blacklisted Path Segments Check (exact segment matching to avoid
+    // rejecting article slugs that happen to contain a blacklisted word).
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.isEmpty) return false; // Homepage
+
+    for (final seg in segments) {
+      final lowerSeg = seg.toLowerCase();
+      if (blacklistedPathSegments.contains(lowerSeg)) {
         return false;
       }
     }
 
-    // 4b. Section index page check: reject URLs whose path is exactly (or ends
-    // with) a section/category name and has no article slug. This catches
-    // section homepages like "/الأخبار", "/رياضة", "/スポーツ" without blocking
-    // real articles nested under those sections (e.g. "/رياضة/article-slug").
-    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    if (segments.length <= 2) {
-      final last = segments.last.toLowerCase();
-      final secondLast = segments.length >= 2 ? segments[segments.length - 2].toLowerCase() : '';
-      final isSectionIndex = _sectionIndexPaths.contains(last) ||
-          (secondLast.isNotEmpty &&
-              _sectionIndexPaths.contains(secondLast) &&
-              segments.length == 2);
-      if (isSectionIndex) return false;
+    // 4b. Section index page check: reject URLs whose last segment is a
+    // section/category name without blocking real articles nested under
+    // those sections (e.g. "/رياضة/article-slug").
+    final last = segments.last.toLowerCase();
+    if (_sectionIndexPaths.contains(last)) {
+      return false;
+    }
+    if (segments.length == 2 &&
+        _sectionIndexPaths.contains(segments.first.toLowerCase()) &&
+        (RegExp(r'^\d+$').hasMatch(last) || last == 'index' || last == 'page')) {
+      return false;
     }
 
     // 5. Structural Check: article URLs should have path segments

@@ -1,3 +1,4 @@
-D:/FLUTTER_PROJECTS/YallaNews/windows/news_brain/build/CMakeFiles/newsbrain.dir
+D:/FLUTTER_PROJECTS/YallaNews/windows/news_brain/build/CMakeFiles/newsBrain.dir
+D:/FLUTTER_PROJECTS/YallaNews/windows/news_brain/build/CMakeFiles/news_brain_cli.dir
 D:/FLUTTER_PROJECTS/YallaNews/windows/news_brain/build/CMakeFiles/edit_cache.dir
 D:/FLUTTER_PROJECTS/YallaNews/windows/news_brain/build/CMakeFiles/rebuild_cache.dir

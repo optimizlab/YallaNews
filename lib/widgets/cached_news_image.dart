@@ -57,9 +57,10 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
 
   bool get _shouldSkip => _currentUrl == null ||
       _currentUrl!.isEmpty ||
-      _currentUrl!.contains('image.png') ||
+      MsnImageFetcher.isPlaceholderOrEmpty(_currentUrl) ||
       _currentUrl!.toLowerCase().contains('bing.com/images/search') ||
       _currentUrl!.toLowerCase().contains('google.com/search') ||
+      _currentUrl!.toLowerCase().contains('duckduckgo.com') ||
       _currentUrl!.toLowerCase().contains('yahoo.com/search');
 
   Future<void> _trySearchFallback(String query) async {
@@ -118,15 +119,13 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
       return _buildPlaceholder(context);
     }
 
+    final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2.0;
+    // Only constrain one dimension so ResizeImage preserves the original
+    // aspect ratio and does not squash rectangular images into a square.
     final memWidth = widget.width != null &&
         widget.width!.isFinite &&
         widget.width! > 0
-        ? widget.width!.toInt()
-        : null;
-    final memHeight = widget.height != null &&
-        widget.height!.isFinite &&
-        widget.height! > 0
-        ? widget.height!.toInt()
+        ? (widget.width! * dpr).round()
         : null;
 
     return CachedNetworkImage(
@@ -141,7 +140,7 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
       // every feed scroll. Cache duration is signaled via the Cache-Control
       // header below.
       memCacheWidth: memWidth,
-      memCacheHeight: memHeight,
+      filterQuality: FilterQuality.medium,
       fadeInDuration: const Duration(milliseconds: 220),
       fadeInCurve: Curves.easeInOut,
       httpHeaders: const {'Cache-Control': 'public, max-age=604800'},

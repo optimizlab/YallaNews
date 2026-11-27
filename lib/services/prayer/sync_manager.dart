@@ -7,6 +7,7 @@ import '../../models/prayer_times.dart';
 import '../connectivity_service.dart';
 import '../prayer/prayer_database.dart';
 import '../prayer/repository.dart';
+import 'scheduler.dart';
 
 /// Result of a synchronization attempt.
 class AthanSyncResult {
@@ -29,11 +30,14 @@ class AthanSyncManager {
   AthanSyncManager({
     required PrayerTimesRepository repository,
     PrayerDatabase? database,
+    AthanScheduler? scheduler,
   })  : _repository = repository,
-        _database = database ?? PrayerDatabase.instance;
+        _database = database ?? PrayerDatabase.instance,
+        _scheduler = scheduler;
 
   final PrayerTimesRepository _repository;
   final PrayerDatabase _database;
+  final AthanScheduler? _scheduler;
 
   static const int _maxRetries = 6;
   static const Duration _baseBackoff = Duration(seconds: 5);
@@ -64,9 +68,13 @@ class AthanSyncManager {
       synced++;
     }
 
+    await _database.markInitialized();
     await _markSynced(now);
     debugPrint(
         '[AthanSyncManager] First-install complete: $synced months persisted');
+
+    // Immediately schedule notifications & alarms as the manager of athan
+    await _schedulePrayers(city);
     return true;
   }
 
@@ -152,6 +160,9 @@ class AthanSyncManager {
     await _markSynced(now);
     debugPrint(
         '[AthanSyncManager] Monthly sync complete: keeping $currentMonthKey and ${next.$1}-${next.$2}, deleted ${prev.$1}-${prev.$2}');
+
+    // Reschedule alarms and notifications to keep notifications fresh
+    await _schedulePrayers(city);
     return true;
   }
 
@@ -173,7 +184,11 @@ class AthanSyncManager {
         )) {
       return true;
     }
-    return _fetchAndStoreMonthWithRetry(city, next.$1, next.$2);
+    final ok = await _fetchAndStoreMonthWithRetry(city, next.$1, next.$2);
+    if (ok) {
+      await _schedulePrayers(city);
+    }
+    return ok;
   }
 
   /// Recover after missed transitions (e.g. device off for weeks). Re-runs the
@@ -181,6 +196,20 @@ class AthanSyncManager {
   /// N-1 data.
   Future<bool> recover(CityEntry city) async {
     return performMonthlySync(city);
+  }
+
+  /// Schedule notifications & alarms through [AthanScheduler].
+  Future<void> _schedulePrayers(CityEntry city) async {
+    if (_scheduler == null) return;
+    final provider = _repository.selectedProviderId;
+    final method = _repository.selectedMethod ?? '';
+    _scheduler!.setTimeZone(city.timeZone);
+    await _scheduler!.scheduleAllPrayers(
+      countrySlug: city.countrySlug,
+      citySlug: city.slug,
+      provider: provider,
+      method: method,
+    );
   }
 
   /// Last successful synchronization timestamp, if any.
@@ -266,7 +295,17 @@ class AthanSyncManager {
       }
     }
 
-    await _database.storeMonth(monthTimes);
+    final provider = _repository.selectedProviderId;
+    final method = _repository.selectedMethod ?? '';
+    // Normalize provider and method so cached entries match user configuration
+    final normalized = monthTimes.map((t) => t.copyWith(
+      countrySlug: city.countrySlug,
+      citySlug: city.slug,
+      provider: provider,
+      method: method,
+    )).toList();
+
+    await _database.storeMonth(normalized);
     return true;
   }
 
