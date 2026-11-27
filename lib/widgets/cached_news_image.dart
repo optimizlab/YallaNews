@@ -125,7 +125,7 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
     final memWidth = widget.width != null &&
         widget.width!.isFinite &&
         widget.width! > 0
-        ? (widget.width! * dpr).round()
+        ? (widget.width! * dpr * 2).round()
         : null;
 
     return CachedNetworkImage(
@@ -140,7 +140,7 @@ class _CachedNewsImageState extends State<CachedNewsImage> {
       // every feed scroll. Cache duration is signaled via the Cache-Control
       // header below.
       memCacheWidth: memWidth,
-      filterQuality: FilterQuality.medium,
+      filterQuality: FilterQuality.high,
       fadeInDuration: const Duration(milliseconds: 220),
       fadeInCurve: Curves.easeInOut,
       httpHeaders: const {'Cache-Control': 'public, max-age=604800'},

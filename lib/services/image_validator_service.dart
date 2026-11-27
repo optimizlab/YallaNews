@@ -74,6 +74,16 @@ class ImageValidatorService {
     _usedImages.add(url);
   }
 
+  /// Returns true if this image URL was recently used by another article.
+  static bool isImageRecentlyUsed(String url) {
+    return _usedImages.contains(url);
+  }
+
+  /// Records that an image URL has been used for an article, preventing reuse.
+  static void recordImageUsed(String url) {
+    _recordUsage(url);
+  }
+
   /// Selects the best image from a list of candidates.
   static String selectBestImage(
     List<ImageCandidate> candidates, 
@@ -397,6 +407,21 @@ class ImageValidatorService {
     }
 
     return null;
+  }
+
+  /// Returns true if the HTML contains Open Graph protocol meta tags (ogp.me).
+  static bool hasOpenGraphMeta(String html) {
+    if (html.isEmpty) return false;
+    return RegExp(
+      '<meta[^>]+(?:property|name)=["\']og:(?:title|type|image|url|description|site_name)["\']',
+      caseSensitive: false,
+    ).hasMatch(html);
+  }
+
+  /// Returns true if the HTML contains a social graph image
+  /// (Open Graph og:image, Twitter Cards, Schema.org / JSON-LD, microdata).
+  static bool hasSocialGraphImage(String html, {String pageUrl = ''}) {
+    return extractSocialSchemaImage(html, pageUrl: pageUrl) != null;
   }
 
   /// Master newsBrain image catching function implementing the exact instructions:

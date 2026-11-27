@@ -1330,8 +1330,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         ),
         centerTitle: true,
       ),
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min,
+      floatingActionButton: Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
         children: [
           FloatingActionButton.extended(
             heroTag: 'source_reader_${article.url.hashCode}',
@@ -1346,7 +1349,6 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
               style: GoogleFonts.outfit(fontWeight: FontWeight.w700),
             ),
           ),
-          const SizedBox(width: 10),
           if (_isSpeaking)
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -1369,7 +1371,10 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -1386,13 +1391,11 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 16),
                 Icon(
                   Icons.calendar_today,
                   size: 16,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 8),
                 Text(
                   _getDisplayDate(),
                   style: GoogleFonts.outfit(
@@ -1412,6 +1415,7 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                 color: Theme.of(context).colorScheme.onSurface,
                 height: 1.3,
               ),
+              maxLines: 3,
             ),
             if (article.author.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -1432,32 +1436,30 @@ class _NewsDetailPageState extends State<NewsDetailPage> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        RichText(
-                          text: TextSpan(
-                            style: GoogleFonts.outfit(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                            children: [
-                              TextSpan(
-                                text: '${l10n.translate('editor')}: ',
-                                style: GoogleFonts.outfit(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              TextSpan(text: article.author),
-                            ],
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      RichText(
+                        text: TextSpan(
+                          style: GoogleFonts.outfit(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
                           ),
+                          children: [
+                            TextSpan(
+                              text: '${l10n.translate('editor')}: ',
+                              style: GoogleFonts.outfit(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            TextSpan(text: article.author),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ],
               ),

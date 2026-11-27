@@ -1073,6 +1073,12 @@ class YallaEngineService extends ChangeNotifier {
         continue;
       }
 
+      // Reject images already used by another article (prevent cross-article reuse)
+      if (ImageValidatorService.isImageRecentlyUsed(extractedImages[i])) {
+        scores.add(-999.0);
+        continue;
+      }
+
       // og/twitter/meta get a small base bonus, but still need content relevance
       if (type == 'og' || type == 'twitter' || type == 'meta') {
         score += 0.5;
@@ -1135,12 +1141,14 @@ class YallaEngineService extends ChangeNotifier {
 
     if (hasGoodImage) {
       finalImageUrl = extractedImages[bestIndex];
+      ImageValidatorService.recordImageUsed(finalImageUrl);
       // Keep the lead image separate; place up to three additional relevant
       // images between story paragraphs to make long articles readable.
       for (int i = 1; i < validatedIndices.length && i <= 3; i++) {
         final idx = validatedIndices[i];
         if (scores[idx] >= 2.0) {
           additionalImages.add(extractedImages[idx]);
+          ImageValidatorService.recordImageUsed(extractedImages[idx]);
         }
       }
     } else {
@@ -1151,6 +1159,9 @@ class YallaEngineService extends ChangeNotifier {
         category: category,
       );
       finalImageUrl = photoResult['imageUrl']!;
+      if (finalImageUrl.isNotEmpty) {
+        ImageValidatorService.recordImageUsed(finalImageUrl);
+      }
       return photoResult;
     }
 
@@ -1719,8 +1730,24 @@ final descMatch = RegExp(
       String imageUrl = (imageResult['imageUrl'] ?? '').trim();
 
       if (imageUrl.isEmpty) {
-        final categorySlug = 'general';
-        imageUrl = 'https://placehold.co/800x500/1A1A2E/C62828?text=$categorySlug';
+        // Search for a title-specific image instead of reusing a shared placeholder.
+        // This ensures each news article gets an image linked to its own title.
+        try {
+          final titleImage = await MsnImageFetcher.fetchRandomImage(cleanedTitle)
+              .timeout(const Duration(seconds: 8));
+          if (titleImage != null &&
+              titleImage.isNotEmpty &&
+              ImageValidatorService.isValidImageUrl(titleImage) &&
+              !MsnImageFetcher.isPlaceholderOrEmpty(titleImage) &&
+              !ImageValidatorService.isImageRecentlyUsed(titleImage)) {
+            imageUrl = titleImage;
+            ImageValidatorService.recordImageUsed(imageUrl);
+          }
+        } catch (_) {}
+        if (imageUrl.isEmpty) {
+          final categorySlug = 'general';
+          imageUrl = 'https://placehold.co/800x500/1A1A2E/C62828?text=$categorySlug';
+        }
       }
       
       // Use the Arabic-aware Dart scorer as the source of truth. The native
@@ -1767,6 +1794,17 @@ final descMatch = RegExp(
         entities.add(d.toString());
       }
       
+       // Reject news that lack Open Graph protocol meta tags (ogp.me) or a
+       // social graph image — these are not valid news articles.
+       if (!ImageValidatorService.hasOpenGraphMeta(html) ||
+           !ImageValidatorService.hasSocialGraphImage(html, pageUrl: url)) {
+         addLog('[SYSTEM] Rejected news without Open Graph/social graph: "$cleanedTitle"');
+         if (!silent) {
+           addLog('[SYSTEM] Skipping non-news article: $url');
+         }
+         return {};
+       }
+
        // Reject non-news entries (section headers, tutorials, courses, digests)
        // before they are packaged as articles.
        final isNonNews = TinyLLMService.isNonNewsEntry(
